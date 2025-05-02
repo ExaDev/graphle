@@ -34,8 +34,10 @@ To use Graphle to build graphs, follow these steps:
 
 1. Create a new project by filling out the project form.
 2. Add nodes and edges to the graph to represent the relationships between systems.
+3. Edit a node's label by double-clicking it.
 3. Use the canvas or container to visualize and manage the graph.
 4. Save the graph state to browser storage to persist your changes.
+5. Delete selected nodes or edges by pressing the `Backspace` or `Delete` key.
 
 ## Sharing Projects and Views
 

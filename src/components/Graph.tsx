@@ -1,14 +1,21 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import ReactFlow, {
 	Background,
 	Controls,
+	Node,
 	OnEdgesDelete,
 	OnNodesDelete,
-	ReactFlowProvider
+	ReactFlowProvider,
+	NodeTypes,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
 import { useGraphStore } from "@/store/graphStore";
+import EditableNode from "./EditableNode";
+
+const nodeTypes: NodeTypes = {
+	editableNode: EditableNode,
+};
 
 function GraphComponent() {
 	const nodes = useGraphStore((state) => state.nodes);
@@ -18,6 +25,7 @@ function GraphComponent() {
 	const onConnect = useGraphStore((state) => state.onConnect);
 	const addNode = useGraphStore((state) => state.addNode);
 	const deleteElements = useGraphStore((state) => state.deleteElements);
+
 
 	const handleAddNode = () => {
 		addNode({});
@@ -37,6 +45,7 @@ function GraphComponent() {
 		[deleteElements]
 	);
 
+
 	return (
 		<div style={{ height: "100vh", width: "100%", position: "relative" }}>
 			<button
@@ -53,6 +62,7 @@ function GraphComponent() {
 				onConnect={onConnect}
 				onNodesDelete={handleNodesDelete}
 				onEdgesDelete={handleEdgesDelete}
+				nodeTypes={nodeTypes}
 				fitView
 			>
 				<Controls />

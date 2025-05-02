@@ -1,12 +1,10 @@
 import { act } from "@testing-library/react";
 import { Connection, Edge } from "reactflow";
 import { beforeEach, describe, expect, it } from "vitest";
-import { GraphState, initialState, useGraphStore } from "./graphStore"; // Import initialState
+import { GraphState, initialState, useGraphStore } from "./graphStore";
 
-// Helper to reset store data properties before each test
 const resetStore = () => {
 	act(() => {
-		// Reset only the data properties to their initial values
 		useGraphStore.setState(initialState);
 	});
 };
@@ -35,8 +33,8 @@ describe("graphStore", () => {
 			const newNode = state.nodes[0];
 			expect(newNode.id).toBe("node_0");
 			expect(newNode.data).toEqual({ label: "Node 0" });
-			expect(newNode.type).toBe("default");
-			expect(newNode.position).toBeDefined(); // Position is random but should exist
+			expect(newNode.type).toBe("editableNode");
+			expect(newNode.position).toBeDefined();
 			expect(state.nodeIdCounter).toBe(1);
 		});
 
@@ -73,10 +71,9 @@ describe("graphStore", () => {
 
 	describe("addEdge", () => {
 		beforeEach(() => {
-			// Add nodes required for edges
 			act(() => {
-				useGraphStore.getState().addNode({}); // node_0
-				useGraphStore.getState().addNode({}); // node_1
+				useGraphStore.getState().addNode({});
+				useGraphStore.getState().addNode({});
 			});
 		});
 
@@ -94,7 +91,6 @@ describe("graphStore", () => {
 			const state = useGraphStore.getState();
 			expect(state.edges).toHaveLength(1);
 			const newEdge = state.edges[0];
-			// Corrected Regex: Handles are omitted from ID if null
 			expect(newEdge.id).toMatch(/^reactflow__edge-node_0-node_1$/);
 			expect(newEdge.source).toBe("node_0");
 			expect(newEdge.target).toBe("node_1");
@@ -124,19 +120,19 @@ describe("graphStore", () => {
 			};
 			act(() => {
 				useGraphStore.getState().addEdge(connection);
-				useGraphStore.getState().addEdge(connection); // Try adding again
+				useGraphStore.getState().addEdge(connection);
 			});
 
 			const state = useGraphStore.getState();
-			expect(state.edges).toHaveLength(1); // Should still only be 1
+			expect(state.edges).toHaveLength(1);
 		});
 	});
 
 	describe("onConnect", () => {
 		beforeEach(() => {
 			act(() => {
-				useGraphStore.getState().addNode({}); // node_0
-				useGraphStore.getState().addNode({}); // node_1
+				useGraphStore.getState().addNode({});
+				useGraphStore.getState().addNode({});
 			});
 		});
 
@@ -188,7 +184,7 @@ describe("graphStore", () => {
 
 		it("should reset to initial state if persisted state is empty or invalid", () => {
 			act(() => {
-				useGraphStore.getState().hydrate({}); // Empty object
+				useGraphStore.getState().hydrate({});
 			});
 			let state = useGraphStore.getState();
 			expect(state.nodes).toEqual([]);
@@ -199,10 +195,102 @@ describe("graphStore", () => {
 			act(() => {
 				useGraphStore
 					.getState()
-					.hydrate({ nodeIdCounter: "invalid" as any }); // Invalid counter
+					.hydrate({ nodeIdCounter: "invalid" as any });
 			});
 			state = useGraphStore.getState();
 			expect(state.nodeIdCounter).toBe(0);
+		});
+	});
+describe("deleteElements", () => {
+		beforeEach(() => {
+			act(() => {
+				useGraphStore.getState().addNode({ id: "node_0" });
+				useGraphStore.getState().addNode({ id: "node_1" });
+				useGraphStore.getState().addNode({ id: "node_2" });
+				useGraphStore.getState().addEdge({ id: "edge_01", source: "node_0", target: "node_1" });
+				useGraphStore.getState().addEdge({ id: "edge_12", source: "node_1", target: "node_2" });
+				useGraphStore.getState().addEdge({ id: "edge_02", source: "node_0", target: "node_2" });
+			});
+		});
+
+		it("should delete specified nodes", () => {
+			act(() => {
+				useGraphStore.getState().deleteElements({
+					nodesToDelete: [{ id: "node_1" }],
+					edgesToDelete: [],
+				});
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.nodes).toHaveLength(2);
+			expect(state.nodes.find((n) => n.id === "node_1")).toBeUndefined();
+			expect(state.nodes.map((n) => n.id)).toEqual(["node_0", "node_2"]);
+		});
+
+		it("should delete specified edges", () => {
+			act(() => {
+				useGraphStore.getState().deleteElements({
+					nodesToDelete: [],
+					edgesToDelete: [{ id: "edge_01" }],
+				});
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.edges).toHaveLength(2);
+			expect(state.edges.find((e) => e.id === "edge_01")).toBeUndefined();
+			expect(state.edges.map((e) => e.id)).toEqual(["edge_12", "edge_02"]);
+			expect(state.nodes).toHaveLength(3);
+		});
+
+		it("should delete specified nodes and edges simultaneously", () => {
+			act(() => {
+				useGraphStore.getState().deleteElements({
+					nodesToDelete: [{ id: "node_0" }],
+					edgesToDelete: [{ id: "edge_12" }],
+				});
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.nodes).toHaveLength(2);
+			expect(state.nodes.find((n) => n.id === "node_0")).toBeUndefined();
+			expect(state.nodes.map((n) => n.id)).toEqual(["node_1", "node_2"]);
+
+			expect(state.edges).toHaveLength(0);
+			expect(state.edges.find((e) => e.id === "edge_01")).toBeUndefined();
+			expect(state.edges.find((e) => e.id === "edge_12")).toBeUndefined();
+			expect(state.edges.find((e) => e.id === "edge_02")).toBeUndefined();
+		});
+
+		it("should delete edges connected to deleted nodes", () => {
+			act(() => {
+				useGraphStore.getState().deleteElements({
+					nodesToDelete: [{ id: "node_1" }],
+					edgesToDelete: [],
+				});
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.nodes).toHaveLength(2);
+			expect(state.nodes.map((n) => n.id)).toEqual(["node_0", "node_2"]);
+
+			expect(state.edges).toHaveLength(1);
+			expect(state.edges[0].id).toBe("edge_02");
+			expect(state.edges.find((e) => e.id === "edge_01")).toBeUndefined();
+			expect(state.edges.find((e) => e.id === "edge_12")).toBeUndefined();
+		});
+
+		it("should handle deleting non-existent elements gracefully", () => {
+			const initialStateSnapshot = useGraphStore.getState();
+			act(() => {
+				useGraphStore.getState().deleteElements({
+					nodesToDelete: [{ id: "node_nonexistent" }],
+					edgesToDelete: [{ id: "edge_nonexistent" }],
+				});
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.nodes).toEqual(initialStateSnapshot.nodes);
+			expect(state.edges).toEqual(initialStateSnapshot.edges);
 		});
 	});
 });

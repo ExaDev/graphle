@@ -34,6 +34,7 @@ export type GraphState = {
 	addNode: (nodeData: Partial<Node>) => void;
 	addEdge: (edge: Edge | Connection) => void;
 	deleteElements: (payload: DeleteElementsPayload) => void;
+	updateNodeLabel: (nodeId: string, newLabel: string) => void;
 	hydrate: (state: Partial<GraphState>) => void;
 };
 
@@ -49,6 +50,7 @@ export const initialState: Omit<
 	| "addEdge"
 	| "deleteElements"
 	| "hydrate"
+	| "updateNodeLabel"
 > = {
 	nodes: [],
 	edges: [],
@@ -91,7 +93,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 				y: Math.random() * 300,
 			},
 			data: nodeData.data ?? { label: `Node ${get().nodeIdCounter}` },
-			type: nodeData.type ?? "default",
+			// Ensure new nodes use the custom editable type by default
+			type: nodeData.type ?? "editableNode",
 			...nodeData,
 		};
 		set((state) => ({
@@ -127,6 +130,22 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 				edges: remainingEdges,
 			};
 		});
+	},
+	updateNodeLabel: (nodeId: string, newLabel: string) => {
+		set((state) => ({
+			nodes: state.nodes.map((node) => {
+				if (node.id === nodeId) {
+					return {
+						...node,
+						data: {
+							...node.data,
+							label: newLabel,
+						},
+					};
+				}
+				return node;
+			}),
+		}));
 	},
 	hydrate: (newState: Partial<GraphState>) => {
 		set((state) => ({
