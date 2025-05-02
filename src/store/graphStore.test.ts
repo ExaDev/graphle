@@ -22,6 +22,8 @@ describe("graphStore", () => {
 		expect(state.nodeIdCounter).toBe(0);
 		expect(state.selectedNodeId).toBeNull();
 		expect(state.selectedEdgeId).toBeNull();
+		expect(state.nodeTypes).toEqual([]); // Check initial types
+		expect(state.edgeTypes).toEqual([]); // Check initial types
 	});
 
 	describe("addNode", () => {
@@ -34,7 +36,7 @@ describe("graphStore", () => {
 			expect(state.nodes).toHaveLength(1);
 			const newNode = state.nodes[0];
 			expect(newNode.id).toBe("node_0");
-			expect(newNode.data).toEqual({ label: "Node 0", type: "" }); // Check default type
+			expect(newNode.data).toEqual({ label: "Node 0", type: "" });
 			expect(newNode.type).toBe("editableNode");
 			expect(newNode.position).toBeDefined();
 			expect(state.nodeIdCounter).toBe(1);
@@ -172,7 +174,7 @@ describe("graphStore", () => {
 					{
 						id: "p_node_1",
 						position: { x: 10, y: 10 },
-						data: { label: "Persisted Node", type: "Persisted" }, // Add required data
+						data: { label: "Persisted Node", type: "Persisted" },
 					},
 				],
 				edges: [
@@ -180,6 +182,8 @@ describe("graphStore", () => {
 				],
 				viewport: { x: 100, y: 100, zoom: 2 },
 				nodeIdCounter: 5,
+				nodeTypes: ["PersistedNodeType"],
+				edgeTypes: ["PersistedEdgeType"],
 			};
 
 			act(() => {
@@ -197,6 +201,8 @@ describe("graphStore", () => {
 			]);
 			expect(state.viewport).toEqual(persistedState.viewport);
 			expect(state.nodeIdCounter).toBe(5);
+			expect(state.nodeTypes).toEqual(["PersistedNodeType"]);
+			expect(state.edgeTypes).toEqual(["PersistedEdgeType"]);
 		});
 
 		it("should reset to initial state if persisted state is empty or invalid", () => {
@@ -208,6 +214,8 @@ describe("graphStore", () => {
 			expect(state.edges).toEqual([]);
 			expect(state.viewport).toEqual({ x: 0, y: 0, zoom: 1 });
 			expect(state.nodeIdCounter).toBe(0);
+			expect(state.nodeTypes).toEqual([]);
+			expect(state.edgeTypes).toEqual([]);
 
 			act(() => {
 				useGraphStore
@@ -218,7 +226,7 @@ describe("graphStore", () => {
 			expect(state.nodeIdCounter).toBe(0);
 		});
 	});
-describe("deleteElements", () => {
+	describe("deleteElements", () => {
 		beforeEach(() => {
 			act(() => {
 				useGraphStore.getState().addNode({ id: "node_0" });
@@ -331,7 +339,7 @@ describe("deleteElements", () => {
 			const state = useGraphStore.getState();
 			const updatedNode = state.nodes.find((n) => n.id === nodeId);
 			expect(updatedNode?.data.label).toBe(newLabel);
-			expect(updatedNode?.data.type).toBe("Initial Type"); // Type should remain unchanged
+			expect(updatedNode?.data.type).toBe("Initial Type");
 		});
 
 		it("should update only the node type", () => {
@@ -343,7 +351,7 @@ describe("deleteElements", () => {
 
 			const state = useGraphStore.getState();
 			const updatedNode = state.nodes.find((n) => n.id === nodeId);
-			expect(updatedNode?.data.label).toBe("Initial Label"); // Label should remain unchanged
+			expect(updatedNode?.data.label).toBe("Initial Label");
 			expect(updatedNode?.data.type).toBe(newType);
 		});
 
@@ -498,7 +506,7 @@ describe("hydrate with types", () => {
 			const stateToHydrate: Partial<GraphState> = {
 				nodes: [
 					{ id: "n1", position: { x: 0, y: 0 }, data: { label: "N1" }, type: "customNodeType" },
-					{ id: "n2", position: { x: 10, y: 10 }, data: { label: "N2" } }, // Default type
+					{ id: "n2", position: { x: 10, y: 10 }, data: { label: "N2" } },
 				],
 				edges: [],
 				viewport: { x: 0, y: 0, zoom: 1 },
@@ -508,7 +516,7 @@ describe("hydrate with types", () => {
 			});
 			const state = useGraphStore.getState();
 			expect(state.nodes[0].type).toBe("customNodeType");
-			expect(state.nodes[1].type).toBeUndefined(); // React Flow default
+			expect(state.nodes[1].type).toBeUndefined();
 		});
 
 		it("should hydrate edges with type property and apply styles", () => {
@@ -520,7 +528,7 @@ describe("hydrate with types", () => {
 				edges: [
 					{ id: "e1", source: "n1", target: "n2", data: { type: "dependency" } },
 					{ id: "e2", source: "n2", target: "n1", data: { type: "composition" } },
-					{ id: "e3", source: "n1", target: "n1" }, // No type
+					{ id: "e3", source: "n1", target: "n1" },
 				],
 				viewport: { x: 0, y: 0, zoom: 1 },
 			};
@@ -548,11 +556,9 @@ describe("hydrate with types", () => {
 		it("should hydrate gracefully when type properties are missing (backward compatibility)", () => {
 			const stateToHydrate: Partial<GraphState> = {
 				nodes: [
-					// Node without explicit type property
 					{ id: "n1", position: { x: 0, y: 0 }, data: { label: "N1" } },
 				],
 				edges: [
-					// Edge without data or type property
 					{ id: "e1", source: "n1", target: "n1" },
 				],
 				viewport: { x: 0, y: 0, zoom: 1 },
@@ -564,10 +570,10 @@ describe("hydrate with types", () => {
 			const node1 = state.nodes.find(n => n.id === "n1");
 			const edge1 = state.edges.find(e => e.id === "e1");
 
-			expect(node1?.type).toBeUndefined(); // React Flow default
+			expect(node1?.type).toBeUndefined();
 			expect(edge1?.data?.type).toBeUndefined();
-			expect(edge1?.style).toEqual({ stroke: "#b1b1b7", strokeWidth: 1 }); // Default style applied
-			expect(edge1?.animated).toBe(false); // Default animation state
+			expect(edge1?.style).toEqual({ stroke: "#b1b1b7", strokeWidth: 1 });
+			expect(edge1?.animated).toBe(false);
 		});
 	});
 
@@ -593,8 +599,7 @@ describe("updateEdgeType", () => {
 			const otherEdge = state.edges.find((e) => e.id === "e2-1");
 
 			expect(updatedEdge?.data?.type).toBe(newType);
-			// Check that style/animation were updated
-			expect(updatedEdge?.style).toEqual({ stroke: "#b1b1b7", strokeWidth: 1 }); // Assuming 'updatedType' maps to default
+			expect(updatedEdge?.style).toEqual({ stroke: "#b1b1b7", strokeWidth: 1 });
 			expect(updatedEdge?.animated).toBe(false);
 			expect(otherEdge?.data?.type).toBeUndefined();
 		});
@@ -609,8 +614,7 @@ describe("updateEdgeType", () => {
 			const state = useGraphStore.getState();
 			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
 			expect(updatedEdge?.data?.type).toBe(newType);
-			// Check that style/animation were updated
-			expect(updatedEdge?.style).toEqual({ stroke: "#b1b1b7", strokeWidth: 1 }); // Assuming 'newlySetType' maps to default
+			expect(updatedEdge?.style).toEqual({ stroke: "#b1b1b7", strokeWidth: 1 });
 			expect(updatedEdge?.animated).toBe(false);
 		});
 
@@ -659,8 +663,166 @@ describe("updateEdgeType", () => {
 			const state = useGraphStore.getState();
 			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
 			expect(updatedEdge?.data?.type).toBe("");
-			// Check that style/animation revert to default for empty string type
 			expect(updatedEdge?.style).toEqual({ stroke: "#b1b1b7", strokeWidth: 1 });
 			expect(updatedEdge?.animated).toBe(false);
 		});
 	});
+
+describe("Type Management", () => {
+	describe("addNodeType", () => {
+		beforeEach(() => {
+			act(() => {
+				useGraphStore.setState({ nodeTypes: [] });
+			});
+		});
+
+		it("should add a new node type if it does not exist", () => {
+			act(() => {
+				useGraphStore.getState().addNodeType("NewType");
+			});
+			const state = useGraphStore.getState();
+			expect(state.nodeTypes).toContain("NewType");
+			expect(state.nodeTypes).toHaveLength(1);
+		});
+
+		it("should not add a node type if it already exists", () => {
+			act(() => {
+				useGraphStore.getState().addNodeType("ExistingType");
+				useGraphStore.getState().addNodeType("ExistingType");
+			});
+			const state = useGraphStore.getState();
+			expect(state.nodeTypes).toEqual(["ExistingType"]);
+			expect(state.nodeTypes).toHaveLength(1);
+		});
+
+		it("should not add an empty or whitespace-only node type", () => {
+			act(() => {
+				useGraphStore.getState().addNodeType("");
+				useGraphStore.getState().addNodeType("   ");
+			});
+			const state = useGraphStore.getState();
+			expect(state.nodeTypes).toEqual([]);
+		});
+	});
+
+	describe("removeNodeType", () => {
+		beforeEach(() => {
+			act(() => {
+				useGraphStore.setState({ nodeTypes: ["Type1", "Type2", "Type3"] });
+			});
+		});
+
+		it("should remove an existing node type", () => {
+			act(() => {
+				useGraphStore.getState().removeNodeType("Type2");
+			});
+			const state = useGraphStore.getState();
+			expect(state.nodeTypes).toEqual(["Type1", "Type3"]);
+			expect(state.nodeTypes).toHaveLength(2);
+		});
+
+		it("should not change the array if the type does not exist", () => {
+			act(() => {
+				useGraphStore.getState().removeNodeType("NonExistentType");
+			});
+			const state = useGraphStore.getState();
+			expect(state.nodeTypes).toEqual(["Type1", "Type2", "Type3"]);
+			expect(state.nodeTypes).toHaveLength(3);
+		});
+	});
+
+	describe("addEdgeType", () => {
+		beforeEach(() => {
+			act(() => {
+				useGraphStore.setState({ edgeTypes: [] });
+			});
+		});
+
+		it("should add a new edge type if it does not exist", () => {
+			act(() => {
+				useGraphStore.getState().addEdgeType("NewEdgeType");
+			});
+			const state = useGraphStore.getState();
+			expect(state.edgeTypes).toContain("NewEdgeType");
+			expect(state.edgeTypes).toHaveLength(1);
+		});
+
+		it("should not add an edge type if it already exists", () => {
+			act(() => {
+				useGraphStore.getState().addEdgeType("ExistingEdgeType");
+				useGraphStore.getState().addEdgeType("ExistingEdgeType");
+			});
+			const state = useGraphStore.getState();
+			expect(state.edgeTypes).toEqual(["ExistingEdgeType"]);
+			expect(state.edgeTypes).toHaveLength(1);
+		});
+
+		it("should not add an empty or whitespace-only edge type", () => {
+			act(() => {
+				useGraphStore.getState().addEdgeType("");
+				useGraphStore.getState().addEdgeType("   ");
+			});
+			const state = useGraphStore.getState();
+			expect(state.edgeTypes).toEqual([]);
+		});
+	});
+
+	describe("removeEdgeType", () => {
+		beforeEach(() => {
+			act(() => {
+				useGraphStore.setState({ edgeTypes: ["EdgeType1", "EdgeType2", "EdgeType3"] });
+			});
+		});
+
+		it("should remove an existing edge type", () => {
+			act(() => {
+				useGraphStore.getState().removeEdgeType("EdgeType2");
+			});
+			const state = useGraphStore.getState();
+			expect(state.edgeTypes).toEqual(["EdgeType1", "EdgeType3"]);
+			expect(state.edgeTypes).toHaveLength(2);
+		});
+
+		it("should not change the array if the type does not exist", () => {
+			act(() => {
+				useGraphStore.getState().removeEdgeType("NonExistentEdgeType");
+			});
+			const state = useGraphStore.getState();
+			expect(state.edgeTypes).toEqual(["EdgeType1", "EdgeType2", "EdgeType3"]);
+			expect(state.edgeTypes).toHaveLength(3);
+		});
+	});
+
+	describe("hydrate with type arrays", () => {
+		it("should hydrate nodeTypes and edgeTypes correctly", () => {
+			const persistedState: Partial<GraphState> = {
+				nodes: [],
+				edges: [],
+				nodeTypes: ["PersistedNode1", "PersistedNode2"],
+				edgeTypes: ["PersistedEdge1"],
+			};
+			act(() => {
+				useGraphStore.getState().hydrate(persistedState);
+			});
+			const state = useGraphStore.getState();
+			expect(state.nodeTypes).toEqual(["PersistedNode1", "PersistedNode2"]);
+			expect(state.edgeTypes).toEqual(["PersistedEdge1"]);
+		});
+
+		it("should hydrate with empty arrays if types are missing or not arrays", () => {
+			act(() => {
+				useGraphStore.getState().hydrate({ nodes: [], edges: [] });
+			});
+			let state = useGraphStore.getState();
+			expect(state.nodeTypes).toEqual([]);
+			expect(state.edgeTypes).toEqual([]);
+
+			act(() => {
+				useGraphStore.getState().hydrate({ nodeTypes: "invalid" as any, edgeTypes: null as any });
+			});
+			state = useGraphStore.getState();
+			expect(state.nodeTypes).toEqual([]);
+			expect(state.edgeTypes).toEqual([]);
+		});
+	});
+});
