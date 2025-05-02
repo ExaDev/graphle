@@ -1,6 +1,5 @@
 import React from "react";
 import {
-	addEdge as rfAddEdge,
 	applyEdgeChanges,
 	applyNodeChanges,
 	Connection,
@@ -11,9 +10,11 @@ import {
 	OnConnect,
 	OnEdgesChange,
 	OnNodesChange,
+	addEdge as rfAddEdge,
 	Viewport,
 } from "reactflow";
 import { create } from "zustand";
+import { getLayoutedElements } from "../utils/layout";
 
 type DeleteElementsPayload = {
 	nodesToDelete: Pick<Node, "id">[];
@@ -48,7 +49,10 @@ export type GraphState = {
 	setViewport: (viewport: Viewport) => void;
 	setSelectedNodeId: (nodeId: string | null) => void;
 	setSelectedEdgeId: (edgeId: string | null) => void;
-	addNode: (nodeData: Pick<Node<NodeData>, "position"> & Partial<Omit<Node<NodeData>, "position">>) => void;
+	addNode: (
+		nodeData: Pick<Node<NodeData>, "position"> &
+			Partial<Omit<Node<NodeData>, "position">>
+	) => void;
 	addEdge: (edge: Edge<EdgeData> | Connection) => void;
 	deleteElements: (payload: DeleteElementsPayload) => void;
 	updateNodeData: (nodeId: string, data: Partial<NodeData>) => void;
@@ -59,6 +63,7 @@ export type GraphState = {
 	addEdgeType: (type: string) => void;
 	removeEdgeType: (type: string) => void;
 	hydrate: (state: Partial<GraphState>) => void;
+	applyLayout: () => void;
 };
 
 export const initialState: Omit<
@@ -140,17 +145,20 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 	setSelectedEdgeId: (edgeId: string | null) => {
 		set({ selectedEdgeId: edgeId, selectedNodeId: null });
 	},
-	addNode: (nodeData: Pick<Node<NodeData>, "position"> & Partial<Omit<Node<NodeData>, "position">>) => {
+	addNode: (
+		nodeData: Pick<Node<NodeData>, "position"> &
+			Partial<Omit<Node<NodeData>, "position">>
+	) => {
 		const newNodeId = `node_${get().nodeIdCounter}`;
 		const newNode: Node<NodeData> = {
 			id: newNodeId,
-			position: nodeData.position, // Position is now required
+			position: nodeData.position,
 			data: nodeData.data ?? {
 				label: `Node ${get().nodeIdCounter}`,
 				type: "",
 			},
 			type: nodeData.type ?? "editableNode",
-			...nodeData, // Spread remaining partial data, ensuring position isn't overwritten if provided again
+			...nodeData,
 		};
 		set((state) => ({
 			nodes: [...state.nodes, newNode],
@@ -158,12 +166,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 		}));
 	},
 	addEdge: (newEdgeOrConnection: Edge<EdgeData> | Connection) => {
-		// Determine if it's a Connection object (from onConnect) or a full Edge object
 		const isConnection = !("id" in newEdgeOrConnection);
 		const edgeType =
-			"data" in newEdgeOrConnection ? newEdgeOrConnection.data?.type : undefined;
+			"data" in newEdgeOrConnection
+				? newEdgeOrConnection.data?.type
+				: undefined;
 
-		// Prepare the edge object, adding a default label if it's a new connection
 		const edgeToAdd = {
 			...newEdgeOrConnection,
 			style: getEdgeStyle(edgeType),
@@ -171,16 +179,17 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 			label: isConnection
 				? "New Edge"
 				: "label" in newEdgeOrConnection
-				  ? newEdgeOrConnection.label
-				  : undefined, // Keep existing label if it's an Edge object
+				? newEdgeOrConnection.label
+				: undefined,
 			data: {
-				...("data" in newEdgeOrConnection ? newEdgeOrConnection.data : {}),
+				...("data" in newEdgeOrConnection
+					? newEdgeOrConnection.data
+					: {}),
 				type: edgeType,
 			},
 		};
 
 		set((state) => ({
-			// rfAddEdge handles ID generation for Connection objects
 			edges: rfAddEdge(edgeToAdd, state.edges),
 		}));
 	},
@@ -253,10 +262,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 		}));
 	},
 	addNodeType: (type: string) => {
-		const trimmedType = type.trim(); // Trim whitespace
-		if (!trimmedType || get().nodeTypes.includes(trimmedType)) return; // Check trimmed type
+		const trimmedType = type.trim();
+		if (!trimmedType || get().nodeTypes.includes(trimmedType)) return;
 		set((state) => ({
-			nodeTypes: [...state.nodeTypes, trimmedType], // Add trimmed type
+			nodeTypes: [...state.nodeTypes, trimmedType],
 		}));
 	},
 	removeNodeType: (type: string) => {
@@ -265,10 +274,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 		}));
 	},
 	addEdgeType: (type: string) => {
-		const trimmedType = type.trim(); // Trim whitespace
-		if (!trimmedType || get().edgeTypes.includes(trimmedType)) return; // Check trimmed type
+		const trimmedType = type.trim();
+		if (!trimmedType || get().edgeTypes.includes(trimmedType)) return;
 		set((state) => ({
-			edgeTypes: [...state.edgeTypes, trimmedType], // Add trimmed type
+			edgeTypes: [...state.edgeTypes, trimmedType],
 		}));
 	},
 	removeEdgeType: (type: string) => {
@@ -295,8 +304,17 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 				typeof newState.nodeIdCounter === "number"
 					? newState.nodeIdCounter
 					: state.nodeIdCounter,
-			nodeTypes: Array.isArray(newState.nodeTypes) ? newState.nodeTypes : [],
-			edgeTypes: Array.isArray(newState.edgeTypes) ? newState.edgeTypes : [],
+			nodeTypes: Array.isArray(newState.nodeTypes)
+				? newState.nodeTypes
+				: [],
+			edgeTypes: Array.isArray(newState.edgeTypes)
+				? newState.edgeTypes
+				: [],
 		}));
+	},
+	applyLayout: () => {
+		const { nodes, edges } = get();
+		const { nodes: layoutedNodes } = getLayoutedElements(nodes, edges);
+		set({ nodes: layoutedNodes });
 	},
 }));

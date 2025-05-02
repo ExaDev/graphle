@@ -2,13 +2,13 @@ import React, { useCallback } from "react";
 import ReactFlow, {
 	Background,
 	Controls,
+	Edge,
 	MiniMap,
 	Node,
-	Edge,
+	NodeTypes,
 	OnEdgesDelete,
 	OnNodesDelete,
 	ReactFlowProvider,
-	NodeTypes,
 	useReactFlow,
 } from "reactflow";
 import "reactflow/dist/style.css";
@@ -30,34 +30,35 @@ function GraphComponent() {
 	const deleteElements = useGraphStore((state) => state.deleteElements);
 	const setSelectedNodeId = useGraphStore((state) => state.setSelectedNodeId);
 	const setSelectedEdgeId = useGraphStore((state) => state.setSelectedEdgeId);
-	const { project } = useReactFlow(); // Get project function
+	const applyLayout = useGraphStore((state) => state.applyLayout);
+	const { project } = useReactFlow();
 
 	const handleNodesDelete: OnNodesDelete = useCallback(
 		(nodesToDelete) => {
 			deleteElements({ nodesToDelete, edgesToDelete: [] });
 		},
-		[deleteElements],
+		[deleteElements]
 	);
 
 	const handleEdgesDelete: OnEdgesDelete = useCallback(
 		(edgesToDelete) => {
 			deleteElements({ nodesToDelete: [], edgesToDelete });
 		},
-		[deleteElements],
+		[deleteElements]
 	);
 
 	const handleNodeClick = useCallback(
 		(_event: React.MouseEvent, node: Node) => {
 			setSelectedNodeId(node.id);
 		},
-		[setSelectedNodeId],
+		[setSelectedNodeId]
 	);
 
 	const handleEdgeClick = useCallback(
 		(_event: React.MouseEvent, edge: Edge) => {
 			setSelectedEdgeId(edge.id);
 		},
-		[setSelectedEdgeId],
+		[setSelectedEdgeId]
 	);
 
 	const handlePaneDoubleClick = useCallback(
@@ -68,11 +69,17 @@ function GraphComponent() {
 			});
 			addNode({ position });
 		},
-		[addNode, project],
+		[addNode, project]
 	);
 
 	return (
 		<div style={{ height: "100vh", width: "100%", position: "relative" }}>
+			<button
+				onClick={applyLayout}
+				style={{ position: "absolute", top: 10, left: 10, zIndex: 4 }}
+			>
+				Apply Layout
+			</button>
 			<ReactFlow
 				nodes={nodes}
 				edges={edges}
