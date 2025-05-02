@@ -23,7 +23,7 @@ const inputStyle = {
 };
 
 const EditableNode: React.FC<NodeProps> = ({ id, data }) => {
-	const updateNodeLabel = useGraphStore((state) => state.updateNodeLabel);
+	const updateNodeData = useGraphStore((state) => state.updateNodeData); // Use updateNodeData
 	const [isEditing, setIsEditing] = useState(false);
 	const [labelValue, setLabelValue] = useState(data.label || "");
 
@@ -38,10 +38,11 @@ const EditableNode: React.FC<NodeProps> = ({ id, data }) => {
 
 	const saveLabel = useCallback(() => {
 		if (labelValue !== data.label) {
-			updateNodeLabel(id, labelValue);
+			// Call updateNodeData with the label field
+			updateNodeData(id, { label: labelValue });
 		}
 		setIsEditing(false);
-	}, [id, labelValue, data.label, updateNodeLabel]);
+	}, [id, labelValue, data.label, updateNodeData]);
 
 	const handleBlur = useCallback(
 		(evt: FocusEvent<HTMLInputElement>) => {

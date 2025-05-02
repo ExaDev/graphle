@@ -19,8 +19,13 @@ type DeleteElementsPayload = {
 	edgesToDelete: Pick<Edge, "id">[];
 };
 
+export type NodeData = {
+	label: string;
+	type?: string;
+};
+
 export type GraphState = {
-	nodes: Node[];
+	nodes: Node<NodeData>[];
 	edges: Edge[];
 	viewport: Viewport;
 	nodeIdCounter: number;
@@ -28,13 +33,13 @@ export type GraphState = {
 	onNodesChange: OnNodesChange;
 	onEdgesChange: OnEdgesChange;
 	onConnect: OnConnect;
-	setNodes: (nodes: Node[]) => void;
+	setNodes: (nodes: Node<NodeData>[]) => void;
 	setEdges: (edges: Edge[]) => void;
 	setViewport: (viewport: Viewport) => void;
-	addNode: (nodeData: Partial<Node>) => void;
+	addNode: (nodeData: Partial<Node<NodeData>>) => void;
 	addEdge: (edge: Edge | Connection) => void;
 	deleteElements: (payload: DeleteElementsPayload) => void;
-	updateNodeLabel: (nodeId: string, newLabel: string) => void;
+	updateNodeData: (nodeId: string, data: Partial<NodeData>) => void;
 	hydrate: (state: Partial<GraphState>) => void;
 };
 
@@ -50,7 +55,7 @@ export const initialState: Omit<
 	| "addEdge"
 	| "deleteElements"
 	| "hydrate"
-	| "updateNodeLabel"
+	| "updateNodeData"
 > = {
 	nodes: [],
 	edges: [],
@@ -75,7 +80,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 	onConnect: (connection: Connection) => {
 		get().addEdge(connection);
 	},
-	setNodes: (nodes: Node[]) => {
+	setNodes: (nodes: Node<NodeData>[]) => {
 		set({ nodes });
 	},
 	setEdges: (edges: Edge[]) => {
@@ -84,16 +89,18 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 	setViewport: (viewport: Viewport) => {
 		set({ viewport });
 	},
-	addNode: (nodeData: Partial<Node>) => {
+	addNode: (nodeData: Partial<Node<NodeData>>) => {
 		const newNodeId = `node_${get().nodeIdCounter}`;
-		const newNode: Node = {
+		const newNode: Node<NodeData> = {
 			id: newNodeId,
 			position: nodeData.position ?? {
 				x: Math.random() * 500,
 				y: Math.random() * 300,
 			},
-			data: nodeData.data ?? { label: `Node ${get().nodeIdCounter}` },
-			// Ensure new nodes use the custom editable type by default
+			data: nodeData.data ?? {
+				label: `Node ${get().nodeIdCounter}`,
+				type: "",
+			},
 			type: nodeData.type ?? "editableNode",
 			...nodeData,
 		};
@@ -131,7 +138,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 			};
 		});
 	},
-	updateNodeLabel: (nodeId: string, newLabel: string) => {
+	updateNodeData: (nodeId: string, data: Partial<NodeData>) => {
 		set((state) => ({
 			nodes: state.nodes.map((node) => {
 				if (node.id === nodeId) {
@@ -139,7 +146,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 						...node,
 						data: {
 							...node.data,
-							label: newLabel,
+							...data,
 						},
 					};
 				}

@@ -1,7 +1,7 @@
 import { act } from "@testing-library/react";
 import { Connection, Edge } from "reactflow";
-import { beforeEach, describe, expect, it } from "vitest";
-import { GraphState, initialState, useGraphStore } from "./graphStore";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { GraphState, initialState, NodeData, useGraphStore } from "./graphStore";
 
 const resetStore = () => {
 	act(() => {
@@ -32,7 +32,7 @@ describe("graphStore", () => {
 			expect(state.nodes).toHaveLength(1);
 			const newNode = state.nodes[0];
 			expect(newNode.id).toBe("node_0");
-			expect(newNode.data).toEqual({ label: "Node 0" });
+			expect(newNode.data).toEqual({ label: "Node 0", type: "" }); // Check default type
 			expect(newNode.type).toBe("editableNode");
 			expect(newNode.position).toBeDefined();
 			expect(state.nodeIdCounter).toBe(1);
@@ -54,7 +54,7 @@ describe("graphStore", () => {
 
 		it("should use provided partial data", () => {
 			const position = { x: 100, y: 200 };
-			const data = { label: "Custom Node" };
+			const data: NodeData = { label: "Custom Node", type: "Input" };
 			act(() => {
 				useGraphStore.getState().addNode({ position, data });
 			});
@@ -162,7 +162,11 @@ describe("graphStore", () => {
 		it("should hydrate the store with persisted state", () => {
 			const persistedState: Partial<GraphState> = {
 				nodes: [
-					{ id: "p_node_1", position: { x: 10, y: 10 }, data: {} },
+					{
+						id: "p_node_1",
+						position: { x: 10, y: 10 },
+						data: { label: "Persisted Node", type: "Persisted" }, // Add required data
+					},
 				],
 				edges: [
 					{ id: "p_edge_1", source: "p_node_1", target: "p_node_1" },
@@ -291,6 +295,96 @@ describe("deleteElements", () => {
 			const state = useGraphStore.getState();
 			expect(state.nodes).toEqual(initialStateSnapshot.nodes);
 			expect(state.edges).toEqual(initialStateSnapshot.edges);
+		});
+	});
+
+	describe("updateNodeData", () => {
+		beforeEach(() => {
+			act(() => {
+				// Add a node to update
+				useGraphStore.getState().addNode({
+					id: "node_to_update",
+					data: { label: "Initial Label", type: "Initial Type" },
+				});
+			});
+		});
+
+		it("should update only the node label", () => {
+			const nodeId = "node_to_update";
+			const newLabel = "Updated Label";
+			act(() => {
+				useGraphStore.getState().updateNodeData(nodeId, { label: newLabel });
+			});
+
+			const state = useGraphStore.getState();
+			const updatedNode = state.nodes.find((n) => n.id === nodeId);
+			expect(updatedNode?.data.label).toBe(newLabel);
+			expect(updatedNode?.data.type).toBe("Initial Type"); // Type should remain unchanged
+		});
+
+		it("should update only the node type", () => {
+			const nodeId = "node_to_update";
+			const newType = "Updated Type";
+			act(() => {
+				useGraphStore.getState().updateNodeData(nodeId, { type: newType });
+			});
+
+			const state = useGraphStore.getState();
+			const updatedNode = state.nodes.find((n) => n.id === nodeId);
+			expect(updatedNode?.data.label).toBe("Initial Label"); // Label should remain unchanged
+			expect(updatedNode?.data.type).toBe(newType);
+		});
+
+		it("should update both node label and type", () => {
+			const nodeId = "node_to_update";
+			const newLabel = "Updated Label";
+			const newType = "Updated Type";
+			act(() => {
+				useGraphStore
+					.getState()
+					.updateNodeData(nodeId, { label: newLabel, type: newType });
+			});
+
+			const state = useGraphStore.getState();
+			const updatedNode = state.nodes.find((n) => n.id === nodeId);
+			expect(updatedNode?.data.label).toBe(newLabel);
+			expect(updatedNode?.data.type).toBe(newType);
+		});
+
+		it("should not update other nodes", () => {
+			// Add another node
+			act(() => {
+				useGraphStore.getState().addNode({
+					id: "other_node",
+					data: { label: "Other Label", type: "Other Type" },
+				});
+			});
+
+			const nodeIdToUpdate = "node_to_update";
+			const newLabel = "Updated Label";
+			act(() => {
+				useGraphStore
+					.getState()
+					.updateNodeData(nodeIdToUpdate, { label: newLabel });
+			});
+
+			const state = useGraphStore.getState();
+			const otherNode = state.nodes.find((n) => n.id === "other_node");
+			expect(otherNode?.data.label).toBe("Other Label");
+			expect(otherNode?.data.type).toBe("Other Type");
+		});
+
+		it("should handle updating a non-existent node gracefully", () => {
+			const initialStateSnapshot = useGraphStore.getState();
+			const nonExistentNodeId = "node_does_not_exist";
+			act(() => {
+				useGraphStore
+					.getState()
+					.updateNodeData(nonExistentNodeId, { label: "Doesn't Matter" });
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.nodes).toEqual(initialStateSnapshot.nodes);
 		});
 	});
 });
