@@ -110,7 +110,12 @@ describe("graphStore", () => {
 
 			const state = useGraphStore.getState();
 			expect(state.edges).toHaveLength(1);
-			expect(state.edges[0]).toEqual(edge);
+			expect(state.edges[0]).toEqual({
+				...edge,
+				style: { stroke: "#b1b1b7", strokeWidth: 1 },
+				animated: false,
+				data: { type: undefined },
+			});
 		});
 
 		it("should not add duplicate edges", () => {
@@ -183,7 +188,13 @@ describe("graphStore", () => {
 
 			const state = useGraphStore.getState();
 			expect(state.nodes).toEqual(persistedState.nodes);
-			expect(state.edges).toEqual(persistedState.edges);
+			expect(state.edges).toEqual([
+				{
+					...persistedState.edges![0],
+					style: { stroke: "#b1b1b7", strokeWidth: 1 },
+					animated: false,
+				},
+			]);
 			expect(state.viewport).toEqual(persistedState.viewport);
 			expect(state.nodeIdCounter).toBe(5);
 		});
@@ -504,8 +515,8 @@ describe("updateEdgeType", () => {
 			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
 			const otherEdge = state.edges.find((e) => e.id === "e2-1");
 
-			expect(updatedEdge?.type).toBe(newType);
-			expect(otherEdge?.type).toBeUndefined(); // Ensure other edges are unaffected
+			expect(updatedEdge?.data?.type).toBe(newType);
+			expect(otherEdge?.data?.type).toBeUndefined();
 		});
 
 		it("should update the type of an edge that initially had no type", () => {
@@ -517,7 +528,7 @@ describe("updateEdgeType", () => {
 
 			const state = useGraphStore.getState();
 			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
-			expect(updatedEdge?.type).toBe(newType);
+			expect(updatedEdge?.data?.type).toBe(newType);
 		});
 
 
@@ -541,6 +552,6 @@ describe("updateEdgeType", () => {
 
 			const state = useGraphStore.getState();
 			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
-			expect(updatedEdge?.type).toBe("");
+			expect(updatedEdge?.data?.type).toBe("");
 		});
 	});

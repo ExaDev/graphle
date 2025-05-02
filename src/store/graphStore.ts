@@ -1,5 +1,6 @@
+import React from "react"; // Import React for CSSProperties
 import {
-	addEdge,
+	addEdge as rfAddEdge, // Rename to avoid conflict
 	applyEdgeChanges,
 	applyNodeChanges,
 	Connection,
@@ -24,9 +25,15 @@ export type NodeData = {
 	type?: string;
 };
 
+export type EdgeData = {
+	type?: string;
+	label?: string;
+};
+
 export type GraphState = {
 	nodes: Node<NodeData>[];
-	edges: Edge[];
+	edges: Edge<EdgeData>[]; // Specify EdgeData type
+	// Removed duplicate edges property
 	viewport: Viewport;
 	nodeIdCounter: number;
 	selectedNodeId: string | null;
@@ -36,12 +43,12 @@ export type GraphState = {
 	onEdgesChange: OnEdgesChange;
 	onConnect: OnConnect;
 	setNodes: (nodes: Node<NodeData>[]) => void;
-	setEdges: (edges: Edge[]) => void;
+	setEdges: (edges: Edge<EdgeData>[]) => void; // Specify EdgeData type
 	setViewport: (viewport: Viewport) => void;
 	setSelectedNodeId: (nodeId: string | null) => void;
 	setSelectedEdgeId: (edgeId: string | null) => void;
 	addNode: (nodeData: Partial<Node<NodeData>>) => void;
-	addEdge: (edge: Edge | Connection) => void;
+	addEdge: (edge: Edge<EdgeData> | Connection) => void; // Specify EdgeData type
 	deleteElements: (payload: DeleteElementsPayload) => void;
 	updateNodeData: (nodeId: string, data: Partial<NodeData>) => void;
 	updateEdgeLabel: (edgeId: string, label: string) => void;
@@ -76,6 +83,24 @@ export const initialState: Omit<
 	_isHydrated: false,
 };
 
+// Define edge styles based on type
+const edgeStyles: Record<string, React.CSSProperties> = {
+	default: { stroke: "#b1b1b7", strokeWidth: 1 },
+	dependency: { stroke: "#ff0072", strokeWidth: 2 },
+	inheritance: { stroke: "#00ff7f", strokeWidth: 2, strokeDasharray: "5,5" },
+	composition: { stroke: "#007fff", strokeWidth: 1 }, // Removed animated property
+};
+
+// Helper function to get style based on type
+function getEdgeStyle(type?: string): React.CSSProperties {
+	return edgeStyles[type || "default"] || edgeStyles.default;
+}
+
+// Helper function to determine if edge should be animated
+function isEdgeAnimated(type?: string): boolean {
+	return type === "composition";
+}
+
 export const useGraphStore = create<GraphState>((set, get) => ({
 	...initialState,
 
@@ -95,7 +120,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 	setNodes: (nodes: Node<NodeData>[]) => {
 		set({ nodes });
 	},
-	setEdges: (edges: Edge[]) => {
+	setEdges: (edges: Edge<EdgeData>[]) => { // Specify EdgeData type
 		set({ edges });
 	},
 	setViewport: (viewport: Viewport) => {
@@ -127,9 +152,22 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 			nodeIdCounter: state.nodeIdCounter + 1,
 		}));
 	},
-	addEdge: (edge: Edge | Connection) => {
+	addEdge: (newEdgeOrConnection: Edge<EdgeData> | Connection) => {
+		// Apply style and animation when adding edge
+		const edgeType =
+			"data" in newEdgeOrConnection ? newEdgeOrConnection.data?.type : undefined;
+		const edgeWithStyleAndAnimation = {
+			...newEdgeOrConnection,
+			style: getEdgeStyle(edgeType),
+			animated: isEdgeAnimated(edgeType), // Set animated property directly
+			// Ensure data object exists and includes type
+			data: {
+				...("data" in newEdgeOrConnection ? newEdgeOrConnection.data : {}),
+				type: edgeType,
+			},
+		};
 		set((state) => ({
-			edges: addEdge(edge, state.edges),
+			edges: rfAddEdge(edgeWithStyleAndAnimation, state.edges), // Use renamed import
 		}));
 	},
 	deleteElements: ({
@@ -189,9 +227,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 		set((state) => ({
 			edges: state.edges.map((edge) => {
 				if (edge.id === edgeId) {
+					// Also update style and animation when type changes
 					return {
 						...edge,
-						type: type,
+						data: { ...edge.data, type: type }, // Store type in data object
+						style: getEdgeStyle(type),
+						animated: isEdgeAnimated(type), // Update animated property
 					};
 				}
 				return edge;
@@ -199,9 +240,20 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 		}));
 	},
 	hydrate: (newState: Partial<GraphState>) => {
+		// Apply styles and animation to hydrated edges
+		const hydratedEdges = (newState.edges || []).map((edge) => {
+			const edgeType = edge.data?.type;
+			return {
+				...edge,
+				style: getEdgeStyle(edgeType),
+				animated: isEdgeAnimated(edgeType), // Set animated property
+			};
+		});
+
 		set((state) => ({
 			...initialState,
 			...newState,
+			edges: hydratedEdges, // Use edges with applied styles
 			_isHydrated: true,
 			nodeIdCounter:
 				typeof newState.nodeIdCounter === "number"
