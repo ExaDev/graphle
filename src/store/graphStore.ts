@@ -45,6 +45,7 @@ export type GraphState = {
 	deleteElements: (payload: DeleteElementsPayload) => void;
 	updateNodeData: (nodeId: string, data: Partial<NodeData>) => void;
 	updateEdgeLabel: (edgeId: string, label: string) => void;
+	updateEdgeType: (edgeId: string, type: string) => void;
 	hydrate: (state: Partial<GraphState>) => void;
 };
 
@@ -64,6 +65,7 @@ export const initialState: Omit<
 	| "hydrate"
 	| "updateNodeData"
 	| "updateEdgeLabel"
+	| "updateEdgeType"
 > = {
 	nodes: [],
 	edges: [],
@@ -177,6 +179,19 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 					return {
 						...edge,
 						label: label,
+					};
+				}
+				return edge;
+			}),
+		}));
+	},
+	updateEdgeType: (edgeId: string, type: string) => {
+		set((state) => ({
+			edges: state.edges.map((edge) => {
+				if (edge.id === edgeId) {
+					return {
+						...edge,
+						type: type,
 					};
 				}
 				return edge;

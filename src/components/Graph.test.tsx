@@ -1,6 +1,6 @@
 import { GraphState, initialState, useGraphStore } from "@/store/graphStore";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import ReactFlow, { Connection, Edge, Node, ReactFlowProps } from "reactflow";
+import { Connection, Edge, Node, ReactFlowProps } from "reactflow";
 import { beforeEach, describe, expect, it, Mock, vi } from "vitest";
 import Graph from "./Graph";
 
@@ -37,6 +37,7 @@ describe("Graph Component", () => {
 	let mockDeleteElements: Mock;
 	let mockUpdateNodeData: Mock; // Renamed from mockUpdateNodeLabel for consistency
 	let mockUpdateEdgeLabel: Mock;
+	let mockUpdateEdgeType: Mock; // Added mock for edge type update
 	let mockSetSelectedNodeId: Mock;
 	let mockSetSelectedEdgeId: Mock;
 
@@ -53,6 +54,7 @@ describe("Graph Component", () => {
 		mockDeleteElements = vi.fn();
 		mockUpdateNodeData = vi.fn();
 		mockUpdateEdgeLabel = vi.fn();
+		mockUpdateEdgeType = vi.fn(); // Initialize mock
 		mockSetSelectedNodeId = vi.fn();
 		mockSetSelectedEdgeId = vi.fn();
 
@@ -70,6 +72,7 @@ describe("Graph Component", () => {
 			deleteElements: mockDeleteElements,
 			updateNodeData: mockUpdateNodeData,
 			updateEdgeLabel: mockUpdateEdgeLabel,
+			updateEdgeType: mockUpdateEdgeType, // Add mock to state
 			setSelectedNodeId: mockSetSelectedNodeId,
 			setSelectedEdgeId: mockSetSelectedEdgeId,
 		};

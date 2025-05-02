@@ -9,6 +9,7 @@ const DetailSidebar: React.FC = () => {
 	const selectedEdgeId = useGraphStore((state) => state.selectedEdgeId);
 	const updateNodeData = useGraphStore((state) => state.updateNodeData);
 	const updateEdgeLabel = useGraphStore((state) => state.updateEdgeLabel);
+	const updateEdgeType = useGraphStore((state) => state.updateEdgeType); // Import the new action
 
 	// Find selected elements based on IDs
 	const selectedNode = nodes.find((node) => node.id === selectedNodeId);
@@ -17,22 +18,25 @@ const DetailSidebar: React.FC = () => {
 	const [nodeLabel, setNodeLabel] = useState<string>("");
 	const [nodeType, setNodeType] = useState<string>("");
 	const [edgeLabel, setEdgeLabel] = useState<string>("");
+	const [edgeType, setEdgeType] = useState<string>(""); // Add state for edge type
 
 	useEffect(() => {
 		if (selectedNode) {
 			setNodeLabel(selectedNode.data.label ?? "");
 			setNodeType(selectedNode.data.type ?? "");
-			setEdgeLabel(""); // Clear edge label state
+			setEdgeLabel(""); // Clear edge states
+			setEdgeType("");
 		} else if (selectedEdge) {
-			// Ensure label is treated as a string
 			setEdgeLabel(String(selectedEdge.label ?? ""));
-			setNodeLabel(""); // Clear node label state
-			setNodeType(""); // Clear node type state
+			setEdgeType(selectedEdge.type ?? ""); // Set edge type state
+			setNodeLabel(""); // Clear node states
+			setNodeType("");
 		} else {
 			// Clear all if nothing is selected
 			setNodeLabel("");
 			setNodeType("");
 			setEdgeLabel("");
+			setEdgeType("");
 		}
 	}, [selectedNode, selectedEdge]);
 
@@ -79,6 +83,23 @@ const DetailSidebar: React.FC = () => {
 	const handleEdgeKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
 		if (event.key === "Enter") {
 			handleEdgeSave((event.target as HTMLInputElement).value);
+			(event.target as HTMLInputElement).blur();
+		}
+	};
+
+	const handleEdgeTypeChange = (event: ChangeEvent<HTMLInputElement>) => {
+		setEdgeType(event.target.value);
+	};
+
+	const handleEdgeTypeSave = (value: string) => {
+		if (selectedEdge) {
+			updateEdgeType(selectedEdge.id, value);
+		}
+	};
+
+	const handleEdgeTypeKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+		if (event.key === "Enter") {
+			handleEdgeTypeSave((event.target as HTMLInputElement).value);
 			(event.target as HTMLInputElement).blur();
 		}
 	};
@@ -195,6 +216,21 @@ const DetailSidebar: React.FC = () => {
 								onChange={handleEdgeLabelChange}
 								onBlur={(e) => handleEdgeSave(e.target.value)}
 								onKeyDown={handleEdgeKeyDown}
+								style={inputStyle}
+								className="border rounded px-2 py-1 w-full"
+							/>
+						</div>
+						<div>
+							<label htmlFor="edge-type-input" style={labelStyle}>
+								Type:
+							</label>
+							<input
+								id="edge-type-input"
+								type="text"
+								value={edgeType}
+								onChange={handleEdgeTypeChange}
+								onBlur={(e) => handleEdgeTypeSave(e.target.value)}
+								onKeyDown={handleEdgeTypeKeyDown}
 								style={inputStyle}
 								className="border rounded px-2 py-1 w-full"
 							/>

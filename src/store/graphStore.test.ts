@@ -1,6 +1,6 @@
 import { act } from "@testing-library/react";
 import { Connection, Edge } from "reactflow";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { GraphState, initialState, NodeData, useGraphStore } from "./graphStore";
 
 const resetStore = () => {
@@ -483,3 +483,64 @@ describe("deleteElements", () => {
 		});
 	});
 });
+describe("updateEdgeType", () => {
+		beforeEach(() => {
+			act(() => {
+				useGraphStore.getState().addNode({ id: "n1" });
+				useGraphStore.getState().addNode({ id: "n2" });
+				useGraphStore.getState().addEdge({ id: "e1-2", source: "n1", target: "n2", type: "initialType" });
+				useGraphStore.getState().addEdge({ id: "e2-1", source: "n2", target: "n1" }); // Edge without initial type
+			});
+		});
+
+		it("should update the type of the specified edge", () => {
+			const edgeIdToUpdate = "e1-2";
+			const newType = "updatedType";
+			act(() => {
+				useGraphStore.getState().updateEdgeType(edgeIdToUpdate, newType);
+			});
+
+			const state = useGraphStore.getState();
+			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
+			const otherEdge = state.edges.find((e) => e.id === "e2-1");
+
+			expect(updatedEdge?.type).toBe(newType);
+			expect(otherEdge?.type).toBeUndefined(); // Ensure other edges are unaffected
+		});
+
+		it("should update the type of an edge that initially had no type", () => {
+			const edgeIdToUpdate = "e2-1";
+			const newType = "newlySetType";
+			act(() => {
+				useGraphStore.getState().updateEdgeType(edgeIdToUpdate, newType);
+			});
+
+			const state = useGraphStore.getState();
+			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
+			expect(updatedEdge?.type).toBe(newType);
+		});
+
+
+		it("should handle updating a non-existent edge gracefully", () => {
+			const initialStateSnapshot = useGraphStore.getState();
+			const nonExistentEdgeId = "edge_does_not_exist";
+			act(() => {
+				useGraphStore.getState().updateEdgeType(nonExistentEdgeId, "Doesn't Matter");
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.edges).toEqual(initialStateSnapshot.edges);
+		});
+
+		it("should update type to an empty string", () => {
+			const edgeIdToUpdate = "e1-2";
+			const newType = "";
+			act(() => {
+				useGraphStore.getState().updateEdgeType(edgeIdToUpdate, newType);
+			});
+
+			const state = useGraphStore.getState();
+			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
+			expect(updatedEdge?.type).toBe("");
+		});
+	});
