@@ -8,7 +8,7 @@ import React, {
 import { Handle, NodeProps, Position } from "reactflow";
 import { useGraphStore } from "../store/graphStore";
 
-const nodeStyle = {
+const baseNodeStyle = {
 	border: "1px solid #bbb",
 	padding: "10px 15px",
 	borderRadius: 5,
@@ -17,15 +17,29 @@ const nodeStyle = {
 	textAlign: "center" as const,
 };
 
+const typeStyles: { [key: string]: React.CSSProperties } = {
+	Person: { backgroundColor: "#cfe2f3" },
+	Place: { backgroundColor: "#d9ead3" },
+	Event: { backgroundColor: "#fff2cc" },
+};
+
+const getNodeStyle = (type?: string): React.CSSProperties => {
+	const specificStyle = type ? typeStyles[type] : {};
+	return { ...baseNodeStyle, ...specificStyle };
+};
+
+
 const inputStyle = {
 	width: "100%",
 	boxSizing: "border-box" as const,
 };
 
 const EditableNode: React.FC<NodeProps> = ({ id, data }) => {
-	const updateNodeData = useGraphStore((state) => state.updateNodeData); // Use updateNodeData
+	const updateNodeData = useGraphStore((state) => state.updateNodeData);
 	const [isEditing, setIsEditing] = useState(false);
 	const [labelValue, setLabelValue] = useState(data.label || "");
+
+	const nodeStyle = getNodeStyle(data.type);
 
 	const handleDoubleClick = useCallback(() => {
 		setIsEditing(true);
@@ -38,7 +52,6 @@ const EditableNode: React.FC<NodeProps> = ({ id, data }) => {
 
 	const saveLabel = useCallback(() => {
 		if (labelValue !== data.label) {
-			// Call updateNodeData with the label field
 			updateNodeData(id, { label: labelValue });
 		}
 		setIsEditing(false);
