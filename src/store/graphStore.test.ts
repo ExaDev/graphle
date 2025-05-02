@@ -100,24 +100,61 @@ describe("graphStore", () => {
 			expect(newEdge.target).toBe("node_1");
 		});
 
-		it("should add an edge from an Edge object", () => {
-			const edge: Edge = {
+		it("should add an edge from an Edge object, preserving its label", () => {
+			const edgeWithoutLabel: Edge = {
 				id: "custom-edge-1",
 				source: "node_0",
 				target: "node_1",
 			};
+			const edgeWithLabel: Edge = {
+				id: "custom-edge-2",
+				source: "node_1",
+				target: "node_0",
+				label: "Existing Label",
+			};
+
 			act(() => {
-				useGraphStore.getState().addEdge(edge);
+				useGraphStore.getState().addEdge(edgeWithoutLabel);
+				useGraphStore.getState().addEdge(edgeWithLabel);
 			});
 
 			const state = useGraphStore.getState();
-			expect(state.edges).toHaveLength(1);
-			expect(state.edges[0]).toEqual({
-				...edge,
+			expect(state.edges).toHaveLength(2);
+
+			const addedEdge1 = state.edges.find(e => e.id === "custom-edge-1");
+			const addedEdge2 = state.edges.find(e => e.id === "custom-edge-2");
+
+			expect(addedEdge1).toEqual({
+				...edgeWithoutLabel,
+				label: undefined, // Explicitly check label is undefined, not the default
 				style: { stroke: "#b1b1b7", strokeWidth: 1 },
 				animated: false,
 				data: { type: undefined },
 			});
+			expect(addedEdge2).toEqual({
+				...edgeWithLabel,
+				label: "Existing Label", // Check existing label is preserved
+				style: { stroke: "#b1b1b7", strokeWidth: 1 },
+				animated: false,
+				data: { type: undefined },
+			});
+		});
+it("should add an edge with a default label from a Connection object", () => {
+			const connection: Connection = {
+				source: "node_0",
+				target: "node_1",
+				sourceHandle: null,
+				targetHandle: null,
+			};
+			act(() => {
+				useGraphStore.getState().addEdge(connection);
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.edges).toHaveLength(1);
+			const newEdge = state.edges[0];
+			expect(newEdge.label).toBe("New Edge");
+			expect(newEdge.data?.type).toBeUndefined(); // Ensure type is still handled correctly
 		});
 
 		it("should not add duplicate edges", () => {

@@ -161,19 +161,30 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 		}));
 	},
 	addEdge: (newEdgeOrConnection: Edge<EdgeData> | Connection) => {
+		// Determine if it's a Connection object (from onConnect) or a full Edge object
+		const isConnection = !("id" in newEdgeOrConnection);
 		const edgeType =
 			"data" in newEdgeOrConnection ? newEdgeOrConnection.data?.type : undefined;
-		const edgeWithStyleAndAnimation = {
+
+		// Prepare the edge object, adding a default label if it's a new connection
+		const edgeToAdd = {
 			...newEdgeOrConnection,
 			style: getEdgeStyle(edgeType),
 			animated: isEdgeAnimated(edgeType),
+			label: isConnection
+				? "New Edge"
+				: "label" in newEdgeOrConnection
+				  ? newEdgeOrConnection.label
+				  : undefined, // Keep existing label if it's an Edge object
 			data: {
 				...("data" in newEdgeOrConnection ? newEdgeOrConnection.data : {}),
 				type: edgeType,
 			},
 		};
+
 		set((state) => ({
-			edges: rfAddEdge(edgeWithStyleAndAnimation, state.edges),
+			// rfAddEdge handles ID generation for Connection objects
+			edges: rfAddEdge(edgeToAdd, state.edges),
 		}));
 	},
 	deleteElements: ({
