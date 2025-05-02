@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import ReactFlow, {
 	Background,
 	Controls,
+	MiniMap,
 	Node,
 	OnEdgesDelete,
 	OnNodesDelete,
@@ -26,7 +27,6 @@ function GraphComponent() {
 	const addNode = useGraphStore((state) => state.addNode);
 	const deleteElements = useGraphStore((state) => state.deleteElements);
 
-
 	const handleAddNode = () => {
 		addNode({});
 	};
@@ -35,22 +35,32 @@ function GraphComponent() {
 		(nodesToDelete) => {
 			deleteElements({ nodesToDelete, edgesToDelete: [] });
 		},
-		[deleteElements]
+		[deleteElements],
 	);
 
 	const handleEdgesDelete: OnEdgesDelete = useCallback(
 		(edgesToDelete) => {
 			deleteElements({ nodesToDelete: [], edgesToDelete });
 		},
-		[deleteElements]
+		[deleteElements],
 	);
-
 
 	return (
 		<div style={{ height: "100vh", width: "100%", position: "relative" }}>
 			<button
 				onClick={handleAddNode}
-				style={{ position: "absolute", top: 10, left: 10, zIndex: 4 }}
+				style={{
+					position: "absolute",
+					top: 15,
+					left: 15,
+					zIndex: 4,
+					padding: "8px 15px",
+					background: "#fff",
+					border: "1px solid #ccc",
+					borderRadius: "4px",
+					cursor: "pointer",
+					boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+				}}
 			>
 				Add Node
 			</button>
@@ -67,6 +77,7 @@ function GraphComponent() {
 			>
 				<Controls />
 				<Background />
+				<MiniMap />
 			</ReactFlow>
 		</div>
 	);
