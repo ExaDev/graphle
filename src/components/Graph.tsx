@@ -9,7 +9,7 @@ import ReactFlow, {
 	OnNodesDelete,
 	ReactFlowProvider,
 	NodeTypes,
-	useReactFlow, // Import useReactFlow
+	useReactFlow,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -83,7 +83,7 @@ function GraphComponent() {
 				onEdgesDelete={handleEdgesDelete}
 				onNodeClick={handleNodeClick}
 				onEdgeClick={handleEdgeClick}
-				onDoubleClick={handlePaneDoubleClick} // Correct prop name for pane double click
+				onDoubleClick={handlePaneDoubleClick}
 				nodeTypes={nodeTypes}
 				fitView
 			>
