@@ -20,6 +20,8 @@ describe("graphStore", () => {
 		expect(state.edges).toEqual([]);
 		expect(state.viewport).toEqual({ x: 0, y: 0, zoom: 1 });
 		expect(state.nodeIdCounter).toBe(0);
+		expect(state.selectedNodeId).toBeNull();
+		expect(state.selectedEdgeId).toBeNull();
 	});
 
 	describe("addNode", () => {
@@ -385,6 +387,99 @@ describe("deleteElements", () => {
 
 			const state = useGraphStore.getState();
 			expect(state.nodes).toEqual(initialStateSnapshot.nodes);
+		});
+	});
+
+	describe("setSelectedNodeId", () => {
+		it("should set the selected node ID and clear selected edge ID", () => {
+			act(() => {
+				useGraphStore.getState().setSelectedEdgeId("some-edge-id"); // Pre-set edge
+				useGraphStore.getState().setSelectedNodeId("node_1");
+			});
+			const state = useGraphStore.getState();
+			expect(state.selectedNodeId).toBe("node_1");
+			expect(state.selectedEdgeId).toBeNull();
+		});
+
+		it("should clear the selected node ID", () => {
+			act(() => {
+				useGraphStore.getState().setSelectedNodeId("node_1"); // Pre-set node
+				useGraphStore.getState().setSelectedNodeId(null);
+			});
+			const state = useGraphStore.getState();
+			expect(state.selectedNodeId).toBeNull();
+			expect(state.selectedEdgeId).toBeNull();
+		});
+	});
+
+	describe("setSelectedEdgeId", () => {
+		it("should set the selected edge ID and clear selected node ID", () => {
+			act(() => {
+				useGraphStore.getState().setSelectedNodeId("some-node-id"); // Pre-set node
+				useGraphStore.getState().setSelectedEdgeId("edge_1");
+			});
+			const state = useGraphStore.getState();
+			expect(state.selectedEdgeId).toBe("edge_1");
+			expect(state.selectedNodeId).toBeNull();
+		});
+
+		it("should clear the selected edge ID", () => {
+			act(() => {
+				useGraphStore.getState().setSelectedEdgeId("edge_1"); // Pre-set edge
+				useGraphStore.getState().setSelectedEdgeId(null);
+			});
+			const state = useGraphStore.getState();
+			expect(state.selectedEdgeId).toBeNull();
+			expect(state.selectedNodeId).toBeNull();
+		});
+	});
+
+	describe("updateEdgeLabel", () => {
+		beforeEach(() => {
+			act(() => {
+				useGraphStore.getState().addNode({ id: "n1" });
+				useGraphStore.getState().addNode({ id: "n2" });
+				useGraphStore.getState().addEdge({ id: "e1-2", source: "n1", target: "n2", label: "Initial" });
+				useGraphStore.getState().addEdge({ id: "e2-1", source: "n2", target: "n1", label: "Another" });
+			});
+		});
+
+		it("should update the label of the specified edge", () => {
+			const edgeIdToUpdate = "e1-2";
+			const newLabel = "Updated Label";
+			act(() => {
+				useGraphStore.getState().updateEdgeLabel(edgeIdToUpdate, newLabel);
+			});
+
+			const state = useGraphStore.getState();
+			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
+			const otherEdge = state.edges.find((e) => e.id === "e2-1");
+
+			expect(updatedEdge?.label).toBe(newLabel);
+			expect(otherEdge?.label).toBe("Another"); // Ensure other edges are unaffected
+		});
+
+		it("should handle updating a non-existent edge gracefully", () => {
+			const initialStateSnapshot = useGraphStore.getState();
+			const nonExistentEdgeId = "edge_does_not_exist";
+			act(() => {
+				useGraphStore.getState().updateEdgeLabel(nonExistentEdgeId, "Doesn't Matter");
+			});
+
+			const state = useGraphStore.getState();
+			expect(state.edges).toEqual(initialStateSnapshot.edges);
+		});
+
+		it("should update label to an empty string", () => {
+			const edgeIdToUpdate = "e1-2";
+			const newLabel = "";
+			act(() => {
+				useGraphStore.getState().updateEdgeLabel(edgeIdToUpdate, newLabel);
+			});
+
+			const state = useGraphStore.getState();
+			const updatedEdge = state.edges.find((e) => e.id === edgeIdToUpdate);
+			expect(updatedEdge?.label).toBe("");
 		});
 	});
 });

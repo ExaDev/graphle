@@ -1,9 +1,10 @@
-import { useCallback, useMemo } from "react";
+import React, { useCallback } from "react"; // Added React import for MouseEvent type
 import ReactFlow, {
 	Background,
 	Controls,
 	MiniMap,
 	Node,
+	Edge,
 	OnEdgesDelete,
 	OnNodesDelete,
 	ReactFlowProvider,
@@ -26,6 +27,8 @@ function GraphComponent() {
 	const onConnect = useGraphStore((state) => state.onConnect);
 	const addNode = useGraphStore((state) => state.addNode);
 	const deleteElements = useGraphStore((state) => state.deleteElements);
+	const setSelectedNodeId = useGraphStore((state) => state.setSelectedNodeId);
+	const setSelectedEdgeId = useGraphStore((state) => state.setSelectedEdgeId);
 
 	const handleAddNode = () => {
 		addNode({});
@@ -43,6 +46,20 @@ function GraphComponent() {
 			deleteElements({ nodesToDelete: [], edgesToDelete });
 		},
 		[deleteElements],
+	);
+
+	const handleNodeClick = useCallback(
+		(_event: React.MouseEvent, node: Node) => {
+			setSelectedNodeId(node.id);
+		},
+		[setSelectedNodeId],
+	);
+
+	const handleEdgeClick = useCallback(
+		(_event: React.MouseEvent, edge: Edge) => {
+			setSelectedEdgeId(edge.id);
+		},
+		[setSelectedEdgeId],
 	);
 
 	return (
@@ -72,6 +89,8 @@ function GraphComponent() {
 				onConnect={onConnect}
 				onNodesDelete={handleNodesDelete}
 				onEdgesDelete={handleEdgesDelete}
+				onNodeClick={handleNodeClick}
+				onEdgeClick={handleEdgeClick}
 				nodeTypes={nodeTypes}
 				fitView
 			>

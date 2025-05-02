@@ -35,7 +35,10 @@ describe("Graph Component", () => {
 	let mockAddNode: Mock;
 	let mockHydrate: Mock;
 	let mockDeleteElements: Mock;
-	let mockUpdateNodeLabel: Mock;
+	let mockUpdateNodeData: Mock; // Renamed from mockUpdateNodeLabel for consistency
+	let mockUpdateEdgeLabel: Mock;
+	let mockSetSelectedNodeId: Mock;
+	let mockSetSelectedEdgeId: Mock;
 
 	const resetStoreMock = () => {
 		mockOnNodesChange = vi.fn();
@@ -48,7 +51,10 @@ describe("Graph Component", () => {
 		mockAddNode = vi.fn();
 		mockHydrate = vi.fn();
 		mockDeleteElements = vi.fn();
-		mockUpdateNodeLabel = vi.fn();
+		mockUpdateNodeData = vi.fn();
+		mockUpdateEdgeLabel = vi.fn();
+		mockSetSelectedNodeId = vi.fn();
+		mockSetSelectedEdgeId = vi.fn();
 
 		const mockState: GraphState = {
 			...initialState,
@@ -62,7 +68,10 @@ describe("Graph Component", () => {
 			addEdge: mockAddEdge,
 			hydrate: mockHydrate,
 			deleteElements: mockDeleteElements,
-			updateNodeLabel: mockUpdateNodeLabel,
+			updateNodeData: mockUpdateNodeData,
+			updateEdgeLabel: mockUpdateEdgeLabel,
+			setSelectedNodeId: mockSetSelectedNodeId,
+			setSelectedEdgeId: mockSetSelectedEdgeId,
 		};
 
 		(useGraphStore as unknown as Mock).mockImplementation(
@@ -172,5 +181,52 @@ it("calls deleteElements from the store when ReactFlow's onNodesDelete is trigge
 			nodesToDelete: [],
 			edgesToDelete,
 		});
+	});
+
+	it("calls setSelectedNodeId from the store when ReactFlow's onNodeClick is triggered", () => {
+		render(<Graph />);
+
+		expect(capturedProps).not.toBeNull();
+		expect(capturedProps?.onNodeClick).toBeInstanceOf(Function);
+
+		const nodeToClick: Node = {
+			id: "node_to_click",
+			position: { x: 0, y: 0 },
+			data: { label: "Click Me" },
+		};
+		const mockEvent = {} as React.MouseEvent; // Mock event object
+
+		act(() => {
+			if (capturedProps?.onNodeClick) {
+				capturedProps.onNodeClick(mockEvent, nodeToClick);
+			}
+		});
+
+		expect(mockSetSelectedNodeId).toHaveBeenCalledTimes(1);
+		expect(mockSetSelectedNodeId).toHaveBeenCalledWith(nodeToClick.id);
+	});
+
+	it("calls setSelectedEdgeId from the store when ReactFlow's onEdgeClick is triggered", () => {
+		render(<Graph />);
+
+		expect(capturedProps).not.toBeNull();
+		expect(capturedProps?.onEdgeClick).toBeInstanceOf(Function);
+
+		const edgeToClick: Edge = {
+			id: "edge_to_click",
+			source: "a",
+			target: "b",
+			label: "Click Me",
+		};
+		const mockEvent = {} as React.MouseEvent; // Mock event object
+
+		act(() => {
+			if (capturedProps?.onEdgeClick) {
+				capturedProps.onEdgeClick(mockEvent, edgeToClick);
+			}
+		});
+
+		expect(mockSetSelectedEdgeId).toHaveBeenCalledTimes(1);
+		expect(mockSetSelectedEdgeId).toHaveBeenCalledWith(edgeToClick.id);
 	});
 });

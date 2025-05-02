@@ -1,134 +1,209 @@
-import React, { useState, useEffect, ChangeEvent, KeyboardEvent } from 'react';
-import { useGraphStore } from '../store/graphStore';
+import React, { ChangeEvent, KeyboardEvent, useEffect, useState } from "react";
+import { NodeData, useGraphStore } from "../store/graphStore"; // Import NodeData type
 
-const NodeDetailSidebar: React.FC = () => {
+const DetailSidebar: React.FC = () => {
+	// Use individual selectors for each state slice
 	const nodes = useGraphStore((state) => state.nodes);
+	const edges = useGraphStore((state) => state.edges);
+	const selectedNodeId = useGraphStore((state) => state.selectedNodeId);
+	const selectedEdgeId = useGraphStore((state) => state.selectedEdgeId);
 	const updateNodeData = useGraphStore((state) => state.updateNodeData);
-	const selectedNode = nodes.find((node) => node.selected);
+	const updateEdgeLabel = useGraphStore((state) => state.updateEdgeLabel);
 
-	const [label, setLabel] = useState<string>("");
-	const [type, setType] = useState<string>("");
+	// Find selected elements based on IDs
+	const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+	const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
 
-	// Update local state when the selected node changes
+	const [nodeLabel, setNodeLabel] = useState<string>("");
+	const [nodeType, setNodeType] = useState<string>("");
+	const [edgeLabel, setEdgeLabel] = useState<string>("");
+
 	useEffect(() => {
 		if (selectedNode) {
-			setLabel(selectedNode.data.label ?? "");
-			setType(selectedNode.data.type ?? "");
+			setNodeLabel(selectedNode.data.label ?? "");
+			setNodeType(selectedNode.data.type ?? "");
+			setEdgeLabel(""); // Clear edge label state
+		} else if (selectedEdge) {
+			// Ensure label is treated as a string
+			setEdgeLabel(String(selectedEdge.label ?? ""));
+			setNodeLabel(""); // Clear node label state
+			setNodeType(""); // Clear node type state
+		} else {
+			// Clear all if nothing is selected
+			setNodeLabel("");
+			setNodeType("");
+			setEdgeLabel("");
 		}
-	}, [selectedNode]);
+	}, [selectedNode, selectedEdge]);
 
- if (!selectedNode) {
-  return null;
- }
+	if (!selectedNode && !selectedEdge) {
+		return null;
+	}
 
- const handleLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
-  setLabel(event.target.value);
- };
+	// --- Node Handlers ---
+	const handleNodeLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
+		setNodeLabel(event.target.value);
+	};
 
- const handleTypeChange = (event: ChangeEvent<HTMLInputElement>) => {
-  setType(event.target.value);
- };
+	const handleNodeTypeChange = (event: ChangeEvent<HTMLInputElement>) => {
+		setNodeType(event.target.value);
+	};
 
- const handleSave = (field: 'label' | 'type', value: string) => {
-  if (selectedNode) {
-  	updateNodeData(selectedNode.id, { [field]: value });
-  }
- };
+	const handleNodeSave = (field: keyof NodeData, value: string) => {
+		if (selectedNode) {
+			updateNodeData(selectedNode.id, { [field]: value });
+		}
+	};
 
- const handleKeyDown = (
-  event: KeyboardEvent<HTMLInputElement>,
-  field: 'label' | 'type'
- ) => {
-  if (event.key === 'Enter') {
-  	handleSave(field, (event.target as HTMLInputElement).value);
-  	(event.target as HTMLInputElement).blur(); // Remove focus after saving
-  }
- };
+	const handleNodeKeyDown = (
+		event: KeyboardEvent<HTMLInputElement>,
+		field: keyof NodeData
+	) => {
+		if (event.key === "Enter") {
+			handleNodeSave(field, (event.target as HTMLInputElement).value);
+			(event.target as HTMLInputElement).blur();
+		}
+	};
 
- const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '0.5rem',
-  border: '1px solid #e2e8f0',
-  borderRadius: '0.25rem',
-  marginBottom: '0.75rem',
- };
+	// --- Edge Handlers ---
+	const handleEdgeLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
+		setEdgeLabel(event.target.value);
+	};
 
- const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontWeight: 600,
-  marginBottom: '0.25rem',
- };
+	const handleEdgeSave = (value: string) => {
+		if (selectedEdge) {
+			updateEdgeLabel(selectedEdge.id, value);
+		}
+	};
 
- const sidebarStyle: React.CSSProperties = {
-  position: 'fixed',
-    top: 0,
-    right: 0,
-    height: '100%',
-    width: '250px',
-    backgroundColor: '#f7fafc',
-    padding: '1rem',
-    boxShadow: '0 0 10px rgba(0, 0, 0, 0.1)',
-    borderLeft: '1px solid #e2e8f0',
-    zIndex: 10,
-    overflowY: 'auto',
-  };
+	const handleEdgeKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+		if (event.key === "Enter") {
+			handleEdgeSave((event.target as HTMLInputElement).value);
+			(event.target as HTMLInputElement).blur();
+		}
+	};
 
- return (
-  <div style={sidebarStyle}>
-  	<h2 className="text-lg font-semibold mb-4">Node Details</h2>
-  	<div className="space-y-4">
-  		<div>
-  			<span className="font-medium">ID:</span> {selectedNode.id}
-  		</div>
-  		<div>
-  			<label htmlFor="node-label-input" style={labelStyle}>
-  				Label:
-  			</label>
-  			<input
-  				id="node-label-input"
-  				type="text"
-  				value={label}
-  				onChange={handleLabelChange}
-  				onBlur={(e) => handleSave('label', e.target.value)}
-  				onKeyDown={(e) => handleKeyDown(e, 'label')}
-  				style={inputStyle}
-  				className="border rounded px-2 py-1 w-full"
-  			/>
-  		</div>
-  		<div>
-  			<label htmlFor="node-type-input" style={labelStyle}>
-  				Type:
-  			</label>
-  			<input
-  				id="node-type-input"
-  				type="text"
-  				value={type}
-  				onChange={handleTypeChange}
-  				onBlur={(e) => handleSave('type', e.target.value)}
-  				onKeyDown={(e) => handleKeyDown(e, 'type')}
-  				style={inputStyle}
-  				className="border rounded px-2 py-1 w-full"
-  			/>
-  		</div>
-  		{/* Display other data properties non-editably */}
-  		{Object.entries(selectedNode.data)
-  			.filter(([key]) => key !== 'label' && key !== 'type')
-  			.map(([key, value]) => (
-  				<div key={key}>
-  					<span
-  						style={{
-  							fontWeight: 600,
-  							textTransform: 'capitalize',
-  						}}
-  					>
-  						{key}:
-  					</span>{" "}
-  					{String(value)}
-  				</div>
-  			))}
-  	</div>
-  </div>
- );
+	// --- Styles ---
+	const inputStyle: React.CSSProperties = {
+		width: "100%",
+		padding: "0.5rem",
+		border: "1px solid #e2e8f0",
+		borderRadius: "0.25rem",
+		marginBottom: "0.75rem",
+	};
+
+	const labelStyle: React.CSSProperties = {
+		display: "block",
+		fontWeight: 600,
+		marginBottom: "0.25rem",
+	};
+
+	const sidebarStyle: React.CSSProperties = {
+		position: "fixed",
+		top: 0,
+		right: 0,
+		height: "100%",
+		width: "250px",
+		backgroundColor: "#f7fafc",
+		padding: "1rem",
+		boxShadow: "0 0 10px rgba(0, 0, 0, 0.1)",
+		borderLeft: "1px solid #e2e8f0",
+		zIndex: 10,
+		overflowY: "auto",
+	};
+
+	const detailItemStyle: React.CSSProperties = {
+		marginBottom: "0.75rem",
+	};
+
+	const detailKeyStyle: React.CSSProperties = {
+		fontWeight: 600,
+		textTransform: "capitalize",
+	};
+
+	return (
+		<div style={sidebarStyle}>
+			{selectedNode && (
+				<>
+					<h2 className="text-lg font-semibold mb-4">Node Details</h2>
+					<div className="space-y-4">
+						<div style={detailItemStyle}>
+							<span style={detailKeyStyle}>ID:</span> {selectedNode.id}
+						</div>
+						<div>
+							<label htmlFor="node-label-input" style={labelStyle}>
+								Label:
+							</label>
+							<input
+								id="node-label-input"
+								type="text"
+								value={nodeLabel}
+								onChange={handleNodeLabelChange}
+								onBlur={(e) => handleNodeSave("label", e.target.value)}
+								onKeyDown={(e) => handleNodeKeyDown(e, "label")}
+								style={inputStyle}
+								className="border rounded px-2 py-1 w-full"
+							/>
+						</div>
+						<div>
+							<label htmlFor="node-type-input" style={labelStyle}>
+								Type:
+							</label>
+							<input
+								id="node-type-input"
+								type="text"
+								value={nodeType}
+								onChange={handleNodeTypeChange}
+								onBlur={(e) => handleNodeSave("type", e.target.value)}
+								onKeyDown={(e) => handleNodeKeyDown(e, "type")}
+								style={inputStyle}
+								className="border rounded px-2 py-1 w-full"
+							/>
+						</div>
+						{Object.entries(selectedNode.data)
+							.filter(([key]) => key !== "label" && key !== "type")
+							.map(([key, value]) => (
+								<div key={key} style={detailItemStyle}>
+									<span style={detailKeyStyle}>{key}:</span> {String(value)}
+								</div>
+							))}
+					</div>
+				</>
+			)}
+
+			{selectedEdge && (
+				<>
+					<h2 className="text-lg font-semibold mb-4">Edge Details</h2>
+					<div className="space-y-4">
+						<div style={detailItemStyle}>
+							<span style={detailKeyStyle}>ID:</span> {selectedEdge.id}
+						</div>
+						<div style={detailItemStyle}>
+							<span style={detailKeyStyle}>Source:</span> {selectedEdge.source}
+						</div>
+						<div style={detailItemStyle}>
+							<span style={detailKeyStyle}>Target:</span> {selectedEdge.target}
+						</div>
+						<div>
+							<label htmlFor="edge-label-input" style={labelStyle}>
+								Label:
+							</label>
+							<input
+								id="edge-label-input"
+								type="text"
+								value={edgeLabel}
+								onChange={handleEdgeLabelChange}
+								onBlur={(e) => handleEdgeSave(e.target.value)}
+								onKeyDown={handleEdgeKeyDown}
+								style={inputStyle}
+								className="border rounded px-2 py-1 w-full"
+							/>
+						</div>
+					</div>
+				</>
+			)}
+		</div>
+	);
 };
 
-export default NodeDetailSidebar;
+export default DetailSidebar; // Renamed component

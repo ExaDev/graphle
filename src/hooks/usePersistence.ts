@@ -56,7 +56,6 @@ export function usePersistence() {
 					previousNodesRef.current = savedState.nodes;
 					previousEdgesRef.current = savedState.edges;
 					previousViewportRef.current = savedState.viewport;
-					console.log("Hydrated state from localStorage.");
 				} else {
 					console.error(
 						"Invalid data found in localStorage for key:",
@@ -113,5 +112,5 @@ export function usePersistence() {
 				clearTimeout(debounceTimeoutRef.current);
 			}
 		};
-	}, [nodes, edges, viewport, _isHydrated]);
+	}, [nodes, edges, viewport]); // Removed _isHydrated dependency
 }

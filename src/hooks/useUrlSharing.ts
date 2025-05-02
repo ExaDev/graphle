@@ -1,4 +1,4 @@
-import { GraphState, useGraphStore } from "@/store/graphStore";
+import { useGraphStore } from "@/store/graphStore";
 import pako from "pako";
 import { useEffect, useMemo, useRef } from "react";
 import { Edge, Node, Viewport } from "reactflow";
@@ -83,7 +83,6 @@ export function useUrlSharing() {
 						parsedState.viewport
 					) {
 						hydrate(parsedState);
-						console.log("Hydrated state from URL hash.");
 					} else {
 						console.error(
 							"Invalid data structure found in URL hash."
@@ -140,5 +139,5 @@ export function useUrlSharing() {
 				clearTimeout(debounceTimeoutRef.current);
 			}
 		};
-	}, [nodes, edges, viewport, _isHydrated]);
+	}, [nodes, edges, viewport]); // Removed _isHydrated dependency
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Graph from "@/components/Graph";
-import NodeDetailSidebar from "@/components/NodeDetailSidebar";
+import DetailSidebar from "@/components/NodeDetailSidebar"; // Renamed import
 import { usePersistence } from "@/hooks/usePersistence";
 import { useUrlSharing } from "@/hooks/useUrlSharing";
 
@@ -18,7 +18,7 @@ const IndexPage = () => {
 			<h1>Graphle</h1>
 			<StateInitializer />
 			<Graph />
-			<NodeDetailSidebar />
+			<DetailSidebar />
 		</div>
 	);
 };

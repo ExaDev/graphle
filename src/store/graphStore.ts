@@ -29,6 +29,8 @@ export type GraphState = {
 	edges: Edge[];
 	viewport: Viewport;
 	nodeIdCounter: number;
+	selectedNodeId: string | null;
+	selectedEdgeId: string | null;
 	_isHydrated: boolean;
 	onNodesChange: OnNodesChange;
 	onEdgesChange: OnEdgesChange;
@@ -36,10 +38,13 @@ export type GraphState = {
 	setNodes: (nodes: Node<NodeData>[]) => void;
 	setEdges: (edges: Edge[]) => void;
 	setViewport: (viewport: Viewport) => void;
+	setSelectedNodeId: (nodeId: string | null) => void;
+	setSelectedEdgeId: (edgeId: string | null) => void;
 	addNode: (nodeData: Partial<Node<NodeData>>) => void;
 	addEdge: (edge: Edge | Connection) => void;
 	deleteElements: (payload: DeleteElementsPayload) => void;
 	updateNodeData: (nodeId: string, data: Partial<NodeData>) => void;
+	updateEdgeLabel: (edgeId: string, label: string) => void;
 	hydrate: (state: Partial<GraphState>) => void;
 };
 
@@ -51,16 +56,21 @@ export const initialState: Omit<
 	| "setNodes"
 	| "setEdges"
 	| "setViewport"
+	| "setSelectedNodeId"
+	| "setSelectedEdgeId"
 	| "addNode"
 	| "addEdge"
 	| "deleteElements"
 	| "hydrate"
 	| "updateNodeData"
+	| "updateEdgeLabel"
 > = {
 	nodes: [],
 	edges: [],
 	viewport: { x: 0, y: 0, zoom: 1 },
 	nodeIdCounter: 0,
+	selectedNodeId: null,
+	selectedEdgeId: null,
 	_isHydrated: false,
 };
 
@@ -88,6 +98,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 	},
 	setViewport: (viewport: Viewport) => {
 		set({ viewport });
+	},
+	setSelectedNodeId: (nodeId: string | null) => {
+		set({ selectedNodeId: nodeId, selectedEdgeId: null }); // Clear edge selection when node is selected
+	},
+	setSelectedEdgeId: (edgeId: string | null) => {
+		set({ selectedEdgeId: edgeId, selectedNodeId: null }); // Clear node selection when edge is selected
 	},
 	addNode: (nodeData: Partial<Node<NodeData>>) => {
 		const newNodeId = `node_${get().nodeIdCounter}`;
@@ -151,6 +167,19 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 					};
 				}
 				return node;
+			}),
+		}));
+	},
+	updateEdgeLabel: (edgeId: string, label: string) => {
+		set((state) => ({
+			edges: state.edges.map((edge) => {
+				if (edge.id === edgeId) {
+					return {
+						...edge,
+						label: label,
+					};
+				}
+				return edge;
 			}),
 		}));
 	},
