@@ -45,5 +45,24 @@ To use Graphle to build graphs, follow these steps:
 Graphle allows you to share your projects and views using a live-updated URL. To share a project, follow these steps:
 
 1. Make sure your project is saved and the graph state is up-to-date.
-2. Copy the URL from your browser's address bar.
-3. Share the URL with others. When they open the URL, they will see the same project and view that you have created.
+2. By deafult the URL live updates to with the stored pako compressed data that represents the graph state.
+3. Copy the URL from your browser's address bar.
+4. Share the URL with others. When they open the URL, they will see the same project and view that you have created.
+
+## Roadmap
+
+The following features are planned for future releases of Graphle:
+
+### Import and Export Functionality
+
+-   **Export individual graphs**: Ability to export a single graph as a JSON file for backup or sharing.
+-   **Export multiple graphs**: Functionality to export a collection of related graphs as a single package.Ï
+-   **Import from file**: Support for importing graphs from previously exported JSON files.
+-   **Batch import**: Capability to import multiple graphs at once from a directory or archive.
+
+### Remote Graph Loading
+
+-   **URL-based graph loading**: Load graphs directly from remote URLs using a parameter, e.g., `http://exadev.github.io/graphle?source=http://foo.bar/baz.json`
+-   **Multiple remote sources**: Support for loading and merging multiple graphs from different URLs, e.g., `http://exadev.github.io/graphle?source=http://foo.bar/baz.json&source=http://example.com/graph.json`
+-   **Authentication support**: Secure loading from protected sources using authentication tokens.
+-   **Auto-refresh**: Option to periodically refresh graphs from their source URLs to keep data current.
