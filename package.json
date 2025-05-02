@@ -7,7 +7,7 @@
 		"dev": "next dev",
 		"build": "next build",
 		"start": "next start",
-		"test": "vitest --watch"
+		"test": "vitest"
 	},
 	"keywords": [],
 	"author": "",
