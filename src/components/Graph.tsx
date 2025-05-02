@@ -30,7 +30,6 @@ function GraphComponent() {
 	const deleteElements = useGraphStore((state) => state.deleteElements);
 	const setSelectedNodeId = useGraphStore((state) => state.setSelectedNodeId);
 	const setSelectedEdgeId = useGraphStore((state) => state.setSelectedEdgeId);
-	const applyLayout = useGraphStore((state) => state.applyLayout);
 	const { project } = useReactFlow();
 
 	const handleNodesDelete: OnNodesDelete = useCallback(
@@ -74,12 +73,6 @@ function GraphComponent() {
 
 	return (
 		<div style={{ height: "100vh", width: "100%", position: "relative" }}>
-			<button
-				onClick={applyLayout}
-				style={{ position: "absolute", top: 10, left: 10, zIndex: 4 }}
-			>
-				Apply Layout
-			</button>
 			<ReactFlow
 				nodes={nodes}
 				edges={edges}
