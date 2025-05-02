@@ -1,11 +1,11 @@
 "use client";
 
 import Graph from "@/components/Graph";
-import { useEffect, useRef } from "react";
 import DetailSidebar from "@/components/NodeDetailSidebar";
 import { usePersistence } from "@/hooks/usePersistence";
 import { useUrlSharing } from "@/hooks/useUrlSharing";
 import { useGraphStore } from "@/store/graphStore";
+import { useEffect, useRef } from "react";
 
 function StateInitializer() {
 	useUrlSharing();

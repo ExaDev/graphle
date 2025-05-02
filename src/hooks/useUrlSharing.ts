@@ -36,7 +36,10 @@ function shallowEquals(objA: any, objB: any): boolean {
 	const keysB = Object.keys(objB);
 	if (keysA.length !== keysB.length) return false;
 	for (const key of keysA) {
-		if (!Object.prototype.hasOwnProperty.call(objB, key) || objA[key] !== objB[key]) {
+		if (
+			!Object.prototype.hasOwnProperty.call(objB, key) ||
+			objA[key] !== objB[key]
+		) {
 			return false;
 		}
 	}
@@ -52,7 +55,7 @@ export function useUrlSharing() {
 
 	const stateToShare: ShareableState = useMemo(
 		() => ({ nodes, edges, viewport }),
-		[nodes, edges, viewport],
+		[nodes, edges, viewport]
 	);
 
 	const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -139,5 +142,5 @@ export function useUrlSharing() {
 				clearTimeout(debounceTimeoutRef.current);
 			}
 		};
-	}, [nodes, edges, viewport]); // Removed _isHydrated dependency
+	}, [nodes, edges, viewport]);
 }

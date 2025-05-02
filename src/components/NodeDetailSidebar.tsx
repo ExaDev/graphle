@@ -27,7 +27,7 @@ const DetailSidebar: React.FC = () => {
 	const [newEdgeTypeInput, setNewEdgeTypeInput] = useState("");
 
 	useEffect(() => {
-		setShowNewNodeTypeInput(false); // Reset add new input visibility on selection change
+		setShowNewNodeTypeInput(false);
 		setShowNewEdgeTypeInput(false);
 		setNewNodeTypeInput("");
 		setNewEdgeTypeInput("");
@@ -39,7 +39,7 @@ const DetailSidebar: React.FC = () => {
 			setEdgeType("");
 		} else if (selectedEdge) {
 			setEdgeLabel(String(selectedEdge.label ?? ""));
-			setEdgeType(selectedEdge.data?.type ?? ""); // Get type from data object
+			setEdgeType(selectedEdge.data?.type ?? "");
 			setNodeLabel("");
 			setNodeType("");
 		} else {
@@ -54,7 +54,6 @@ const DetailSidebar: React.FC = () => {
 		return null;
 	}
 
-	// --- Node Handlers ---
 	const handleNodeLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
 		setNodeLabel(event.target.value);
 	};
@@ -75,11 +74,13 @@ const DetailSidebar: React.FC = () => {
 		}
 	};
 
-	const handleNodeTypeSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
+	const handleNodeTypeSelectChange = (
+		event: ChangeEvent<HTMLSelectElement>
+	) => {
 		const value = event.target.value;
 		if (value === "__add_new__") {
 			setShowNewNodeTypeInput(true);
-			setNodeType(""); // Clear selection if adding new
+			setNodeType("");
 		} else {
 			setShowNewNodeTypeInput(false);
 			setNodeType(value);
@@ -92,22 +93,25 @@ const DetailSidebar: React.FC = () => {
 	const handleAddNewNodeType = () => {
 		if (newNodeTypeInput.trim()) {
 			addNodeType(newNodeTypeInput.trim());
-			setNodeType(newNodeTypeInput.trim()); // Select the newly added type
+			setNodeType(newNodeTypeInput.trim());
 			if (selectedNode) {
-				updateNodeData(selectedNode.id, { type: newNodeTypeInput.trim() });
+				updateNodeData(selectedNode.id, {
+					type: newNodeTypeInput.trim(),
+				});
 			}
 			setNewNodeTypeInput("");
 			setShowNewNodeTypeInput(false);
 		}
 	};
 
-	const handleNewNodeTypeKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+	const handleNewNodeTypeKeyDown = (
+		event: KeyboardEvent<HTMLInputElement>
+	) => {
 		if (event.key === "Enter") {
 			handleAddNewNodeType();
 		}
 	};
 
-	// --- Edge Handlers ---
 	const handleEdgeLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
 		setEdgeLabel(event.target.value);
 	};
@@ -125,11 +129,13 @@ const DetailSidebar: React.FC = () => {
 		}
 	};
 
-	const handleEdgeTypeSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
+	const handleEdgeTypeSelectChange = (
+		event: ChangeEvent<HTMLSelectElement>
+	) => {
 		const value = event.target.value;
 		if (value === "__add_new__") {
 			setShowNewEdgeTypeInput(true);
-			setEdgeType(""); // Clear selection if adding new
+			setEdgeType("");
 		} else {
 			setShowNewEdgeTypeInput(false);
 			setEdgeType(value);
@@ -142,7 +148,7 @@ const DetailSidebar: React.FC = () => {
 	const handleAddNewEdgeType = () => {
 		if (newEdgeTypeInput.trim()) {
 			addEdgeType(newEdgeTypeInput.trim());
-			setEdgeType(newEdgeTypeInput.trim()); // Select the newly added type
+			setEdgeType(newEdgeTypeInput.trim());
 			if (selectedEdge) {
 				updateEdgeType(selectedEdge.id, newEdgeTypeInput.trim());
 			}
@@ -151,13 +157,14 @@ const DetailSidebar: React.FC = () => {
 		}
 	};
 
-	const handleNewEdgeTypeKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+	const handleNewEdgeTypeKeyDown = (
+		event: KeyboardEvent<HTMLInputElement>
+	) => {
 		if (event.key === "Enter") {
 			handleAddNewEdgeType();
 		}
 	};
 
-	// --- Styles ---
 	const inputStyle: React.CSSProperties = {
 		width: "100%",
 		padding: "0.5rem",
@@ -167,19 +174,19 @@ const DetailSidebar: React.FC = () => {
 	};
 
 	const selectStyle: React.CSSProperties = {
-		...inputStyle, // Inherit base styles
-		appearance: "none", // Remove default browser appearance
+		...inputStyle,
+		appearance: "none",
 		backgroundImage: `url('data:image/svg+xml;utf8,<svg fill="black" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>')`,
 		backgroundRepeat: "no-repeat",
 		backgroundPosition: "right 0.5rem center",
 		backgroundSize: "1.5em",
-		paddingRight: "2.5rem", // Make space for the arrow
+		paddingRight: "2.5rem",
 	};
 
 	const buttonStyle: React.CSSProperties = {
 		padding: "0.3rem 0.6rem",
 		marginLeft: "0.5rem",
-		backgroundColor: "#4299e1", // blue-500
+		backgroundColor: "#4299e1",
 		color: "white",
 		border: "none",
 		borderRadius: "0.25rem",
@@ -222,10 +229,14 @@ const DetailSidebar: React.FC = () => {
 					<h2 className="text-lg font-semibold mb-4">Node Details</h2>
 					<div className="space-y-4">
 						<div style={detailItemStyle}>
-							<span style={detailKeyStyle}>ID:</span> {selectedNode.id}
+							<span style={detailKeyStyle}>ID:</span>{" "}
+							{selectedNode.id}
 						</div>
 						<div>
-							<label htmlFor="node-label-input" style={labelStyle}>
+							<label
+								htmlFor="node-label-input"
+								style={labelStyle}
+							>
 								Label:
 							</label>
 							<input
@@ -233,19 +244,28 @@ const DetailSidebar: React.FC = () => {
 								type="text"
 								value={nodeLabel}
 								onChange={handleNodeLabelChange}
-								onBlur={(e) => handleNodeSave("label", e.target.value)}
+								onBlur={(e) =>
+									handleNodeSave("label", e.target.value)
+								}
 								onKeyDown={(e) => handleNodeKeyDown(e, "label")}
 								style={inputStyle}
 								className="border rounded px-2 py-1 w-full"
 							/>
 						</div>
 						<div>
-							<label htmlFor="node-type-select" style={labelStyle}>
+							<label
+								htmlFor="node-type-select"
+								style={labelStyle}
+							>
 								Type:
 							</label>
 							<select
 								id="node-type-select"
-								value={showNewNodeTypeInput ? "__add_new__" : nodeType}
+								value={
+									showNewNodeTypeInput
+										? "__add_new__"
+										: nodeType
+								}
 								onChange={handleNodeTypeSelectChange}
 								style={selectStyle}
 								className="border rounded px-2 py-1 w-full"
@@ -259,27 +279,44 @@ const DetailSidebar: React.FC = () => {
 								<option value="__add_new__">Add New...</option>
 							</select>
 							{showNewNodeTypeInput && (
-								<div style={{ display: "flex", marginTop: "0.5rem" }}>
+								<div
+									style={{
+										display: "flex",
+										marginTop: "0.5rem",
+									}}
+								>
 									<input
 										type="text"
 										value={newNodeTypeInput}
-										onChange={(e) => setNewNodeTypeInput(e.target.value)}
+										onChange={(e) =>
+											setNewNodeTypeInput(e.target.value)
+										}
 										onKeyDown={handleNewNodeTypeKeyDown}
 										placeholder="New node type"
-										style={{ ...inputStyle, marginBottom: 0, flexGrow: 1 }}
+										style={{
+											...inputStyle,
+											marginBottom: 0,
+											flexGrow: 1,
+										}}
 										autoFocus
 									/>
-									<button onClick={handleAddNewNodeType} style={buttonStyle}>
+									<button
+										onClick={handleAddNewNodeType}
+										style={buttonStyle}
+									>
 										Add
 									</button>
 								</div>
 							)}
 						</div>
 						{Object.entries(selectedNode.data)
-							.filter(([key]) => key !== "label" && key !== "type")
+							.filter(
+								([key]) => key !== "label" && key !== "type"
+							)
 							.map(([key, value]) => (
 								<div key={key} style={detailItemStyle}>
-									<span style={detailKeyStyle}>{key}:</span> {String(value)}
+									<span style={detailKeyStyle}>{key}:</span>{" "}
+									{String(value)}
 								</div>
 							))}
 					</div>
@@ -291,16 +328,22 @@ const DetailSidebar: React.FC = () => {
 					<h2 className="text-lg font-semibold mb-4">Edge Details</h2>
 					<div className="space-y-4">
 						<div style={detailItemStyle}>
-							<span style={detailKeyStyle}>ID:</span> {selectedEdge.id}
+							<span style={detailKeyStyle}>ID:</span>{" "}
+							{selectedEdge.id}
 						</div>
 						<div style={detailItemStyle}>
-							<span style={detailKeyStyle}>Source:</span> {selectedEdge.source}
+							<span style={detailKeyStyle}>Source:</span>{" "}
+							{selectedEdge.source}
 						</div>
 						<div style={detailItemStyle}>
-							<span style={detailKeyStyle}>Target:</span> {selectedEdge.target}
+							<span style={detailKeyStyle}>Target:</span>{" "}
+							{selectedEdge.target}
 						</div>
 						<div>
-							<label htmlFor="edge-label-input" style={labelStyle}>
+							<label
+								htmlFor="edge-label-input"
+								style={labelStyle}
+							>
 								Label:
 							</label>
 							<input
@@ -315,12 +358,19 @@ const DetailSidebar: React.FC = () => {
 							/>
 						</div>
 						<div>
-							<label htmlFor="edge-type-select" style={labelStyle}>
+							<label
+								htmlFor="edge-type-select"
+								style={labelStyle}
+							>
 								Type:
 							</label>
 							<select
 								id="edge-type-select"
-								value={showNewEdgeTypeInput ? "__add_new__" : edgeType}
+								value={
+									showNewEdgeTypeInput
+										? "__add_new__"
+										: edgeType
+								}
 								onChange={handleEdgeTypeSelectChange}
 								style={selectStyle}
 								className="border rounded px-2 py-1 w-full"
@@ -334,17 +384,31 @@ const DetailSidebar: React.FC = () => {
 								<option value="__add_new__">Add New...</option>
 							</select>
 							{showNewEdgeTypeInput && (
-								<div style={{ display: "flex", marginTop: "0.5rem" }}>
+								<div
+									style={{
+										display: "flex",
+										marginTop: "0.5rem",
+									}}
+								>
 									<input
 										type="text"
 										value={newEdgeTypeInput}
-										onChange={(e) => setNewEdgeTypeInput(e.target.value)}
+										onChange={(e) =>
+											setNewEdgeTypeInput(e.target.value)
+										}
 										onKeyDown={handleNewEdgeTypeKeyDown}
 										placeholder="New edge type"
-										style={{ ...inputStyle, marginBottom: 0, flexGrow: 1 }}
+										style={{
+											...inputStyle,
+											marginBottom: 0,
+											flexGrow: 1,
+										}}
 										autoFocus
 									/>
-									<button onClick={handleAddNewEdgeType} style={buttonStyle}>
+									<button
+										onClick={handleAddNewEdgeType}
+										style={buttonStyle}
+									>
 										Add
 									</button>
 								</div>

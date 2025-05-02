@@ -28,7 +28,6 @@ const getNodeStyle = (type?: string): React.CSSProperties => {
 	return { ...baseNodeStyle, ...specificStyle };
 };
 
-
 const inputStyle = {
 	width: "100%",
 	boxSizing: "border-box" as const,
@@ -61,7 +60,7 @@ const EditableNode: React.FC<NodeProps> = ({ id, data }) => {
 		(evt: FocusEvent<HTMLInputElement>) => {
 			saveLabel();
 		},
-		[saveLabel],
+		[saveLabel]
 	);
 
 	const handleKeyDown = useCallback(
@@ -73,7 +72,7 @@ const EditableNode: React.FC<NodeProps> = ({ id, data }) => {
 				setIsEditing(false);
 			}
 		},
-		[saveLabel, data.label],
+		[saveLabel, data.label]
 	);
 
 	return (

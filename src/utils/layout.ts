@@ -7,7 +7,7 @@ const nodeHeight = 50;
 export const getLayoutedElements = (nodes: Node[], edges: Edge[]): Node[] => {
 	const dagreGraph = new dagre.graphlib.Graph();
 	dagreGraph.setDefaultEdgeLabel(() => ({}));
-	dagreGraph.setGraph({ rankdir: "TB", nodesep: 50, ranksep: 50 });
+	dagreGraph.setGraph({ rankdir: "TB", nodesep: 60, ranksep: 60 });
 
 	nodes.forEach((node) => {
 		dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
@@ -21,7 +21,6 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[]): Node[] => {
 
 	const layoutedNodes = nodes.map((node) => {
 		const nodeWithPosition = dagreGraph.node(node.id);
-		// Adjust position from center to top-left corner for React Flow
 		const position = {
 			x: nodeWithPosition.x - nodeWidth / 2,
 			y: nodeWithPosition.y - nodeHeight / 2,

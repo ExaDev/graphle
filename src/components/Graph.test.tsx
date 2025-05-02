@@ -10,7 +10,9 @@ let capturedProps: ReactFlowProps | null = null;
 
 vi.mock("reactflow", async () => {
 	const actual = await vi.importActual("reactflow");
-	const ReactFlowMock = (props: ReactFlowProps & { "data-testid"?: string }) => {
+	const ReactFlowMock = (
+		props: ReactFlowProps & { "data-testid"?: string }
+	) => {
 		capturedProps = props;
 		return (
 			<div data-testid={props["data-testid"] ?? "reactflow-mock"}>
@@ -40,10 +42,11 @@ describe("Graph Component", () => {
 	let mockUpdateEdgeType: Mock;
 	let mockSetSelectedNodeId: Mock;
 	let mockSetSelectedEdgeId: Mock;
-	let mockAddNodeType: Mock; // Added
-	let mockRemoveNodeType: Mock; // Added
-	let mockAddEdgeType: Mock; // Added
-	let mockRemoveEdgeType: Mock; // Added
+	let mockAddNodeType: Mock;
+	let mockRemoveNodeType: Mock;
+	let mockAddEdgeType: Mock;
+	let mockRemoveEdgeType: Mock;
+	let mockApplyLayout: Mock;
 
 	const resetStoreMock = () => {
 		mockOnNodesChange = vi.fn();
@@ -61,10 +64,11 @@ describe("Graph Component", () => {
 		mockUpdateEdgeType = vi.fn();
 		mockSetSelectedNodeId = vi.fn();
 		mockSetSelectedEdgeId = vi.fn();
-		mockAddNodeType = vi.fn(); // Added
-		mockRemoveNodeType = vi.fn(); // Added
-		mockAddEdgeType = vi.fn(); // Added
-		mockRemoveEdgeType = vi.fn(); // Added
+		mockAddNodeType = vi.fn();
+		mockRemoveNodeType = vi.fn();
+		mockAddEdgeType = vi.fn();
+		mockRemoveEdgeType = vi.fn();
+		mockApplyLayout = vi.fn();
 
 		const mockState: GraphState = {
 			...initialState,
@@ -83,15 +87,15 @@ describe("Graph Component", () => {
 			updateEdgeType: mockUpdateEdgeType,
 			setSelectedNodeId: mockSetSelectedNodeId,
 			setSelectedEdgeId: mockSetSelectedEdgeId,
-			addNodeType: mockAddNodeType, // Added
-			removeNodeType: mockRemoveNodeType, // Added
-			addEdgeType: mockAddEdgeType, // Added
-			removeEdgeType: mockRemoveEdgeType, // Added
+			addNodeType: mockAddNodeType,
+			removeNodeType: mockRemoveNodeType,
+			addEdgeType: mockAddEdgeType,
+			removeEdgeType: mockRemoveEdgeType,
+			applyLayout: mockApplyLayout,
 		};
 
 		(useGraphStore as unknown as Mock).mockImplementation(
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(selector?: (state: GraphState) => any) => {
+			(selector?: (state: GraphState) => unknown) => {
 				if (selector) {
 					return selector(mockState);
 				}
@@ -112,8 +116,6 @@ describe("Graph Component", () => {
 		render(<Graph />);
 		expect(screen.getByTestId("reactflow-mock")).toBeInTheDocument();
 	});
-
-	// Removed test for the "Add Node" button click as the button is removed
 
 	it("calls onConnect from the store when ReactFlow's onConnect is triggered", () => {
 		render(<Graph />);
@@ -140,20 +142,20 @@ describe("Graph Component", () => {
 		expect(mockAddEdge).toHaveBeenCalledTimes(1);
 		expect(mockAddEdge).toHaveBeenCalledWith(testConnection);
 	});
-it("calls deleteElements from the store when ReactFlow's onNodesDelete is triggered", () => {
-	render(<Graph />);
+	it("calls deleteElements from the store when ReactFlow's onNodesDelete is triggered", () => {
+		render(<Graph />);
 
-	expect(capturedProps).not.toBeNull();
-	expect(capturedProps?.onNodesDelete).toBeInstanceOf(Function);
+		expect(capturedProps).not.toBeNull();
+		expect(capturedProps?.onNodesDelete).toBeInstanceOf(Function);
 
-	const nodesToDelete: Node[] = [
-		{ id: "node_1", position: { x: 0, y: 0 }, data: {} },
-		{ id: "node_2", position: { x: 0, y: 0 }, data: {} },
-	];
+		const nodesToDelete: Node[] = [
+			{ id: "node_1", position: { x: 0, y: 0 }, data: {} },
+			{ id: "node_2", position: { x: 0, y: 0 }, data: {} },
+		];
 
-	act(() => {
-		if (capturedProps?.onNodesDelete) {
-			capturedProps.onNodesDelete(nodesToDelete);
+		act(() => {
+			if (capturedProps?.onNodesDelete) {
+				capturedProps.onNodesDelete(nodesToDelete);
 			}
 		});
 

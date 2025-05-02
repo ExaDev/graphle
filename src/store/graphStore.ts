@@ -87,6 +87,7 @@ export const initialState: Omit<
 	| "removeNodeType"
 	| "addEdgeType"
 	| "removeEdgeType"
+	| "applyLayout"
 > = {
 	nodes: [],
 	edges: [],
@@ -314,7 +315,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 	},
 	applyLayout: () => {
 		const { nodes, edges } = get();
-		const { nodes: layoutedNodes } = getLayoutedElements(nodes, edges);
+		const layoutedNodes = getLayoutedElements(nodes, edges);
 		set({ nodes: layoutedNodes });
 	},
 }));
