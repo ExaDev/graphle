@@ -1,0 +1,6 @@
+{
+  "tasks": {
+    "build": "corepack yarn install && yarn build",
+    "test": "corepack yarn install && yarn vitest && yarn playwright"
+  }
+}
