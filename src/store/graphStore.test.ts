@@ -29,7 +29,7 @@ describe("graphStore", () => {
 	describe("addNode", () => {
 		it("should add a node with default values and increment counter", () => {
 			act(() => {
-				useGraphStore.getState().addNode({});
+				useGraphStore.getState().addNode({ position: { x: 0, y: 0 } });
 			});
 
 			const state = useGraphStore.getState();
@@ -44,8 +44,8 @@ describe("graphStore", () => {
 
 		it("should add multiple nodes with unique IDs", () => {
 			act(() => {
-				useGraphStore.getState().addNode({});
-				useGraphStore.getState().addNode({ type: "input" });
+				useGraphStore.getState().addNode({ position: { x: 0, y: 0 } });
+				useGraphStore.getState().addNode({ position: { x: 10, y: 10 }, type: "input" });
 			});
 
 			const state = useGraphStore.getState();
@@ -76,8 +76,8 @@ describe("graphStore", () => {
 	describe("addEdge", () => {
 		beforeEach(() => {
 			act(() => {
-				useGraphStore.getState().addNode({});
-				useGraphStore.getState().addNode({});
+				useGraphStore.getState().addNode({ position: { x: 0, y: 0 } });
+				useGraphStore.getState().addNode({ position: { x: 10, y: 10 } });
 			});
 		});
 
@@ -177,8 +177,8 @@ it("should add an edge with a default label from a Connection object", () => {
 	describe("onConnect", () => {
 		beforeEach(() => {
 			act(() => {
-				useGraphStore.getState().addNode({});
-				useGraphStore.getState().addNode({});
+				useGraphStore.getState().addNode({ position: { x: 0, y: 0 } });
+				useGraphStore.getState().addNode({ position: { x: 10, y: 10 } });
 			});
 		});
 
@@ -266,9 +266,9 @@ it("should add an edge with a default label from a Connection object", () => {
 	describe("deleteElements", () => {
 		beforeEach(() => {
 			act(() => {
-				useGraphStore.getState().addNode({ id: "node_0" });
-				useGraphStore.getState().addNode({ id: "node_1" });
-				useGraphStore.getState().addNode({ id: "node_2" });
+				useGraphStore.getState().addNode({ id: "node_0", position: { x: 0, y: 0 } });
+				useGraphStore.getState().addNode({ id: "node_1", position: { x: 10, y: 10 } });
+				useGraphStore.getState().addNode({ id: "node_2", position: { x: 20, y: 20 } });
 				useGraphStore.getState().addEdge({ id: "edge_01", source: "node_0", target: "node_1" });
 				useGraphStore.getState().addEdge({ id: "edge_12", source: "node_1", target: "node_2" });
 				useGraphStore.getState().addEdge({ id: "edge_02", source: "node_0", target: "node_2" });
@@ -361,6 +361,7 @@ it("should add an edge with a default label from a Connection object", () => {
 			act(() => {
 				useGraphStore.getState().addNode({
 					id: "node_to_update",
+					position: { x: 0, y: 0 },
 					data: { label: "Initial Label", type: "Initial Type" },
 				});
 			});
@@ -412,6 +413,7 @@ it("should add an edge with a default label from a Connection object", () => {
 			act(() => {
 				useGraphStore.getState().addNode({
 					id: "other_node",
+					position: { x: 100, y: 100 },
 					data: { label: "Other Label", type: "Other Type" },
 				});
 			});
@@ -491,8 +493,8 @@ it("should add an edge with a default label from a Connection object", () => {
 	describe("updateEdgeLabel", () => {
 		beforeEach(() => {
 			act(() => {
-				useGraphStore.getState().addNode({ id: "n1" });
-				useGraphStore.getState().addNode({ id: "n2" });
+				useGraphStore.getState().addNode({ id: "n1", position: { x: 0, y: 0 } });
+				useGraphStore.getState().addNode({ id: "n2", position: { x: 10, y: 10 } });
 				useGraphStore.getState().addEdge({ id: "e1-2", source: "n1", target: "n2", label: "Initial" });
 				useGraphStore.getState().addEdge({ id: "e2-1", source: "n2", target: "n1", label: "Another" });
 			});
@@ -617,8 +619,8 @@ describe("hydrate with types", () => {
 describe("updateEdgeType", () => {
 		beforeEach(() => {
 			act(() => {
-				useGraphStore.getState().addNode({ id: "n1" });
-				useGraphStore.getState().addNode({ id: "n2" });
+				useGraphStore.getState().addNode({ id: "n1", position: { x: 0, y: 0 } });
+				useGraphStore.getState().addNode({ id: "n2", position: { x: 10, y: 10 } });
 				useGraphStore.getState().addEdge({ id: "e1-2", source: "n1", target: "n2", data: { type: "initialType" } });
 				useGraphStore.getState().addEdge({ id: "e2-1", source: "n2", target: "n1" });
 			});

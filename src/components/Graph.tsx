@@ -1,4 +1,4 @@
-import React, { useCallback } from "react"; // Added React import for MouseEvent type
+import React, { useCallback } from "react";
 import ReactFlow, {
 	Background,
 	Controls,
@@ -9,6 +9,7 @@ import ReactFlow, {
 	OnNodesDelete,
 	ReactFlowProvider,
 	NodeTypes,
+	useReactFlow, // Import useReactFlow
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -29,10 +30,7 @@ function GraphComponent() {
 	const deleteElements = useGraphStore((state) => state.deleteElements);
 	const setSelectedNodeId = useGraphStore((state) => state.setSelectedNodeId);
 	const setSelectedEdgeId = useGraphStore((state) => state.setSelectedEdgeId);
-
-	const handleAddNode = () => {
-		addNode({});
-	};
+	const { project } = useReactFlow(); // Get project function
 
 	const handleNodesDelete: OnNodesDelete = useCallback(
 		(nodesToDelete) => {
@@ -62,25 +60,19 @@ function GraphComponent() {
 		[setSelectedEdgeId],
 	);
 
+	const handlePaneDoubleClick = useCallback(
+		(event: React.MouseEvent) => {
+			const position = project({
+				x: event.clientX,
+				y: event.clientY,
+			});
+			addNode({ position });
+		},
+		[addNode, project],
+	);
+
 	return (
 		<div style={{ height: "100vh", width: "100%", position: "relative" }}>
-			<button
-				onClick={handleAddNode}
-				style={{
-					position: "absolute",
-					top: 15,
-					left: 15,
-					zIndex: 4,
-					padding: "8px 15px",
-					background: "#fff",
-					border: "1px solid #ccc",
-					borderRadius: "4px",
-					cursor: "pointer",
-					boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-				}}
-			>
-				Add Node
-			</button>
 			<ReactFlow
 				nodes={nodes}
 				edges={edges}
@@ -91,6 +83,7 @@ function GraphComponent() {
 				onEdgesDelete={handleEdgesDelete}
 				onNodeClick={handleNodeClick}
 				onEdgeClick={handleEdgeClick}
+				onDoubleClick={handlePaneDoubleClick} // Correct prop name for pane double click
 				nodeTypes={nodeTypes}
 				fitView
 			>

@@ -48,7 +48,7 @@ export type GraphState = {
 	setViewport: (viewport: Viewport) => void;
 	setSelectedNodeId: (nodeId: string | null) => void;
 	setSelectedEdgeId: (edgeId: string | null) => void;
-	addNode: (nodeData: Partial<Node<NodeData>>) => void;
+	addNode: (nodeData: Pick<Node<NodeData>, "position"> & Partial<Omit<Node<NodeData>, "position">>) => void;
 	addEdge: (edge: Edge<EdgeData> | Connection) => void;
 	deleteElements: (payload: DeleteElementsPayload) => void;
 	updateNodeData: (nodeId: string, data: Partial<NodeData>) => void;
@@ -140,20 +140,17 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 	setSelectedEdgeId: (edgeId: string | null) => {
 		set({ selectedEdgeId: edgeId, selectedNodeId: null });
 	},
-	addNode: (nodeData: Partial<Node<NodeData>>) => {
+	addNode: (nodeData: Pick<Node<NodeData>, "position"> & Partial<Omit<Node<NodeData>, "position">>) => {
 		const newNodeId = `node_${get().nodeIdCounter}`;
 		const newNode: Node<NodeData> = {
 			id: newNodeId,
-			position: nodeData.position ?? {
-				x: Math.random() * 500,
-				y: Math.random() * 300,
-			},
+			position: nodeData.position, // Position is now required
 			data: nodeData.data ?? {
 				label: `Node ${get().nodeIdCounter}`,
 				type: "",
 			},
 			type: nodeData.type ?? "editableNode",
-			...nodeData,
+			...nodeData, // Spread remaining partial data, ensuring position isn't overwritten if provided again
 		};
 		set((state) => ({
 			nodes: [...state.nodes, newNode],

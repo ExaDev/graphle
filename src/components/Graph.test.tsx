@@ -1,5 +1,5 @@
 import { GraphState, initialState, useGraphStore } from "@/store/graphStore";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { Connection, Edge, Node, ReactFlowProps } from "reactflow";
 import { beforeEach, describe, expect, it, Mock, vi } from "vitest";
 import Graph from "./Graph";
@@ -35,11 +35,15 @@ describe("Graph Component", () => {
 	let mockAddNode: Mock;
 	let mockHydrate: Mock;
 	let mockDeleteElements: Mock;
-	let mockUpdateNodeData: Mock; // Renamed from mockUpdateNodeLabel for consistency
+	let mockUpdateNodeData: Mock;
 	let mockUpdateEdgeLabel: Mock;
-	let mockUpdateEdgeType: Mock; // Added mock for edge type update
+	let mockUpdateEdgeType: Mock;
 	let mockSetSelectedNodeId: Mock;
 	let mockSetSelectedEdgeId: Mock;
+	let mockAddNodeType: Mock; // Added
+	let mockRemoveNodeType: Mock; // Added
+	let mockAddEdgeType: Mock; // Added
+	let mockRemoveEdgeType: Mock; // Added
 
 	const resetStoreMock = () => {
 		mockOnNodesChange = vi.fn();
@@ -54,9 +58,13 @@ describe("Graph Component", () => {
 		mockDeleteElements = vi.fn();
 		mockUpdateNodeData = vi.fn();
 		mockUpdateEdgeLabel = vi.fn();
-		mockUpdateEdgeType = vi.fn(); // Initialize mock
+		mockUpdateEdgeType = vi.fn();
 		mockSetSelectedNodeId = vi.fn();
 		mockSetSelectedEdgeId = vi.fn();
+		mockAddNodeType = vi.fn(); // Added
+		mockRemoveNodeType = vi.fn(); // Added
+		mockAddEdgeType = vi.fn(); // Added
+		mockRemoveEdgeType = vi.fn(); // Added
 
 		const mockState: GraphState = {
 			...initialState,
@@ -72,9 +80,13 @@ describe("Graph Component", () => {
 			deleteElements: mockDeleteElements,
 			updateNodeData: mockUpdateNodeData,
 			updateEdgeLabel: mockUpdateEdgeLabel,
-			updateEdgeType: mockUpdateEdgeType, // Add mock to state
+			updateEdgeType: mockUpdateEdgeType,
 			setSelectedNodeId: mockSetSelectedNodeId,
 			setSelectedEdgeId: mockSetSelectedEdgeId,
+			addNodeType: mockAddNodeType, // Added
+			removeNodeType: mockRemoveNodeType, // Added
+			addEdgeType: mockAddEdgeType, // Added
+			removeEdgeType: mockRemoveEdgeType, // Added
 		};
 
 		(useGraphStore as unknown as Mock).mockImplementation(
@@ -96,22 +108,12 @@ describe("Graph Component", () => {
 		capturedProps = null;
 	});
 
-	it("renders the Add Node button and ReactFlow", () => {
+	it("renders the ReactFlow component", () => {
 		render(<Graph />);
-		expect(
-			screen.getByRole("button", { name: /add node/i })
-		).toBeInTheDocument();
 		expect(screen.getByTestId("reactflow-mock")).toBeInTheDocument();
 	});
 
-	it('calls addNode from the store when "Add Node" button is clicked', () => {
-		render(<Graph />);
-		const addButton = screen.getByRole("button", { name: /add node/i });
-		fireEvent.click(addButton);
-
-		expect(mockAddNode).toHaveBeenCalledTimes(1);
-		expect(mockAddNode).toHaveBeenCalledWith({});
-	});
+	// Removed test for the "Add Node" button click as the button is removed
 
 	it("calls onConnect from the store when ReactFlow's onConnect is triggered", () => {
 		render(<Graph />);
@@ -197,7 +199,7 @@ it("calls deleteElements from the store when ReactFlow's onNodesDelete is trigge
 			position: { x: 0, y: 0 },
 			data: { label: "Click Me" },
 		};
-		const mockEvent = {} as React.MouseEvent; // Mock event object
+		const mockEvent = {} as React.MouseEvent;
 
 		act(() => {
 			if (capturedProps?.onNodeClick) {
@@ -221,7 +223,7 @@ it("calls deleteElements from the store when ReactFlow's onNodesDelete is trigge
 			target: "b",
 			label: "Click Me",
 		};
-		const mockEvent = {} as React.MouseEvent; // Mock event object
+		const mockEvent = {} as React.MouseEvent;
 
 		act(() => {
 			if (capturedProps?.onEdgeClick) {
