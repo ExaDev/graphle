@@ -1,0 +1,177 @@
+/**
+ * The interactive graph surface: a controlled `<ReactFlow>` driven by the
+ * zustand graph store.
+ *
+ * Two sources of truth, by design:
+ *  - The store DOCUMENT owns graph contents (nodes, edges, positions, data).
+ *    It is what gets serialised to the URL and IndexedDB.
+ *  - React Flow's LOCAL state owns live interaction (the in-progress drag, the
+ *    measured node dimensions, the selection flags). These never reach the
+ *    document: positions commit only on drag STOP (so the URL does not churn
+ *    on every drag tick), and selection is mirrored to `store.selection`
+ *    separately.
+ *
+ * The store-to-React-Flow sync (the effect below) fires on STRUCTURAL or DATA
+ * changes — when a node/edge is added, removed, edited from the inspector, or
+ * loaded externally via `replaceDocument`. Position-only commits from
+ * drag-stop leave the fingerprint unchanged, so React Flow's live drag state
+ * is never blown away mid-drag.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  applyEdgeChanges,
+  applyNodeChanges,
+  useReactFlow,
+  type Connection,
+  type EdgeChange,
+  type NodeChange,
+  type OnSelectionChangeParams,
+} from "@xyflow/react";
+
+import { useGraphStore } from "@/ui/store/graph-store";
+
+import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
+import { nodeTypes } from "./node-kinds-registry";
+
+export function GraphCanvas() {
+  const graphDocument = useGraphStore((s) => s.document);
+  const apply = useGraphStore((s) => s.apply);
+  const setSelection = useGraphStore((s) => s.setSelection);
+  const { fitView } = useReactFlow();
+
+  // React Flow local state, seeded once from the document.
+  const [nodes, setNodes] = useState<GraphFlowNode[]>(
+    () => documentToFlow(graphDocument).nodes,
+  );
+  const [edges, setEdges] = useState<GraphFlowEdge[]>(
+    () => documentToFlow(graphDocument).edges,
+  );
+
+  // Re-sync React Flow from the store when the STRUCTURE or the node/edge DATA
+  // changes — an add, remove, inspector data edit, or external document load —
+  // but never on position-only commits, so a drag-stop does not blow away
+  // React Flow's live state. Positions are deliberately excluded from the
+  // fingerprint; ids, kinds, data, relation and label are included, so edits
+  // made in the inspector reach the canvas without re-syncing mid-drag. The
+  // previous fingerprint is kept in a ref and compared inside the effect (refs
+  // must not be mutated during render).
+  const prevStructureRef = useRef("");
+  // One-shot "fit the view to the content" flag. The `fitView` prop covers
+  // nodes present at init; this covers a shared graph loaded via the URL after
+  // mount (the common `#g=` case).
+  const hasFitRef = useRef(false);
+  useEffect(() => {
+    const nodeSignature = graphDocument.nodes
+      .map((n) => `${n.id}:${n.kind}:${JSON.stringify(n.data)}`)
+      .join("\n");
+    const edgeSignature = graphDocument.edges
+      .map((e) => `${e.id}:${e.relation}:${e.label !== undefined ? e.label : ""}`)
+      .join("\n");
+    const signature = `${nodeSignature}|${edgeSignature}`;
+    if (signature === prevStructureRef.current) return;
+    prevStructureRef.current = signature;
+    const flow = documentToFlow(graphDocument);
+    setNodes(flow.nodes);
+    setEdges(flow.edges);
+    if (!hasFitRef.current && flow.nodes.length > 0) {
+      hasFitRef.current = true;
+      // Defer one frame so React Flow registers the new nodes before fitting.
+      window.requestAnimationFrame(() => {
+        void fitView();
+      });
+    }
+  }, [graphDocument, fitView, setNodes, setEdges]);
+
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<GraphFlowNode>[]) => {
+      // Apply locally for smooth interaction (drag, select, measure, remove).
+      setNodes((prev) => applyNodeChanges(changes, prev));
+      // Commit structural removes to the store so the document stays in sync.
+      for (const change of changes) {
+        if (change.type === "remove") {
+          apply({ type: "removeNode", id: change.id });
+        }
+      }
+    },
+    [apply, setNodes],
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange<GraphFlowEdge>[]) => {
+      setEdges((prev) => applyEdgeChanges(changes, prev));
+      for (const change of changes) {
+        if (change.type === "remove") {
+          apply({ type: "removeEdge", id: change.id });
+        }
+      }
+    },
+    [apply, setEdges],
+  );
+
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      apply({
+        type: "addEdge",
+        edge: {
+          id: crypto.randomUUID(),
+          source: connection.source,
+          target: connection.target,
+          relation: "references",
+        },
+      });
+    },
+    [apply],
+  );
+
+  // Commit positions only when the drag ends, not on every drag tick.
+  const handleNodeDragStop = useCallback(
+    (
+      _event: MouseEvent | TouchEvent,
+      _node: GraphFlowNode,
+      dragged: GraphFlowNode[],
+    ) => {
+      apply({
+        type: "moveNodes",
+        moves: dragged.map((node) => ({ id: node.id, position: node.position })),
+      });
+    },
+    [apply],
+  );
+
+  // Mirror React Flow's selection into the store's EPHEMERAL selection. Never
+  // written into the document.
+  const handleSelectionChange = useCallback(
+    ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
+      setSelection({
+        nodeId: selectedNodes[0]?.id,
+        edgeId: selectedEdges[0]?.id,
+      });
+    },
+    [setSelection],
+  );
+
+  return (
+    <div style={{ height: "100%", width: "100%" }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
+        onConnect={handleConnect}
+        onNodeDragStop={handleNodeDragStop}
+        onSelectionChange={handleSelectionChange}
+        deleteKeyCode={["Backspace", "Delete"]}
+        fitView
+      >
+        <Background />
+        <Controls />
+        <MiniMap />
+      </ReactFlow>
+    </div>
+  );
+}
