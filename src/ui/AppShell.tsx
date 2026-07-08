@@ -41,6 +41,10 @@ import { GraphsDrawer } from "./panels/GraphsDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
 import { useUrlSync } from "./sync/useUrlSync";
 
+/** Header height in px. The canvas is sized to fill the viewport below it, so
+ *  this constant is the single source for both the header and that calc. */
+const HEADER_HEIGHT = 56;
+
 export function AppShell() {
   useUrlSync();
 
@@ -69,7 +73,7 @@ export function AppShell() {
 
   return (
     <MantineAppShell
-      header={{ height: 56 }}
+      header={{ height: HEADER_HEIGHT }}
       aside={{
         width: 320,
         breakpoint: "sm",
@@ -154,9 +158,14 @@ export function AppShell() {
       </MantineAppShell.Header>
 
       <MantineAppShell.Main>
-        <ReactFlowProvider>
-          <GraphCanvas />
-        </ReactFlowProvider>
+        {/* React Flow forces `height: 100%` on its root, which does not resolve
+         *  against a flex-derived parent height. Give the canvas a definite
+         *  viewport height so the 100% has something concrete to fill. */}
+        <div style={{ height: `calc(100dvh - ${HEADER_HEIGHT}px)` }}>
+          <ReactFlowProvider>
+            <GraphCanvas />
+          </ReactFlowProvider>
+        </div>
       </MantineAppShell.Main>
 
       <MantineAppShell.Aside p="xs">
