@@ -1,0 +1,115 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; queue new runs behind an in-progress one
+# rather than cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Lint, typecheck and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  release:
+    name: Release
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # semantic-release analyses the full commit history since the last release.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-and-deploy:
+    name: Build and deploy to Pages
+    # Build AFTER release so the deploy is built from the tagged release commit
+    # (semantic-release bumps package.json + tags on the chore(release) commit),
+    # which makes the top bar show the version instead of the un-tagged feat
+    # commit's hash. main is not branch-protected, so release is reliable and
+    # this coupling never blocks the deploy. For non-releasing commits release
+    # creates no new tag and the header falls back to the hash, which is correct.
+    needs: [quality, release]
+    runs-on: ubuntu-latest
+    # `actions: write` (beyond the top-level set) lets the artifact-cleanup
+    # step below delete a `github-pages` artifact left by a prior failed
+    # attempt, so re-running this job never collides with a stale upload.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      actions: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Check out the latest main (the release commit semantic-release just
+          # pushed), not the trigger commit, so the build resolves the new tag.
+          ref: main
+          # Full history + tags so the build can resolve the release tag.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: actions/configure-pages@v6
+      # A failed `deploy-pages` step (GitHub Pages' "Deployment failed, try
+      # again later" transient) leaves this run's uploaded `github-pages`
+      # artifact behind. Re-running the job then uploads a second one and
+      # `deploy-pages` refuses both ("Multiple artifacts named github-pages ...
+      # count is 2"). Drop any prior attempt's artifact before uploading so
+      # reruns are clean. No-op on the first attempt (nothing to delete).
+      - name: Remove prior github-pages artifacts from this run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name=="github-pages") | .id' |
+            while read -r id; do
+              [ -z "$id" ] && continue
+              echo "Removing stale github-pages artifact $id from a prior attempt"
+              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+            done
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v5
