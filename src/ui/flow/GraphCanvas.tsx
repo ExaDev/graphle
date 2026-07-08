@@ -39,6 +39,7 @@ import { nodeTypes } from "./node-kinds-registry";
 
 export function GraphCanvas() {
   const graphDocument = useGraphStore((s) => s.document);
+  const graphId = useGraphStore((s) => s.graphId);
   const apply = useGraphStore((s) => s.apply);
   const setSelection = useGraphStore((s) => s.setSelection);
   const { fitView } = useReactFlow();
@@ -64,6 +65,12 @@ export function GraphCanvas() {
   // nodes present at init; this covers a shared graph loaded via the URL after
   // mount (the common `#g=` case).
   const hasFitRef = useRef(false);
+  // Loading a different graph (drawer load / save-as / import) changes graphId;
+  // reset the one-shot fit flag so the newly loaded content is framed again,
+  // even though its data signature triggers the resync below.
+  useEffect(() => {
+    hasFitRef.current = false;
+  }, [graphId]);
   useEffect(() => {
     const nodeSignature = graphDocument.nodes
       .map((n) => `${n.id}:${n.kind}:${JSON.stringify(n.data)}`)
@@ -75,8 +82,32 @@ export function GraphCanvas() {
     if (signature === prevStructureRef.current) return;
     prevStructureRef.current = signature;
     const flow = documentToFlow(graphDocument);
-    setNodes(flow.nodes);
-    setEdges(flow.edges);
+    // Merge against the live local nodes/edges rather than replacing wholesale,
+    // so a data-change resync preserves the transient `selected`/`measured`
+    // flags. Without this, an inspector edit re-projects nodes with no
+    // `selected`, React Flow fires onSelectionChange empty, and the selection
+    // (hence the inspector) is lost on every keystroke.
+    setNodes((prev) =>
+      flow.nodes.map((node) => {
+        const existing = prev.find((p) => p.id === node.id);
+        if (existing === undefined) return node;
+        return {
+          ...node,
+          ...(existing.selected !== undefined ? { selected: existing.selected } : {}),
+          ...(existing.measured !== undefined ? { measured: existing.measured } : {}),
+        };
+      }),
+    );
+    setEdges((prev) =>
+      flow.edges.map((edge) => {
+        const existing = prev.find((p) => p.id === edge.id);
+        if (existing === undefined) return edge;
+        return {
+          ...edge,
+          ...(existing.selected !== undefined ? { selected: existing.selected } : {}),
+        };
+      }),
+    );
     if (!hasFitRef.current && flow.nodes.length > 0) {
       hasFitRef.current = true;
       // Defer one frame so React Flow registers the new nodes before fitting.

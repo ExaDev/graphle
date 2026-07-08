@@ -50,4 +50,13 @@ describe("placeAround", () => {
     const keys = new Set(positions.map((p) => `${p.x},${p.y}`));
     expect(keys.size).toBe(8);
   });
+
+  it("keeps positions distinct across rings (count > 8 steps the radius out)", () => {
+    // Slot 8 lands at the same angle as slot 0 but on a wider ring, so it must
+    // not collide. Regression for the constant-radius overlap bug.
+    const positions = placeAround({ x: 0, y: 0 }, 16);
+    expect(positions).toHaveLength(16);
+    const keys = new Set(positions.map((p) => `${p.x},${p.y}`));
+    expect(keys.size).toBe(16);
+  });
 });

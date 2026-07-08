@@ -20,10 +20,9 @@ import {
   OrgNodeData,
   ProjectNodeData,
   RepoNodeData,
-  type GraphDocument,
   type NodeData,
-  type Position,
 } from "@/schema";
+import { cascadePosition } from "@/domain";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 import { NODE_KINDS } from "../flow/node-kinds-registry";
@@ -49,7 +48,10 @@ const KIND_OPTIONS = NodeKind.options.map((value) => ({
  */
 function makeDraft(kind: NodeKind): GraphNode {
   return GraphNode.parse({
-    id: "",
+    // A real throwaway id: NodeId is z.string().min(1), so "" would throw a
+    // ZodError here. handleCreate overwrites the id with a fresh UUID, so this
+    // one only has to satisfy the schema while the kind/data pairing is checked.
+    id: crypto.randomUUID(),
     kind,
     position: { x: 0, y: 0 },
     data: NODE_KINDS[kind].defaultData(),
@@ -100,16 +102,6 @@ function validate(kind: NodeKind, data: NodeData): string | undefined {
   }
 }
 
-/**
- * A diagonal cascade position for the Nth node, so successive adds land next
- * to rather than on top of each other. Deterministic: the same node count
- * always maps to the same slot.
- */
-function cascadePosition(document: GraphDocument): Position {
-  const index = document.nodes.length;
-  return { x: 120 + (index % 8) * 36, y: 80 + Math.floor(index / 8) * 60 };
-}
-
 export function AddNodeMenu({ opened, onClose }: AddNodeMenuProps) {
   const apply = useGraphStore((state) => state.apply);
   const document = useGraphStore((state) => state.document);
@@ -133,7 +125,7 @@ export function AddNodeMenu({ opened, onClose }: AddNodeMenuProps) {
     }
     apply({
       type: "addNode",
-      node: { ...draft, id: crypto.randomUUID(), position: cascadePosition(document) },
+      node: { ...draft, id: crypto.randomUUID(), position: cascadePosition(document.nodes.length) },
     });
     setError(undefined);
     onClose();

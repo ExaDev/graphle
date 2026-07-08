@@ -63,7 +63,8 @@ import {
   type GitHubRepo,
   type GitHubViewer,
 } from "@/github";
-import type { GraphNode, Position } from "@/schema";
+import type { GraphNode } from "@/schema";
+import { cascadePosition } from "@/domain";
 import { db } from "@/storage/db";
 import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
@@ -117,15 +118,6 @@ function notifyGitHubError(error: unknown): void {
     color: "red",
     message: error instanceof Error ? error.message : String(error),
   });
-}
-
-/**
- * A diagonal cascade slot for the Nth node, so browsed items land next to
- * rather than on top of each other. Mirrors the {@link AddNodeMenu} cascade so
- * manual adds and GitHub adds share a layout cadence.
- */
-function cascadePosition(nodeCount: number): Position {
-  return { x: 120 + (nodeCount % 8) * 36, y: 80 + Math.floor(nodeCount / 8) * 60 };
 }
 
 export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {

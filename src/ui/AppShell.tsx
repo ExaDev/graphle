@@ -91,10 +91,12 @@ export function AppShell() {
             />
           </Box>
 
-          <Badge color={dirty ? "red" : "green"} variant="dot">
-            <Box component="span" visibleFrom="sm">
-              {dirty ? "Unsaved" : "Saved"}
-            </Box>
+          <Badge
+            color={dirty ? "red" : "green"}
+            variant="dot"
+            aria-label={dirty ? "Unsaved changes" : "Saved"}
+          >
+            {dirty ? "Unsaved" : "Saved"}
           </Badge>
 
           <Button

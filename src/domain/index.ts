@@ -4,7 +4,12 @@
  * which remains the single source of truth for every data shape.
  */
 export { nodeIdentityKey } from "./identity";
-export { EXPANSION_ANGLE_STEP, EXPANSION_RADIUS, placeAround } from "./layout";
+export {
+  EXPANSION_ANGLE_STEP,
+  EXPANSION_RADIUS,
+  cascadePosition,
+  placeAround,
+} from "./layout";
 export { applyDelta, type GraphDelta } from "./merge";
 export { emptyDocument } from "./empty";
 export {

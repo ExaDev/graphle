@@ -70,7 +70,12 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     }
     const controller = new AbortController();
     const existing = await store.get(graphId, controller.signal);
-    if (existing === undefined) return; // graph was removed out from under us
+    if (existing === undefined) {
+      // The backing graph was deleted (e.g. another tab). Save the live
+      // document as a new graph instead of dropping the user's work silently.
+      void handleSaveAs();
+      return;
+    }
     await store.save(
       { ...existing, document, updatedAt: new Date().toISOString() },
       controller.signal,
@@ -109,16 +114,20 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     if (graph === undefined) return;
     const name = window.prompt("Rename graph", graph.name);
     if (name === null || name === "") return;
+    const isCurrent = id === graphId;
+    // Persist the LIVE document for the current graph so any unsaved edits are
+    // written (not the stale stored snapshot); markSaved then matches disk.
+    const documentToSave = isCurrent ? document : graph.document;
     await store.save(
       {
         ...graph,
         name,
-        document: { ...graph.document, name },
+        document: { ...documentToSave, name },
         updatedAt: new Date().toISOString(),
       },
       controller.signal,
     );
-    if (id === graphId) {
+    if (isCurrent) {
       apply({ type: "renameGraph", name });
       markSaved();
     }

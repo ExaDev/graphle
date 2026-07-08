@@ -117,6 +117,10 @@ export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
   if (tailsForNodeId !== node.id) {
     setTailsForNodeId(node.id);
     setTails({});
+    // The previous node's in-flight run was aborted by the cleanup effect; its
+    // finally won't clear runningId (abortRef.current no longer matches the
+    // controller), so clear it here to avoid a stuck loading state.
+    setRunningId(undefined);
   }
 
   // Abort any in-flight run when the selected node changes (or on unmount) so a
