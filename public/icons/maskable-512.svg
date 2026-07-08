@@ -1,0 +1,17 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Full background edge-to-edge -->
+  <rect x="0" y="0" width="512" height="512" fill="#1a1b1e"/>
+
+  <!-- Lines (connections) — glyph centred in safe zone -->
+  <line x1="256" y1="156" x2="156" y2="256" stroke="#4263eb" stroke-width="6" stroke-linecap="round"/>
+  <line x1="256" y1="156" x2="356" y2="256" stroke="#4263eb" stroke-width="6" stroke-linecap="round"/>
+  <line x1="156" y1="256" x2="256" y2="356" stroke="#4263eb" stroke-width="6" stroke-linecap="round"/>
+  <line x1="356" y1="256" x2="256" y2="356" stroke="#4263eb" stroke-width="6" stroke-linecap="round"/>
+  <line x1="156" y1="256" x2="356" y2="256" stroke="#4263eb" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Nodes -->
+  <circle cx="256" cy="156" r="20" fill="#4263eb"/>
+  <circle cx="156" cy="256" r="20" fill="#4263eb"/>
+  <circle cx="356" cy="256" r="20" fill="#4263eb"/>
+  <circle cx="256" cy="356" r="20" fill="#4263eb"/>
+</svg>
