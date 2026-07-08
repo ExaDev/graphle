@@ -1,0 +1,265 @@
+import { describe, expect, it } from "vitest";
+
+import { createGitHubClient } from "./graphql-adapter";
+import { GitHubError } from "./errors";
+
+/** Narrows a parsed request body to a `{ query: string }` envelope. */
+function hasQueryEnvelope(value: unknown): value is { query: string } {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("query" in value)) return false;
+  return typeof value.query === "string";
+}
+
+/**
+ * Stub `fetch` that dispatches on the GraphQL operation name embedded in the
+ * request body's `query`, returning the registered fixture. This lets each test
+ * stage a different response shape without touching the network.
+ */
+function stubFetch(
+  handlers: Record<string, (body: { query: string }) => Response>,
+): typeof globalThis.fetch {
+  return (
+    _input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    // Mimic real fetch, which rejects when called with an already-aborted
+    // signal — the client maps that rejection to a `network` GitHubError.
+    if (init?.signal?.aborted) {
+      return Promise.reject(new Error("The user aborted a request."));
+    }
+    const rawBody = init?.body;
+    if (typeof rawBody !== "string") {
+      throw new Error("stub fetch expected a string request body");
+    }
+    const parsed: unknown = JSON.parse(rawBody);
+    if (!hasQueryEnvelope(parsed)) {
+      throw new Error("stub fetch expected a { query: string } request body");
+    }
+    const match = /^query\s+(\w+)/.exec(parsed.query);
+    if (match === null) {
+      throw new Error(`stub fetch could not parse operation name from: ${parsed.query}`);
+    }
+    const opName = match[1];
+    if (opName === undefined) {
+      throw new Error("stub fetch found no operation-name capture group");
+    }
+    const handler = handlers[opName];
+    if (handler === undefined) {
+      throw new Error(`stub fetch has no handler for operation ${opName}`);
+    }
+    return Promise.resolve(handler(parsed));
+  };
+}
+
+function jsonResponse(json: unknown, status = 200): Response {
+  return new Response(JSON.stringify(json), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+const RATE = { remaining: 4999, resetAt: "2026-07-08T12:00:00Z" };
+
+describe("createGitHubClient - viewer", () => {
+  it("returns the authenticated login", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        Viewer: () =>
+          jsonResponse({ data: { viewer: { login: "joe" }, rateLimit: RATE } }),
+      }),
+    });
+    const viewer = await client.viewer(new AbortController().signal);
+    expect(viewer.login).toBe("joe");
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+});
+
+describe("createGitHubClient - pagination", () => {
+  it("threads endCursor from one page into the next listOrgRepos call", async () => {
+    let call = 0;
+    const cursors: (string | undefined)[] = [];
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        OrgRepos: () => {
+          call += 1;
+          const page = call === 1
+            ? {
+                nodes: [{ name: "alpha", owner: { login: "exadev" } }],
+                pageInfo: { hasNextPage: true, endCursor: "CURSOR1" },
+              }
+            : {
+                nodes: [{ name: "beta", owner: { login: "exadev" } }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              };
+          return jsonResponse({
+            data: { organization: { repositories: page }, rateLimit: RATE },
+          });
+        },
+      }),
+    });
+
+    const first = await client.listOrgRepos("exadev", undefined, new AbortController().signal);
+    cursors.push(first.endCursor);
+    const second = await client.listOrgRepos("exadev", first.endCursor, new AbortController().signal);
+    cursors.push(second.endCursor);
+
+    expect(first.items.map((r) => r.name)).toEqual(["alpha"]);
+    expect(first.endCursor).toBe("CURSOR1");
+    expect(first.hasNextPage).toBe(true);
+    expect(second.items.map((r) => r.name)).toEqual(["beta"]);
+    expect(second.endCursor).toBeUndefined();
+    expect(second.hasNextPage).toBe(false);
+    expect(cursors).toEqual(["CURSOR1", undefined]);
+  });
+
+  it("parses repo issues, org projects, and project items", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoIssues: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                issues: {
+                  nodes: [
+                    { number: 1, title: "Bug", state: "open", url: "u1" },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+        OrgProjects: () =>
+          jsonResponse({
+            data: {
+              organization: {
+                projectsV2: {
+                  nodes: [
+                    { id: "P_1", number: 1, title: "Roadmap", url: "pu1" },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+        ProjectItems: () =>
+          jsonResponse({
+            data: {
+              node: {
+                items: {
+                  nodes: [
+                    {
+                      content: {
+                        __typename: "Issue",
+                        number: 7,
+                        title: "Tracked",
+                        state: "open",
+                        url: "iu7",
+                        repository: { name: "graphle", owner: { login: "exadev" } },
+                      },
+                    },
+                    {
+                      content: { __typename: "DraftIssue", title: "A draft" },
+                    },
+                    {
+                      // PullRequest content is parsed but dropped.
+                      content: { __typename: "PullRequest" },
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+
+    const issues = await client.listRepoIssues(
+      "exadev",
+      "graphle",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(issues.items).toHaveLength(1);
+    expect(issues.items[0]?.number).toBe(1);
+
+    const projects = await client.listOrgProjects(
+      "exadev",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(projects.items[0]?.number).toBe(1);
+
+    const items = await client.listProjectItems(
+      "P_1",
+      undefined,
+      new AbortController().signal,
+    );
+    // The PullRequest item is dropped; Issue and DraftIssue survive.
+    expect(items.items).toHaveLength(2);
+    expect(items.items.map((i) => i.__typename)).toEqual(["Issue", "DraftIssue"]);
+  });
+});
+
+describe("createGitHubClient - errors", () => {
+  it("classifies a 401 as unauthorised", async () => {
+    const client = createGitHubClient({
+      token: "bad",
+      fetch: stubFetch({
+        Viewer: () => jsonResponse({ message: "Bad credentials" }, 401),
+      }),
+    });
+    await expect(client.viewer(new AbortController().signal)).rejects.toMatchObject({
+      kind: { type: "unauthorised" },
+    });
+  });
+
+  it("classifies a RATE_LIMITED GraphQL error as rateLimited with resetAt", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        ViewerOrgs: () =>
+          jsonResponse({
+            data: { viewer: { login: "joe", organizations: null }, rateLimit: RATE },
+            errors: [{ type: "RATE_LIMITED", message: "too many" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listViewerOrgs(undefined, new AbortController().signal),
+    ).rejects.toMatchObject({
+      kind: { type: "rateLimited", resetAt: RATE.resetAt },
+    });
+  });
+
+  it("classifies a malformed body as invalidResponse", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        Viewer: () => jsonResponse({ data: { viewer: {} }, rateLimit: RATE }),
+      }),
+    });
+    const promise = client.viewer(new AbortController().signal);
+    await expect(promise).rejects.toBeInstanceOf(GitHubError);
+    await expect(promise).rejects.toMatchObject({
+      kind: { type: "invalidResponse" },
+    });
+  });
+
+  it("rejects when called with an already-aborted signal", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        Viewer: () => jsonResponse({ data: { viewer: { login: "joe" }, rateLimit: RATE } }),
+      }),
+    });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(client.viewer(controller.signal)).rejects.toBeInstanceOf(GitHubError);
+  });
+});

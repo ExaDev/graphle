@@ -1,0 +1,62 @@
+import type {
+  GitHubIssue,
+  GitHubOrg,
+  GitHubProject,
+  GitHubProjectItem,
+  GitHubRepo,
+  GitHubViewer,
+} from "./schema";
+
+/**
+ * One page of a paginated GitHub connection. `endCursor` is `undefined` rather
+ * than `null` when there is no next page, matching the rest of the codebase's
+ * "absence is `undefined`" convention; pass it straight back as the next
+ * request's `after` to advance.
+ */
+export type Page<T> = {
+  items: T[];
+  endCursor: string | undefined;
+  hasNextPage: boolean;
+};
+
+/**
+ * The surface the GitHub client exposes. Every method takes an {@link AbortSignal}
+ * so callers can cancel an in-flight request, and most are cursor-paginated.
+ * {@link lastRateLimit} reflects the most recent successful response's rate
+ * budget so the UI can warn before a request would exhaust it.
+ */
+export interface GitHubClient {
+  viewer(signal: AbortSignal): Promise<GitHubViewer>;
+  listViewerOrgs(
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubOrg>>;
+  listOrgRepos(
+    login: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubRepo>>;
+  listRepoIssues(
+    owner: string,
+    name: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubIssue>>;
+  listOrgProjects(
+    login: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubProject>>;
+  listRepoProjects(
+    owner: string,
+    name: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubProject>>;
+  listProjectItems(
+    projectNodeId: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubProjectItem>>;
+  readonly lastRateLimit: { remaining: number; resetAt: string } | undefined;
+}
