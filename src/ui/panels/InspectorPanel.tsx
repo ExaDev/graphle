@@ -20,6 +20,7 @@ import { Button, Divider, Select, Stack, Text, TextInput } from "@mantine/core";
 import { EdgeRelation } from "@/schema";
 import { useGraphStore, useSelection } from "@/ui/store/graph-store";
 
+import { ExpandMenu } from "../flow/ExpandMenu";
 import { NODE_KINDS } from "../flow/node-kinds-registry";
 import { NodeDataFields } from "./NodeDataFields";
 
@@ -49,7 +50,12 @@ function isEdgeRelation(value: unknown): value is EdgeRelation {
   );
 }
 
-export function InspectorPanel() {
+export interface InspectorPanelProps {
+  /** Opens the GitHub panel; passed to {@link ExpandMenu} for the no-PAT case. */
+  onOpenGitHub: () => void;
+}
+
+export function InspectorPanel({ onOpenGitHub }: InspectorPanelProps) {
   const document = useGraphStore((state) => state.document);
   const apply = useGraphStore((state) => state.apply);
   const setSelection = useGraphStore((state) => state.setSelection);
@@ -78,6 +84,7 @@ export function InspectorPanel() {
           node={node}
           onChange={(data) => apply({ type: "updateNodeData", id: node.id, data })}
         />
+        <ExpandMenu node={node} onOpenGitHub={onOpenGitHub} />
         <Divider />
         <Button
           variant="light"

@@ -19,7 +19,6 @@ import {
   Button,
   Group,
   TextInput,
-  Tooltip,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -37,6 +36,7 @@ import { useGraphStore } from "@/ui/store/graph-store";
 
 import { GraphCanvas } from "./flow/GraphCanvas";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
+import { GitHubPanel } from "./panels/GitHubPanel";
 import { GraphsDrawer } from "./panels/GraphsDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
 import { useUrlSync } from "./sync/useUrlSync";
@@ -50,6 +50,8 @@ export function AppShell() {
 
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false);
   const [graphsOpened, { open: openGraphs, close: closeGraphs }] =
+    useDisclosure(false);
+  const [githubOpened, { open: openGitHub, close: closeGitHub }] =
     useDisclosure(false);
   const [inspectorOpened, { toggle: toggleInspector }] = useDisclosure(false);
 
@@ -128,13 +130,14 @@ export function AppShell() {
             </Box>
           </Button>
 
-          <Tooltip label="Coming soon" position="bottom">
-            <Box component="span" display="inline-flex">
-              <ActionIcon variant="default" size="lg" aria-label="GitHub" disabled>
-                <IconBrandGithub size={16} />
-              </ActionIcon>
-            </Box>
-          </Tooltip>
+          <ActionIcon
+            variant="default"
+            size="lg"
+            aria-label="GitHub"
+            onClick={openGitHub}
+          >
+            <IconBrandGithub size={16} />
+          </ActionIcon>
 
           <ActionIcon
             variant="default"
@@ -156,11 +159,12 @@ export function AppShell() {
 
       <MantineAppShell.Aside p="xs">
         <MantineAppShell.Section grow>
-          <InspectorPanel />
+          <InspectorPanel onOpenGitHub={openGitHub} />
         </MantineAppShell.Section>
       </MantineAppShell.Aside>
 
       <AddNodeMenu opened={addOpened} onClose={closeAdd} />
+      <GitHubPanel opened={githubOpened} onClose={closeGitHub} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
     </MantineAppShell>
   );
