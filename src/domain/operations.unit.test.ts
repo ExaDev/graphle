@@ -254,6 +254,67 @@ describe("applyOperation - updateEdge", () => {
     expect(next.edges[0]?.relation).toBe("references");
     expect(next.edges[0]?.label).toBe("original");
   });
+
+  it("clears the label (omits the key) when an empty-string label is supplied", () => {
+    const { doc, edge } = docWithEdge();
+    const next = applyOperation(doc, { type: "updateEdge", id: edge.id, label: "" });
+    expect(next.edges[0]?.relation).toBe("references");
+    expect(next.edges[0]?.label).toBeUndefined();
+    expect("label" in (next.edges[0] ?? {})).toBe(false);
+  });
+
+  it("clears the label while also updating the relation", () => {
+    const { doc, edge } = docWithEdge();
+    const next = applyOperation(doc, {
+      type: "updateEdge",
+      id: edge.id,
+      relation: "owns",
+      label: "",
+    });
+    expect(next.edges[0]?.relation).toBe("owns");
+    expect(next.edges[0]?.label).toBeUndefined();
+  });
+});
+
+describe("applyOperation - removeEdge", () => {
+  function docWithTwoEdges() {
+    const a = makeFreeform("A");
+    const b = makeFreeform("B");
+    const c = makeFreeform("C");
+    const first = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: a.id,
+      target: b.id,
+      relation: "references",
+    });
+    const second = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: b.id,
+      target: c.id,
+      relation: "owns",
+      label: "kept",
+    });
+    return { doc: documentWith([a, b, c], [first, second]), first, second };
+  }
+
+  it("removes the edge with the given id", () => {
+    const { doc, first, second } = docWithTwoEdges();
+    const next = applyOperation(doc, { type: "removeEdge", id: first.id });
+    expect(next.edges).toHaveLength(1);
+    expect(next.edges[0]?.id).toBe(second.id);
+  });
+
+  it("is a no-op when the id is not present", () => {
+    const { doc } = docWithTwoEdges();
+    const next = applyOperation(doc, { type: "removeEdge", id: "does-not-exist" });
+    expect(next.edges).toHaveLength(2);
+  });
+
+  it("does not mutate the input document", () => {
+    const { doc, first } = docWithTwoEdges();
+    applyOperation(doc, { type: "removeEdge", id: first.id });
+    expect(doc.edges).toHaveLength(2);
+  });
 });
 
 describe("applyOperation - renameGraph", () => {

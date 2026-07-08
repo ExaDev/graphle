@@ -43,6 +43,7 @@ export type GraphOperation =
       relation?: EdgeRelation;
       label?: string;
     }
+  | { type: "removeEdge"; id: string }
   | { type: "renameGraph"; name: string }
   | { type: "replaceDocument"; document: GraphDocument };
 
@@ -111,21 +112,27 @@ function replaceNodeData(node: GraphNode, data: NodeData): GraphNode {
  * actually supplied it. Under that flag an optional property cannot carry
  * `undefined`, so `!== undefined` is a precise test for "was this field
  * provided". Fields the caller omitted are left untouched.
+ *
+ * The one exception is an empty-string `label`: that is treated as "clear the
+ * label", not "set the label to the empty string". Because the cleared edge
+ * must OMIT the `label` key entirely (optional props cannot hold `undefined`
+ * under exactOptionalPropertyTypes), it is rebuilt from the required fields.
  */
 function applyEdgeUpdate(
   edge: GraphEdge,
   op: { relation?: EdgeRelation; label?: string },
 ): GraphEdge {
-  if (op.relation !== undefined && op.label !== undefined) {
-    return { ...edge, relation: op.relation, label: op.label };
+  if (op.relation === undefined && op.label === undefined) {
+    return edge;
   }
-  if (op.relation !== undefined) {
-    return { ...edge, relation: op.relation };
+  const relation = op.relation !== undefined ? op.relation : edge.relation;
+  if (op.label === "") {
+    return { id: edge.id, source: edge.source, target: edge.target, relation };
   }
   if (op.label !== undefined) {
-    return { ...edge, label: op.label };
+    return { ...edge, relation, label: op.label };
   }
-  return edge;
+  return { ...edge, relation };
 }
 
 /**
@@ -198,6 +205,11 @@ export function applyOperation(
       const edges = doc.edges.map((edge) =>
         edge.id === op.id ? applyEdgeUpdate(edge, op) : edge,
       );
+      return { ...doc, edges };
+    }
+
+    case "removeEdge": {
+      const edges = doc.edges.filter((edge) => edge.id !== op.id);
       return { ...doc, edges };
     }
 
