@@ -82,7 +82,12 @@ jobs:
         with:
           task: build
           command: pnpm build
+      # enablement: true re-enables Pages if it was disabled (e.g. by a
+      # repository visibility change), so a redeploy never fails on a missing
+      # Pages site.
       - uses: actions/configure-pages@v6
+        with:
+          enablement: true
       # A failed `deploy-pages` step (GitHub Pages' "Deployment failed, try
       # again later" transient) leaves this run's uploaded `github-pages`
       # artifact behind. Re-running the job then uploads a second one and
