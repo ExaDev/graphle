@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/ExaDev/graphle/compare/v1.2.0...v1.2.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **ui:** theme the react flow controls and minimap ([337482b](https://github.com/ExaDev/graphle/commit/337482bc6f9b54d31887082f04d7a2f3fd5eef03))
+
 # [1.2.0](https://github.com/ExaDev/graphle/compare/v1.1.0...v1.2.0) (2026-07-09)
 
 
