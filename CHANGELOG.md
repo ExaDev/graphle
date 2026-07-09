@@ -1,3 +1,20 @@
+# [1.1.0](https://github.com/ExaDev/graphle/compare/v1.0.0...v1.1.0) (2026-07-09)
+
+
+### Bug Fixes
+
+* address final-review findings across the app ([968b594](https://github.com/ExaDev/graphle/commit/968b59417b3bccd4e37b503ebd74d0752c14a7dd))
+* **ui:** give the react flow canvas a definite height ([2f97a33](https://github.com/ExaDev/graphle/commit/2f97a3329d3566f590a57d3072d438d2d8feba5a))
+
+
+### Features
+
+* **domain:** add removeEdge op and clear edge label on empty ([4d79fd5](https://github.com/ExaDev/graphle/commit/4d79fd5e96d04050dabca02748f9d8083f6ce101))
+* **github:** add graphql client materialisation and node expansion ([5f6a40e](https://github.com/ExaDev/graphle/commit/5f6a40edeee1c8ba39d1b1742a99167227146554))
+* **ui:** add editing panels graph persistence and app shell ([8fa9895](https://github.com/ExaDev/graphle/commit/8fa989556cdf11cb2f512219b5d7b57872206879))
+* **ui:** add github panel and node expansion ([b0fe8b9](https://github.com/ExaDev/graphle/commit/b0fe8b98be7cfae11e5db6e226b885688fa4cddf))
+* **ui:** add graph store flow canvas and live url sync ([32f7740](https://github.com/ExaDev/graphle/commit/32f774077a9fa206f708319cb075fcc4be7fc844))
+
 # 1.0.0 (2026-07-08)
 
 
