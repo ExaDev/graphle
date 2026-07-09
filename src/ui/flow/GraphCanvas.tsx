@@ -18,6 +18,7 @@
  * is never blown away mid-drag.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMantineColorScheme } from "@mantine/core";
 import {
   Background,
   Controls,
@@ -43,6 +44,10 @@ export function GraphCanvas() {
   const apply = useGraphStore((s) => s.apply);
   const setSelection = useGraphStore((s) => s.setSelection);
   const { fitView } = useReactFlow();
+  // Drive React Flow's colour mode from the Mantine scheme so the controls and
+  // minimap follow light/dark/system (React Flow otherwise defaults to light).
+  const { colorScheme } = useMantineColorScheme();
+  const flowColorMode = colorScheme === "auto" ? "system" : colorScheme;
 
   // React Flow local state, seeded once from the document.
   const [nodes, setNodes] = useState<GraphFlowNode[]>(
@@ -191,6 +196,7 @@ export function GraphCanvas() {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        colorMode={flowColorMode}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
