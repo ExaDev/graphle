@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/ExaDev/graphle/compare/v1.1.0...v1.2.0) (2026-07-09)
+
+
+### Features
+
+* **ui:** add system light dark theme cycling ([c657235](https://github.com/ExaDev/graphle/commit/c657235d12bb08807324f043d290b0abc21ffcd7))
+
 # [1.1.0](https://github.com/ExaDev/graphle/compare/v1.0.0...v1.1.0) (2026-07-09)
 
 
