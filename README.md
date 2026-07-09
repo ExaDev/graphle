@@ -74,11 +74,14 @@ mirrored or asserted.
 
 ## Deployment
 
-Pushes to `main` run CI (lint, typecheck, test), cut a release with
-semantic-release, then build and deploy to GitHub Pages. The app is built with
-a `/graphle/` base path for Pages and `/` for local dev. GitHub Pages on a
-private repository needs a paid plan; if the deploy fails with a 422, that is
-the cause — make the repo public or resolve the plan.
+The repo is public so CI runs on GitHub-hosted `ubuntu-latest` runners (free,
+unlimited Actions minutes for public repos) and deploys to GitHub Pages at
+<https://exadev.github.io/graphle/>. Pushes to `main` run lint, typecheck and
+test, cut a release with semantic-release, then build and deploy. The build
+uses a `/graphle/` base path for Pages and `/` for local dev. A visibility
+flip can disable the Pages site, so `configure-pages` runs with
+`enablement: true` to re-enable it automatically.
+
 
 ## Status and roadmap
 
