@@ -39,6 +39,7 @@ import { AddNodeMenu } from "./panels/AddNodeMenu";
 import { GitHubPanel } from "./panels/GitHubPanel";
 import { GraphsDrawer } from "./panels/GraphsDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
+import { ThemeToggle } from "./ThemeToggle";
 import { useUrlSync } from "./sync/useUrlSync";
 
 /** Header height in px. The canvas is sized to fill the viewport below it, so
@@ -144,6 +145,8 @@ export function AppShell() {
           >
             <IconBrandGithub size={16} />
           </ActionIcon>
+
+          <ThemeToggle />
 
           <ActionIcon
             variant="default"
