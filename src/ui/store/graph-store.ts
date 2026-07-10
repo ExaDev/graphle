@@ -39,6 +39,19 @@ export interface GistPicker {
   candidates: GistFileCandidate[];
 }
 
+/**
+ * A detected divergence between the local document and its linked gist's
+ * remote HEAD, set by `useGistAutoSync` when a push or a conflict check finds
+ * the remote has moved since the graph's last recorded sync. Ephemeral, like
+ * `gistPicker` — a later phase's conflict-resolution UI consumes and clears
+ * it; this store only carries the fact that a conflict exists.
+ */
+export interface SyncConflict {
+  graphId: string;
+  localDocument: GraphDocument;
+  remoteSha: string;
+}
+
 interface GraphState {
   /** The live document; the single source of truth for graph contents. */
   document: GraphDocument;
@@ -158,6 +171,11 @@ interface GraphState {
    *  cancelling without validating can never leave a stale callback to fire
    *  on some later, unrelated validation. */
   closeGitHubPanel: () => void;
+  /** A detected local/remote gist divergence awaiting resolution, or
+   *  `undefined` when none is pending. Ephemeral — never persisted. */
+  syncConflict: SyncConflict | undefined;
+  /** Set or clear the pending sync conflict. */
+  setSyncConflict: (conflict: SyncConflict | undefined) => void;
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -274,6 +292,8 @@ export const useGraphStore = create<GraphState>()(
         set({ githubPanelOpened: true, pendingGitHubAction: pendingAction }),
       closeGitHubPanel: () =>
         set({ githubPanelOpened: false, pendingGitHubAction: undefined }),
+      syncConflict: undefined,
+      setSyncConflict: (syncConflict) => set({ syncConflict }),
     };
   }),
 );
