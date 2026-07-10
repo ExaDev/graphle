@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/ExaDev/graphle/compare/v1.5.0...v1.6.0) (2026-07-10)
+
+
+### Features
+
+* **ci:** add native v8 test coverage ([2d4006d](https://github.com/ExaDev/graphle/commit/2d4006d388f56d0bde3aefcdbbb896f771feadac))
+
 # [1.5.0](https://github.com/ExaDev/graphle/compare/v1.4.0...v1.5.0) (2026-07-10)
 
 
