@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/ExaDev/graphle/compare/v1.3.0...v1.4.0) (2026-07-10)
+
+
+### Features
+
+* replace hardcoded node kinds with dynamic portable type system ([3b220b3](https://github.com/ExaDev/graphle/commit/3b220b36e67fde10e54a091445e0ab166d319970))
+
 # [1.3.0](https://github.com/ExaDev/graphle/compare/v1.2.1...v1.3.0) (2026-07-10)
 
 
