@@ -15,6 +15,7 @@ import {
   applyDelta,
   applyOperation,
   emptyDocument,
+  pushHistory,
   type GraphDelta,
   type GraphOperation,
 } from "@/domain";
@@ -49,6 +50,30 @@ interface GraphState {
   dirty: boolean;
   /** Ephemeral canvas selection — never persisted. */
   selection: GraphSelection;
+  /**
+   * Undo history: document snapshots taken immediately before each
+   * document-mutating action, oldest first, capped by `pushHistory` (see
+   * `MAX_UNDO_DEPTH` in `@/domain`). Session-only — never persisted to
+   * storage, the URL, or an export, and lost on reload. A separate, persisted
+   * revision-history mechanism (`storage/revision-store-dexie.ts`) covers
+   * durable checkpoints; this stack exists purely for in-session Ctrl+Z.
+   */
+  undoStack: GraphDocument[];
+  /**
+   * Redo history: documents popped off `undoStack` by `undo`, most recently
+   * undone last. Cleared by every fresh document-mutating action so redoing
+   * can never resurrect a branch abandoned by a subsequent edit. Session-only,
+   * same as `undoStack`.
+   */
+  redoStack: GraphDocument[];
+  /**
+   * The document reference as of the last `markSaved` call, or `undefined`
+   * before any save has happened. `undo`/`redo` compare the restored document
+   * against this by reference to decide whether `dirty` should be `false` —
+   * landing back on the exact saved snapshot means there is nothing unsaved,
+   * even though the document has been mutated and reverted since.
+   */
+  savedDocument: GraphDocument | undefined;
   /** Apply a domain operation, producing a new document and marking it dirty. */
   apply: (op: GraphOperation) => void;
   /**
@@ -87,8 +112,25 @@ interface GraphState {
   setSelection: (selection: GraphSelection) => void;
   /** Set the storage id backing the current document. */
   setGraphId: (id: string | undefined) => void;
-  /** Mark the current document as saved (dirty = false). */
+  /**
+   * Mark the current document as saved: clears `dirty` and records the
+   * current document reference as `savedDocument`, so a later `undo`/`redo`
+   * that lands back on this exact snapshot can recognise it as saved again.
+   */
   markSaved: () => void;
+  /**
+   * Step the document back to the previous entry on `undoStack`, pushing the
+   * current document onto `redoStack` so the step can be replayed. A no-op
+   * when `undoStack` is empty — there is nothing before the current document
+   * to step back to.
+   */
+  undo: () => void;
+  /**
+   * The mirror of `undo`: step the document forward to the most recently
+   * undone entry on `redoStack`, pushing the current document back onto
+   * `undoStack`. A no-op when `redoStack` is empty.
+   */
+  redo: () => void;
   /** Ambiguous-gist candidates awaiting a pick, or `undefined` when no picker
    *  is pending. Ephemeral — never persisted. */
   gistPicker: GistPicker | undefined;
@@ -121,80 +163,119 @@ interface GraphState {
 export const useGraphStore = create<GraphState>()(
   // subscribeWithSelector enables the `subscribe(selector, listener)` overload
   // used by useUrlSync to watch the document slice without re-rendering.
-  subscribeWithSelector((set, get) => ({
-    document: emptyDocument("Untitled graph"),
-    graphId: undefined,
-    dirty: false,
-    selection: { nodeId: undefined, edgeId: undefined },
-    apply: (op) =>
-      set((state) => ({
-        document: applyOperation(state.document, op),
-        dirty: true,
-      })),
-    mergeDelta: (delta) => {
-      // Read-then-set: applyDelta is pure and returns the merged document plus
-      // the ids actually added. Computing against `get().document` before
-      // `set` keeps the action free of the `set` callback's inability to
-      // return a value to the caller.
-      const result = applyDelta(get().document, delta);
-      set({ document: result.document, dirty: true });
-      return result.addedNodeIds;
-    },
-    replaceDocument: (doc) => set({ document: doc, dirty: false }),
-    addType: (typeDef) =>
-      set((state) => ({
-        document: { ...state.document, types: [...state.document.types, typeDef] },
-        dirty: true,
-      })),
-    removeType: (name) => {
-      // Read-then-set: the guard must read the current document before the
-      // write. Removing a type that nodes still reference would leave those
-      // nodes against an unresolvable type, so fail loudly rather than orphan.
-      const doc = get().document;
-      if (doc.nodes.some((node) => node.type === name)) {
-        throw new Error(
-          `Cannot remove type "${name}": one or more nodes still use it`,
-        );
-      }
+  subscribeWithSelector((set, get) => {
+    /**
+     * The single path by which any of the seven document-mutating actions
+     * commits a new document. Before the swap, it snapshots the CURRENT
+     * (pre-mutation) document onto `undoStack` — capped by `pushHistory` —
+     * and clears `redoStack`, since a fresh edit invalidates whatever branch
+     * a pending redo would have replayed.
+     */
+    const commitDocument = (nextDocument: GraphDocument, dirty: boolean): void => {
+      const state = get();
       set({
-        document: { ...doc, types: doc.types.filter((type) => type.name !== name) },
-        dirty: true,
+        document: nextDocument,
+        dirty,
+        undoStack: pushHistory(state.undoStack, state.document),
+        redoStack: [],
       });
-    },
-    addEdgeType: (typeDef) =>
-      set((state) => ({
-        document: {
-          ...state.document,
-          edgeTypes: [...state.document.edgeTypes, typeDef],
-        },
-        dirty: true,
-      })),
-    removeEdgeType: (name) => {
-      const doc = get().document;
-      if (doc.edges.some((edge) => edge.type === name)) {
-        throw new Error(
-          `Cannot remove edge type "${name}": one or more edges still use it`,
+    };
+
+    return {
+      document: emptyDocument("Untitled graph"),
+      graphId: undefined,
+      dirty: false,
+      selection: { nodeId: undefined, edgeId: undefined },
+      undoStack: [],
+      redoStack: [],
+      savedDocument: undefined,
+      apply: (op) => commitDocument(applyOperation(get().document, op), true),
+      mergeDelta: (delta) => {
+        // Read-then-commit: applyDelta is pure and returns the merged document
+        // plus the ids actually added. Computing against `get().document`
+        // first keeps the action free of `set`'s inability to return a value
+        // to the caller.
+        const result = applyDelta(get().document, delta);
+        commitDocument(result.document, true);
+        return result.addedNodeIds;
+      },
+      replaceDocument: (doc) => commitDocument(doc, false),
+      addType: (typeDef) => {
+        const doc = get().document;
+        commitDocument({ ...doc, types: [...doc.types, typeDef] }, true);
+      },
+      removeType: (name) => {
+        // Read-then-commit: the guard must read the current document before
+        // the write. Removing a type that nodes still reference would leave
+        // those nodes against an unresolvable type, so fail loudly rather
+        // than orphan.
+        const doc = get().document;
+        if (doc.nodes.some((node) => node.type === name)) {
+          throw new Error(
+            `Cannot remove type "${name}": one or more nodes still use it`,
+          );
+        }
+        commitDocument(
+          { ...doc, types: doc.types.filter((type) => type.name !== name) },
+          true,
         );
-      }
-      set({
-        document: {
-          ...doc,
-          edgeTypes: doc.edgeTypes.filter((type) => type.name !== name),
-        },
-        dirty: true,
-      });
-    },
-    setSelection: (selection) => set({ selection }),
-    setGraphId: (graphId) => set({ graphId }),
-    markSaved: () => set({ dirty: false }),
-    gistPicker: undefined,
-    setGistPicker: (gistPicker) => set({ gistPicker }),
-    githubPanelOpened: false,
-    pendingGitHubAction: undefined,
-    openGitHubPanel: (pendingAction) =>
-      set({ githubPanelOpened: true, pendingGitHubAction: pendingAction }),
-    closeGitHubPanel: () => set({ githubPanelOpened: false, pendingGitHubAction: undefined }),
-  })),
+      },
+      addEdgeType: (typeDef) => {
+        const doc = get().document;
+        commitDocument({ ...doc, edgeTypes: [...doc.edgeTypes, typeDef] }, true);
+      },
+      removeEdgeType: (name) => {
+        const doc = get().document;
+        if (doc.edges.some((edge) => edge.type === name)) {
+          throw new Error(
+            `Cannot remove edge type "${name}": one or more edges still use it`,
+          );
+        }
+        commitDocument(
+          { ...doc, edgeTypes: doc.edgeTypes.filter((type) => type.name !== name) },
+          true,
+        );
+      },
+      setSelection: (selection) => set({ selection }),
+      setGraphId: (graphId) => set({ graphId }),
+      markSaved: () =>
+        set((state) => ({ dirty: false, savedDocument: state.document })),
+      undo: () => {
+        const state = get();
+        const previous = state.undoStack.at(-1);
+        if (previous === undefined) {
+          return;
+        }
+        set({
+          document: previous,
+          undoStack: state.undoStack.slice(0, -1),
+          redoStack: [...state.redoStack, state.document],
+          dirty: previous !== state.savedDocument,
+        });
+      },
+      redo: () => {
+        const state = get();
+        const next = state.redoStack.at(-1);
+        if (next === undefined) {
+          return;
+        }
+        set({
+          document: next,
+          redoStack: state.redoStack.slice(0, -1),
+          undoStack: [...state.undoStack, state.document],
+          dirty: next !== state.savedDocument,
+        });
+      },
+      gistPicker: undefined,
+      setGistPicker: (gistPicker) => set({ gistPicker }),
+      githubPanelOpened: false,
+      pendingGitHubAction: undefined,
+      openGitHubPanel: (pendingAction) =>
+        set({ githubPanelOpened: true, pendingGitHubAction: pendingAction }),
+      closeGitHubPanel: () =>
+        set({ githubPanelOpened: false, pendingGitHubAction: undefined }),
+    };
+  }),
 );
 
 /** Select just the document; re-renders only when the document reference changes. */

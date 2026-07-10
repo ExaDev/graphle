@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { emptyDocument, type GraphDelta } from "@/domain";
+import { emptyDocument, type GraphDelta, type GraphOperation } from "@/domain";
 import { GraphNodeSchema, type GraphDocument, type GraphNode } from "@/schema";
 
 import { useGraphStore } from "./graph-store";
@@ -90,5 +90,96 @@ describe("useGraphStore.mergeDelta", () => {
     });
     // And it never leaks into the document.
     expect(document().nodes.some((n) => n.id === "selected")).toBe(false);
+  });
+});
+
+/**
+ * Exercises the ephemeral, session-only undo/redo stacks: every
+ * document-mutating action snapshots the pre-mutation document onto
+ * `undoStack` and clears `redoStack`, and `undo`/`redo` step between those
+ * snapshots. This is distinct from the separate, persisted revision-history
+ * mechanism — these stacks are lost on reload and never touch storage.
+ */
+describe("useGraphStore undo/redo", () => {
+  beforeEach(() => {
+    useGraphStore.getState().replaceDocument(emptyDocument("test"));
+    useGraphStore.getState().markSaved();
+    // The store is a process-wide singleton and `replaceDocument` itself
+    // funnels through the undo/redo history (it is one of the seven
+    // document-mutating actions), so it does not clear the stacks left by a
+    // previous test. Reset them directly so each test starts from a
+    // genuinely empty history.
+    useGraphStore.setState({ undoStack: [], redoStack: [] });
+  });
+
+  function document(): GraphDocument {
+    return useGraphStore.getState().document;
+  }
+
+  function addNodeOp(login: string): GraphOperation {
+    return {
+      type: "addNode",
+      node: GraphNodeSchema.parse({
+        id: crypto.randomUUID(),
+        type: "org",
+        position: { x: 0, y: 0 },
+        data: { login },
+      }),
+    };
+  }
+
+  it("restores the state after the first apply once a second apply is undone", () => {
+    useGraphStore.getState().apply(addNodeOp("first"));
+    const afterFirst = document();
+
+    useGraphStore.getState().apply(addNodeOp("second"));
+
+    useGraphStore.getState().undo();
+
+    expect(document()).toBe(afterFirst);
+  });
+
+  it("restores the second apply's result when a redo follows an undo", () => {
+    useGraphStore.getState().apply(addNodeOp("first"));
+    useGraphStore.getState().apply(addNodeOp("second"));
+    const afterSecond = document();
+
+    useGraphStore.getState().undo();
+    useGraphStore.getState().redo();
+
+    expect(document()).toBe(afterSecond);
+  });
+
+  it("does nothing when undo is called with an empty undo stack", () => {
+    const before = document();
+
+    useGraphStore.getState().undo();
+
+    expect(document()).toBe(before);
+    expect(useGraphStore.getState().dirty).toBe(false);
+  });
+
+  it("clears the redo stack once a fresh apply follows an undo", () => {
+    useGraphStore.getState().apply(addNodeOp("first"));
+    useGraphStore.getState().apply(addNodeOp("second"));
+    useGraphStore.getState().undo();
+    expect(useGraphStore.getState().redoStack).toHaveLength(1);
+
+    useGraphStore.getState().apply(addNodeOp("third"));
+
+    expect(useGraphStore.getState().redoStack).toEqual([]);
+  });
+
+  it("clears dirty once undo lands back on the document reference set by markSaved", () => {
+    useGraphStore.getState().apply(addNodeOp("first"));
+    useGraphStore.getState().markSaved();
+    expect(useGraphStore.getState().dirty).toBe(false);
+
+    useGraphStore.getState().apply(addNodeOp("second"));
+    expect(useGraphStore.getState().dirty).toBe(true);
+
+    useGraphStore.getState().undo();
+
+    expect(useGraphStore.getState().dirty).toBe(false);
   });
 });
