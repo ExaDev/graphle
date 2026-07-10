@@ -19,6 +19,10 @@
  * how `useUrlSync` handles a `#url=` fragment on load. An ambiguous gist
  * (more than one file looks like a graph) opens `GistPickerModal` instead of
  * loading anything, via the shared `store.gistPicker` state.
+ *
+ * A GitHub Projects (v2) URL takes a different, authenticated path instead:
+ * see `handleLoadFromUrl`'s branch on `parseProjectUrl`, which mirrors
+ * `useUrlSync`'s identical branch for the `#url=` case.
  */
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -39,12 +43,22 @@ import {
 import { IconDownload, IconPencil, IconTrash, IconUpload, IconWorldDownload } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 
+import {
+  createGitHubClient,
+  GitHubError,
+  githubErrorMessage,
+  loadProjectDocument,
+  parseProjectUrl,
+  type GitHubClient,
+  type ParsedProjectUrl,
+} from "@/github";
 import { resolveRemoteUrl } from "@/sharing/gist";
 import { exportCanvasDocument, exportDocument, importDocument } from "@/sharing/json";
 import { writeRemoteUrlToLocation } from "@/sharing/url";
 import { type StoredGraphSummary } from "@/schema";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
+import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 import { graphRow, selectedGraphRow } from "./GraphsDrawer.css";
@@ -69,6 +83,8 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
   const setGraphId = useGraphStore((state) => state.setGraphId);
   const markSaved = useGraphStore((state) => state.markSaved);
   const setGistPicker = useGraphStore((state) => state.setGistPicker);
+  const openGitHubPanel = useGraphStore((state) => state.openGitHubPanel);
+  const closeGitHubPanel = useGraphStore((state) => state.closeGitHubPanel);
 
   const summaries = useLiveQuery(
     async () => store.list(new AbortController().signal),
@@ -177,11 +193,55 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     }
   }
 
+  /**
+   * Load a GitHub Projects URL with an already-authenticated client, applying
+   * the result or reporting the failure itself — this is also handed to
+   * `openGitHubPanel` as a fire-and-forget pending action (no surrounding
+   * try/catch there), so it cannot leave an error unhandled.
+   */
+  async function loadGitHubProject(
+    parsed: ParsedProjectUrl,
+    client: GitHubClient,
+  ): Promise<void> {
+    try {
+      const result = await loadProjectDocument(parsed, client, new AbortController().signal);
+      replaceDocument(result.document);
+      setGraphId(undefined);
+      writeRemoteUrlToLocation(result.canonicalUrl);
+      notifications.show({ color: "green", message: "GitHub project loaded" });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `Could not load the GitHub project: ${
+          error instanceof GitHubError
+            ? githubErrorMessage(error)
+            : error instanceof Error
+              ? error.message
+              : String(error)
+        }`,
+      });
+    }
+  }
+
   async function handleLoadFromUrl(): Promise<void> {
     const trimmed = remoteUrl.trim();
     if (trimmed === "") return;
     setRemoteLoading(true);
     try {
+      const parsedProject = parseProjectUrl(trimmed);
+      if (parsedProject !== undefined) {
+        const secretStore = createSecretStore(db);
+        const token = await secretStore.getGitHubToken(new AbortController().signal);
+        if (token !== undefined) {
+          await loadGitHubProject(parsedProject, createGitHubClient({ token }));
+        } else {
+          openGitHubPanel((client) => {
+            void loadGitHubProject(parsedProject, client).then(closeGitHubPanel);
+          });
+        }
+        return;
+      }
+
       const result = await resolveRemoteUrl(trimmed, new AbortController().signal);
       if (result.kind === "ambiguousGist") {
         setGistPicker({ candidates: result.candidates });

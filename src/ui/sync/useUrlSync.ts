@@ -4,18 +4,23 @@
  * On mount: an inline `#g=` payload takes precedence and is decoded
  * synchronously; a malformed payload throws {@link ShareDecodeError}, which we
  * surface as a red notification and leave the current document untouched.
- * Otherwise, a `#url=` fragment is resolved asynchronously via {@link
- * resolveRemoteUrl} — which also disambiguates a gist URL that names the gist
- * as a whole rather than one file — and loaded on success. `resolveRemoteUrl`
- * normalises the resolved single-file URL back into the address bar (via
- * {@link writeRemoteUrlToLocation}) so a reload or a re-share goes straight to
- * that file, skipping the gist-listing round trip next time. More than one
- * valid graph file in a gist opens the picker (`store.gistPicker`,
- * `GistPickerModal`) instead of loading anything. Any {@link RemoteLoadError}
- * (a network failure, a non-2xx response, non-JSON, JSON that decodes to
- * neither a graphle document nor a canvas, or a gist with no graph files) is
- * surfaced as a red notification rather than left to reject silently. The
- * in-flight fetch is aborted on unmount.
+ * Otherwise the `#url=` target is resolved asynchronously, in order:
+ *
+ * 1. A GitHub Projects (v2) URL ({@link parseProjectUrl}) loads via the
+ *    authenticated GraphQL client — a stored PAT is used directly; with none
+ *    stored, `GitHubPanel` opens (via `store.openGitHubPanel`) with a pending
+ *    action that resumes the load once the user validates one. Either way,
+ *    on success the address bar is normalised to the project's canonical URL
+ *    (stripped of any `/views/{N}` or `?query=` the user pasted — this
+ *    codec never tracks a view's filter/sort, it always loads every item).
+ * 2. Otherwise, {@link resolveRemoteUrl} — a plain remote fetch, or gist
+ *    disambiguation when the URL names a gist as a whole rather than one
+ *    file (opens `GistPickerModal` via `store.gistPicker` when more than one
+ *    file in the gist looks like a graph).
+ *
+ * Any failure ({@link RemoteLoadError} or {@link GitHubError}) is surfaced as
+ * a red notification rather than left to reject silently. The in-flight
+ * fetch is aborted on unmount.
  *
  * While mounted: subscribe to document changes and, debounced, write the
  * document back to the URL via `history.replaceState` (no extra history step).
@@ -31,6 +36,15 @@
 import { useEffect } from "react";
 import { notifications } from "@mantine/notifications";
 
+import {
+  createGitHubClient,
+  GitHubError,
+  githubErrorMessage,
+  loadProjectDocument,
+  parseProjectUrl,
+  type GitHubClient,
+  type ParsedProjectUrl,
+} from "@/github";
 import { ShareDecodeError } from "@/sharing/codec";
 import { resolveRemoteUrl } from "@/sharing/gist";
 import { RemoteLoadError } from "@/sharing/remote";
@@ -40,6 +54,8 @@ import {
   writeDocumentToLocation,
   writeRemoteUrlToLocation,
 } from "@/sharing/url";
+import { db } from "@/storage/db";
+import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 /** Debounce window before a document change is written to the URL fragment. */
@@ -50,9 +66,18 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** A message covering both `GitHubError` (kind-specific guidance) and
+ *  `RemoteLoadError`/anything else (its own `.message`). */
+function remoteLoadFailureMessage(error: unknown): string {
+  if (error instanceof GitHubError) return githubErrorMessage(error);
+  return describe(error);
+}
+
 export function useUrlSync(): void {
   const replaceDocument = useGraphStore((s) => s.replaceDocument);
   const setGistPicker = useGraphStore((s) => s.setGistPicker);
+  const openGitHubPanel = useGraphStore((s) => s.openGitHubPanel);
+  const closeGitHubPanel = useGraphStore((s) => s.closeGitHubPanel);
 
   useEffect(() => {
     // Subscribe before loading so the load's own document change is observed
@@ -74,6 +99,31 @@ export function useUrlSync(): void {
 
     const controller = new AbortController();
 
+    /** Load a GitHub Projects URL with an already-authenticated client,
+     *  applying the result or reporting the failure. Shared by the
+     *  token-already-stored path and the pending-action resumed after a
+     *  fresh PAT validation. */
+    function loadProjectWith(
+      parsed: ParsedProjectUrl,
+      client: GitHubClient,
+      onSuccess?: () => void,
+    ): void {
+      loadProjectDocument(parsed, client, controller.signal)
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          replaceDocument(result.document);
+          writeRemoteUrlToLocation(result.canonicalUrl);
+          onSuccess?.();
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          notifications.show({
+            color: "red",
+            message: `Could not load the GitHub project: ${remoteLoadFailureMessage(error)}`,
+          });
+        });
+    }
+
     // Load: an inline `#g=` share takes precedence and decodes synchronously.
     // A bad payload is reported and the current document is left in place;
     // anything unexpected is rethrown.
@@ -82,33 +132,57 @@ export function useUrlSync(): void {
       if (loaded !== undefined) {
         replaceDocument(loaded.document);
       } else {
-        // No inline share: fall back to a `#url=` remote fetch, if present.
+        // No inline share: fall back to a `#url=` target, if present.
         const remoteUrl = readRemoteUrlFromLocation();
         if (remoteUrl !== undefined) {
-          resolveRemoteUrl(remoteUrl, controller.signal)
-            .then((result) => {
-              if (controller.signal.aborted) return;
-              if (result.kind === "ambiguousGist") {
-                setGistPicker({ candidates: result.candidates });
-                return;
-              }
-              replaceDocument(result.document);
-              // Normalise the address bar to the resolved single-file URL so
-              // a reload skips re-resolving an ambiguous gist URL.
-              if (result.resolvedUrl !== remoteUrl) {
-                writeRemoteUrlToLocation(result.resolvedUrl);
-              }
-            })
-            .catch((error: unknown) => {
-              if (controller.signal.aborted) return;
-              notifications.show({
-                color: "red",
-                message:
-                  error instanceof RemoteLoadError
-                    ? `Could not load the remote graph: ${error.message}`
-                    : `Could not load the remote graph: ${describe(error)}`,
+          const parsedProject = parseProjectUrl(remoteUrl);
+          if (parsedProject !== undefined) {
+            const secretStore = createSecretStore(db);
+            secretStore
+              .getGitHubToken(controller.signal)
+              .then((token) => {
+                if (controller.signal.aborted) return;
+                if (token !== undefined) {
+                  loadProjectWith(parsedProject, createGitHubClient({ token }));
+                } else {
+                  openGitHubPanel((client) =>
+                    loadProjectWith(parsedProject, client, closeGitHubPanel),
+                  );
+                }
+              })
+              .catch((error: unknown) => {
+                if (controller.signal.aborted) return;
+                notifications.show({
+                  color: "red",
+                  message: `Could not read the stored GitHub token: ${describe(error)}`,
+                });
               });
-            });
+          } else {
+            resolveRemoteUrl(remoteUrl, controller.signal)
+              .then((result) => {
+                if (controller.signal.aborted) return;
+                if (result.kind === "ambiguousGist") {
+                  setGistPicker({ candidates: result.candidates });
+                  return;
+                }
+                replaceDocument(result.document);
+                // Normalise the address bar to the resolved single-file URL
+                // so a reload skips re-resolving an ambiguous gist URL.
+                if (result.resolvedUrl !== remoteUrl) {
+                  writeRemoteUrlToLocation(result.resolvedUrl);
+                }
+              })
+              .catch((error: unknown) => {
+                if (controller.signal.aborted) return;
+                notifications.show({
+                  color: "red",
+                  message:
+                    error instanceof RemoteLoadError
+                      ? `Could not load the remote graph: ${error.message}`
+                      : `Could not load the remote graph: ${describe(error)}`,
+                });
+              });
+          }
         }
       }
     } catch (error) {
@@ -127,5 +201,5 @@ export function useUrlSync(): void {
       controller.abort();
       if (writeTimer !== undefined) clearTimeout(writeTimer);
     };
-  }, [replaceDocument, setGistPicker]);
+  }, [replaceDocument, setGistPicker, openGitHubPanel, closeGitHubPanel]);
 }
