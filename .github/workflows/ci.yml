@@ -13,16 +13,38 @@ permissions:
 # GitHub Pages. No self-hosted fleet or runner-selection step is needed.
 
 jobs:
-  quality:
-    name: Lint, typecheck and test
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-and-run
+        with:
+          task: lint
+          command: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-and-run
+        with:
+          task: typecheck
+          command: pnpm typecheck
+
+  test:
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-and-run
         with:
-          task: quality
-          command: pnpm lint && pnpm typecheck && pnpm test:coverage
+          task: test
+          command: pnpm test:coverage
       - name: Post coverage summary
         if: always()
         run: |
@@ -50,7 +72,7 @@ jobs:
 
   release:
     name: Release
-    needs: quality
+    needs: [lint, typecheck, test]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -76,7 +98,7 @@ jobs:
     # which makes the header show the version instead of the un-tagged feat
     # commit's hash. For non-releasing commits release creates no new tag and the
     # header falls back to the hash, which is correct.
-    needs: [quality, release]
+    needs: [lint, typecheck, test, release]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Never overlap two Pages deploys; queue the next behind an in-progress one.
