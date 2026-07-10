@@ -35,15 +35,27 @@ import {
 
 import { useGraphStore } from "@/ui/store/graph-store";
 
+import { type ContextMenuState } from "./ContextMenu";
 import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
 import { nodeTypes } from "./type-presentation";
 
-export function GraphCanvas() {
+export interface GraphCanvasProps {
+  /**
+   * Fired on a right-click over a node, edge, or the pane. Receives a fully
+   * formed {@link ContextMenuState}: for node/edge it carries the target id;
+   * for the pane it carries the click converted to flow space (computed here,
+   * where `useReactFlow().screenToFlowPosition` is in scope) so the owner can
+   * seed an "Add node here" without needing its own React Flow context.
+   */
+  onContextMenu: (state: ContextMenuState) => void;
+}
+
+export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
   const graphDocument = useGraphStore((s) => s.document);
   const graphId = useGraphStore((s) => s.graphId);
   const apply = useGraphStore((s) => s.apply);
   const setSelection = useGraphStore((s) => s.setSelection);
-  const { fitView } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   // Drive React Flow's colour mode from the Mantine scheme so the controls and
   // minimap follow light/dark/system (React Flow otherwise defaults to light).
   const { colorScheme } = useMantineColorScheme();
@@ -202,6 +214,38 @@ export function GraphCanvas() {
         onConnect={handleConnect}
         onNodeDragStop={handleNodeDragStop}
         onSelectionChange={handleSelectionChange}
+        onNodeContextMenu={(event, node) => {
+          event.preventDefault();
+          setSelection({ nodeId: node.id, edgeId: undefined });
+          onContextMenu({
+            kind: "node",
+            x: event.clientX,
+            y: event.clientY,
+            nodeId: node.id,
+          });
+        }}
+        onEdgeContextMenu={(event, edge) => {
+          event.preventDefault();
+          setSelection({ nodeId: undefined, edgeId: edge.id });
+          onContextMenu({
+            kind: "edge",
+            x: event.clientX,
+            y: event.clientY,
+            edgeId: edge.id,
+          });
+        }}
+        onPaneContextMenu={(event) => {
+          event.preventDefault();
+          onContextMenu({
+            kind: "pane",
+            x: event.clientX,
+            y: event.clientY,
+            flowPosition: screenToFlowPosition({
+              x: event.clientX,
+              y: event.clientY,
+            }),
+          });
+        }}
         deleteKeyCode={["Backspace", "Delete"]}
         fitView
       >

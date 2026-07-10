@@ -31,10 +31,13 @@ import {
   IconTemplate,
 } from "@tabler/icons-react";
 import { ReactFlowProvider } from "@xyflow/react";
+import { useState } from "react";
 
+import { type Position } from "@/schema";
 import { buildShareUrl } from "@/sharing/url";
 import { useGraphStore } from "@/ui/store/graph-store";
 
+import { ContextMenu, type ContextMenuState } from "./flow/ContextMenu";
 import { GraphCanvas } from "./flow/GraphCanvas";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
 import { GitHubPanel } from "./panels/GitHubPanel";
@@ -48,20 +51,69 @@ import { useUrlSync } from "./sync/useUrlSync";
  *  this constant is the single source for both the header and that calc. */
 const HEADER_HEIGHT = 56;
 
+/** Diagonal offset (px) applied to a duplicated node so the copy lands clear of
+ *  the original rather than directly on top of it. */
+const DUPLICATE_OFFSET_PX = 40;
+
 export function AppShell() {
   useUrlSync();
 
   const document = useGraphStore((state) => state.document);
   const dirty = useGraphStore((state) => state.dirty);
   const apply = useGraphStore((state) => state.apply);
+  const setSelection = useGraphStore((state) => state.setSelection);
 
-  const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false);
+  const [addOpened, { open: openAdd, close: closeAddDisclosure }] =
+    useDisclosure(false);
   const [typeOpened, { open: openType, close: closeType }] = useDisclosure(false);
   const [graphsOpened, { open: openGraphs, close: closeGraphs }] =
     useDisclosure(false);
   const [githubOpened, { open: openGitHub, close: closeGitHub }] =
     useDisclosure(false);
   const [inspectorOpened, { toggle: toggleInspector }] = useDisclosure(false);
+
+  // Right-click context menu: open state + the flow position to seed an
+  // "Add node here" (cleared once the modal closes, so the toolbar "Add node"
+  // falls back to the cascade).
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
+  const [addHerePos, setAddHerePos] = useState<Position | undefined>(undefined);
+
+  function closeAdd(): void {
+    closeAddDisclosure();
+    setAddHerePos(undefined);
+  }
+
+  function handleDuplicate(nodeId: string): void {
+    const node = document.nodes.find((n) => n.id === nodeId);
+    if (node === undefined) return;
+    apply({
+      type: "addNode",
+      node: {
+        ...node,
+        id: crypto.randomUUID(),
+        position: {
+          x: node.position.x + DUPLICATE_OFFSET_PX,
+          y: node.position.y + DUPLICATE_OFFSET_PX,
+        },
+      },
+    });
+  }
+
+  function handleDeleteNode(nodeId: string): void {
+    apply({ type: "removeNode", id: nodeId });
+    setSelection({ nodeId: undefined, edgeId: undefined });
+  }
+
+  function handleDeleteEdge(edgeId: string): void {
+    apply({ type: "removeEdge", id: edgeId });
+    setSelection({ nodeId: undefined, edgeId: undefined });
+  }
+
+  function handleAddHere(): void {
+    if (ctxMenu?.flowPosition === undefined) return;
+    setAddHerePos(ctxMenu.flowPosition);
+    openAdd();
+  }
 
   async function handleCopyShareUrl(): Promise<void> {
     try {
@@ -180,7 +232,7 @@ export function AppShell() {
          *  viewport height so the 100% has something concrete to fill. */}
         <div style={{ height: `calc(100dvh - ${HEADER_HEIGHT}px)` }}>
           <ReactFlowProvider>
-            <GraphCanvas />
+            <GraphCanvas onContextMenu={setCtxMenu} />
           </ReactFlowProvider>
         </div>
       </MantineAppShell.Main>
@@ -191,10 +243,28 @@ export function AppShell() {
         </MantineAppShell.Section>
       </MantineAppShell.Aside>
 
-      <AddNodeMenu opened={addOpened} onClose={closeAdd} />
+      <AddNodeMenu
+        opened={addOpened}
+        onClose={closeAdd}
+        initialPosition={addHerePos}
+      />
       <TypeEditorModal opened={typeOpened} onClose={closeType} />
       <GitHubPanel opened={githubOpened} onClose={closeGitHub} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
+      <ContextMenu
+        state={ctxMenu}
+        onClose={() => setCtxMenu(null)}
+        onDuplicate={handleDuplicate}
+        onDeleteNode={handleDeleteNode}
+        onDeleteEdge={handleDeleteEdge}
+        onSelectNode={(nodeId) =>
+          setSelection({ nodeId, edgeId: undefined })
+        }
+        onSelectEdge={(edgeId) =>
+          setSelection({ nodeId: undefined, edgeId })
+        }
+        onAddHere={handleAddHere}
+      />
     </MantineAppShell>
   );
 }

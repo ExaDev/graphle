@@ -18,6 +18,7 @@ import {
   type GraphNode,
   type NodeData,
   type NodeTypeDefinition,
+  type Position,
   zodSchemaForType,
 } from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
@@ -27,6 +28,14 @@ import { NodeDataFields } from "./NodeDataFields";
 export interface AddNodeMenuProps {
   opened: boolean;
   onClose: () => void;
+  /**
+   * An explicit position for the new node, supplied when the modal is opened
+   * from a pane right-click ("Add node here"); `undefined` for the toolbar
+   * "Add node" path, which places the node on the add-cascade grid via
+   * {@link cascadePosition}. Modelled as `Position | undefined` (not optional)
+   * so the caller can always pass a value under `exactOptionalPropertyTypes`.
+   */
+  initialPosition: Position | undefined;
 }
 
 /** Narrows `unknown` to a string-indexed record without a cast. */
@@ -102,7 +111,7 @@ function validate(typeDef: NodeTypeDefinition, data: NodeData): string | undefin
   return firstIssue(zodSchemaForType(typeDef).safeParse(data));
 }
 
-export function AddNodeMenu({ opened, onClose }: AddNodeMenuProps) {
+export function AddNodeMenu({ opened, onClose, initialPosition }: AddNodeMenuProps) {
   const apply = useGraphStore((state) => state.apply);
   const document = useGraphStore((state) => state.document);
 
@@ -146,7 +155,7 @@ export function AddNodeMenu({ opened, onClose }: AddNodeMenuProps) {
       node: {
         ...draft,
         id: crypto.randomUUID(),
-        position: cascadePosition(document.nodes.length),
+        position: initialPosition ?? cascadePosition(document.nodes.length),
       },
     });
     setError(undefined);
