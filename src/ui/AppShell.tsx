@@ -10,10 +10,10 @@
  *
  * `useUrlSync` is mounted here, high in the tree, so the `#g=` share fragment
  * stays in sync with the document for every descendant edit. `useAutosave`,
- * `useGistAutoSync`, and `useGithubFileAutoSync` are mounted alongside it for
- * the same reason: all are mount-time hooks with no JSX of their own that
- * need to observe every document change regardless of which descendant panel
- * is open.
+ * `useGistAutoSync`, `useGithubFileAutoSync`, and `useTypeLibraryAutoSync` are
+ * mounted alongside it for the same reason: all are mount-time hooks with no
+ * JSX of their own that need to observe every document (or type library)
+ * change regardless of which descendant panel is open.
  */
 import {
   ActionIcon,
@@ -30,6 +30,7 @@ import {
   IconAdjustmentsHorizontal,
   IconBrandGithub,
   IconArrowsSplit2,
+  IconCategory,
   IconHistory,
   IconLink,
   IconPlus,
@@ -54,10 +55,12 @@ import { HistoryDrawer } from "./panels/HistoryDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
 import { SyncConflictModal } from "./panels/SyncConflictModal";
 import { TypeEditorModal } from "./panels/TypeEditorModal";
+import { TypesDrawer } from "./panels/TypesDrawer";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAutosave } from "./sync/useAutosave";
 import { useGistAutoSync } from "./sync/useGistAutoSync";
 import { useGithubFileAutoSync } from "./sync/useGithubFileAutoSync";
+import { useTypeLibraryAutoSync } from "./sync/useTypeLibraryAutoSync";
 import { useUrlSync } from "./sync/useUrlSync";
 
 /** Header height in px. The canvas is sized to fill the viewport below it, so
@@ -73,6 +76,7 @@ export function AppShell() {
   useAutosave();
   useGistAutoSync();
   useGithubFileAutoSync();
+  useTypeLibraryAutoSync();
 
   const document = useGraphStore((state) => state.document);
   const dirty = useGraphStore((state) => state.dirty);
@@ -100,6 +104,8 @@ export function AppShell() {
   const [graphsOpened, { open: openGraphs, close: closeGraphs }] =
     useDisclosure(false);
   const [historyOpened, { open: openHistory, close: closeHistory }] =
+    useDisclosure(false);
+  const [typesManagerOpened, { open: openTypesManager, close: closeTypesManager }] =
     useDisclosure(false);
   const [inspectorOpened, { toggle: toggleInspector }] = useDisclosure(false);
 
@@ -263,6 +269,15 @@ export function AppShell() {
             <IconHistory size={16} />
           </ActionIcon>
 
+          <ActionIcon
+            variant="default"
+            size="lg"
+            aria-label="Manage types"
+            onClick={openTypesManager}
+          >
+            <IconCategory size={16} />
+          </ActionIcon>
+
           <ThemeToggle />
 
           <ActionIcon
@@ -304,6 +319,7 @@ export function AppShell() {
       <GitHubPanel opened={githubPanelOpened} onClose={closeGitHubPanel} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
       <HistoryDrawer opened={historyOpened} onClose={closeHistory} />
+      <TypesDrawer opened={typesManagerOpened} onClose={closeTypesManager} />
       <GistPickerModal />
       <SyncConflictModal />
       <ContextMenu
