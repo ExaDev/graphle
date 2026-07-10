@@ -23,6 +23,13 @@
  * A GitHub Projects (v2) URL takes a different, authenticated path instead:
  * see `handleLoadFromUrl`'s branch on `parseProjectUrl`, which mirrors
  * `useUrlSync`'s identical branch for the `#url=` case.
+ *
+ * "Remote sync" (shown only for a graph whose stored record carries a
+ * `linkedRemote` with `syncMode !== "off"`) offers manual Push/Pull against
+ * that gist, alongside the automatic background sync `useGistAutoSync` runs
+ * for `syncMode: "automatic"` graphs — the two share the same gist API calls
+ * and PAT-resume mechanism (see `handlePushToGist`) but this pair is always
+ * user-triggered, regardless of `syncMode`.
  */
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -40,7 +47,15 @@ import {
   TextInput,
   UnstyledButton,
 } from "@mantine/core";
-import { IconDownload, IconPencil, IconTrash, IconUpload, IconWorldDownload } from "@tabler/icons-react";
+import {
+  IconCloudDownload,
+  IconCloudUpload,
+  IconDownload,
+  IconPencil,
+  IconTrash,
+  IconUpload,
+  IconWorldDownload,
+} from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 
 import {
@@ -52,16 +67,22 @@ import {
   type GitHubClient,
   type ParsedProjectUrl,
 } from "@/github";
-import { resolveRemoteUrl } from "@/sharing/gist";
-import { exportCanvasDocument, exportDocument, importDocument } from "@/sharing/json";
+import { fetchGistRevision, listGistHistory, pushGistFile, resolveRemoteUrl } from "@/sharing/gist";
+import { exportCanvasDocument, exportDocument, importDocument, serialiseDocument } from "@/sharing/json";
 import { writeRemoteUrlToLocation } from "@/sharing/url";
-import { type StoredGraphSummary } from "@/schema";
+import { type LinkedRemoteSource, type StoredGraphSummary } from "@/schema";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
+import { createRevisionStore } from "@/storage/revision-store-dexie";
 import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 import { graphRow, selectedGraphRow } from "./GraphsDrawer.css";
+
+/** The `linkedRemote` shape this drawer's manual sync actions act on; the
+ *  `"githubFile"` arm of the union is reserved but has no sync implementation
+ *  to call here yet. */
+type GistLinkedRemote = Extract<LinkedRemoteSource, { provider: "gist" }>;
 
 export interface GraphsDrawerProps {
   opened: boolean;
@@ -92,8 +113,21 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     EMPTY_SUMMARIES,
   );
 
+  // The live store only tracks the current document, not the persisted
+  // StoredGraph row that carries `linkedRemote` — re-read it live so the
+  // Remote sync section reflects the current graph's link (or its absence)
+  // without a manual refresh.
+  const currentGraph = useLiveQuery(
+    async () =>
+      graphId === undefined ? undefined : store.get(graphId, new AbortController().signal),
+    [graphId],
+  );
+  const linkedGist: GistLinkedRemote | undefined =
+    currentGraph?.linkedRemote?.provider === "gist" ? currentGraph.linkedRemote : undefined;
+
   const [remoteUrl, setRemoteUrl] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
 
   async function handleSave(): Promise<void> {
     if (graphId === undefined) {
@@ -265,6 +299,136 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     }
   }
 
+  /**
+   * Push the current document to the linked gist, guarding against a remote
+   * that moved since the last recorded sync by reporting a conflict instead
+   * of overwriting it — mirroring `useGistAutoSync`'s `attemptPush`, since a
+   * manual push must respect the same never-silently-overwrite invariant as
+   * the automatic path.
+   */
+  async function pushToGist(remote: GistLinkedRemote, token: string): Promise<void> {
+    if (currentGraph === undefined) return;
+    const controller = new AbortController();
+    const history = await listGistHistory(remote.gistId, controller.signal);
+    const remoteHead = history[0];
+    if (remoteHead === undefined) {
+      throw new Error(`Gist ${remote.gistId} has no revision history`);
+    }
+    if (
+      remote.lastSyncedRevision !== undefined &&
+      remoteHead.version !== remote.lastSyncedRevision
+    ) {
+      notifications.show({
+        color: "orange",
+        message: "The gist has changed since the last sync — pull first, then push.",
+      });
+      return;
+    }
+    const newSha = await pushGistFile(
+      remote.gistId,
+      remote.filename,
+      serialiseDocument(currentGraph.document),
+      token,
+      controller.signal,
+    );
+    const syncedRemote: GistLinkedRemote = {
+      ...remote,
+      lastSyncedRevision: newSha,
+      lastSyncedAt: new Date().toISOString(),
+    };
+    await store.save({ ...currentGraph, linkedRemote: syncedRemote }, controller.signal);
+    notifications.show({ color: "green", message: "Pushed to gist" });
+  }
+
+  async function handlePushToGist(): Promise<void> {
+    if (linkedGist === undefined) return;
+    setSyncLoading(true);
+    try {
+      const secretStore = createSecretStore(db);
+      const token = await secretStore.getGitHubToken(new AbortController().signal);
+      if (token !== undefined) {
+        await pushToGist(linkedGist, token);
+        return;
+      }
+      // No stored PAT: the panel only ever gives back a GitHubClient, which
+      // never exposes its own token (SECURITY, see GitHubPanel.tsx); re-read
+      // the token from the SecretStore once validation has saved it, exactly
+      // as useGistAutoSync's runPush does for the automatic path.
+      openGitHubPanel(() => {
+        secretStore
+          .getGitHubToken(new AbortController().signal)
+          .then((resumedToken) => {
+            if (resumedToken === undefined) return undefined;
+            return pushToGist(linkedGist, resumedToken).then(closeGitHubPanel);
+          })
+          .catch((error: unknown) => {
+            notifications.show({
+              color: "red",
+              message: `Could not push to gist: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          });
+      });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `Could not push to gist: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
+  async function handlePullFromGist(): Promise<void> {
+    if (linkedGist === undefined || currentGraph === undefined) return;
+    setSyncLoading(true);
+    try {
+      const controller = new AbortController();
+      const history = await listGistHistory(linkedGist.gistId, controller.signal);
+      const remoteHead = history[0];
+      if (remoteHead === undefined) {
+        throw new Error(`Gist ${linkedGist.gistId} has no revision history`);
+      }
+      const pulled = await fetchGistRevision(
+        linkedGist.gistId,
+        remoteHead.version,
+        linkedGist.filename,
+        controller.signal,
+      );
+      replaceDocument(pulled);
+      const syncedRemote: GistLinkedRemote = {
+        ...linkedGist,
+        lastSyncedRevision: remoteHead.version,
+        lastSyncedAt: new Date().toISOString(),
+      };
+      await store.save(
+        { ...currentGraph, document: pulled, linkedRemote: syncedRemote },
+        controller.signal,
+      );
+      // The extension point the local revision-history design reserved for
+      // exactly this case: a pull is recorded like any other revision, but
+      // tagged with its provenance rather than looking like a local edit.
+      const revisionStore = createRevisionStore(db);
+      await revisionStore.record(
+        {
+          id: crypto.randomUUID(),
+          graphId: currentGraph.id,
+          document: pulled,
+          createdAt: new Date().toISOString(),
+          origin: "remote-pull",
+        },
+        controller.signal,
+      );
+      notifications.show({ color: "green", message: "Pulled latest from gist" });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `Could not pull from gist: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
   return (
     <Drawer opened={opened} onClose={onClose} title="Graphs" position="right" size="md">
       <Stack gap="md">
@@ -321,6 +485,36 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
           <Badge color="orange" variant="light" w="fit-content">
             Unsaved changes
           </Badge>
+        )}
+        {linkedGist !== undefined && (
+          <Stack gap="xs">
+            <Divider label="Remote sync" labelPosition="center" />
+            <Group gap="xs" justify="space-between">
+              <Text size="xs" c="dimmed">
+                Linked to gist <Text span fw={600}>{linkedGist.filename}</Text> ({linkedGist.syncMode})
+              </Text>
+              <Group gap="xs">
+                <Button
+                  variant="default"
+                  size="xs"
+                  leftSection={<IconCloudUpload size={14} />}
+                  loading={syncLoading}
+                  onClick={() => void handlePushToGist()}
+                >
+                  Push
+                </Button>
+                <Button
+                  variant="default"
+                  size="xs"
+                  leftSection={<IconCloudDownload size={14} />}
+                  loading={syncLoading}
+                  onClick={() => void handlePullFromGist()}
+                >
+                  Pull
+                </Button>
+              </Group>
+            </Group>
+          </Stack>
         )}
         <Divider label="Saved graphs" labelPosition="center" />
         <ScrollArea.Autosize mah="60vh" type="scroll">
