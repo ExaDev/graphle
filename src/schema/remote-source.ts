@@ -6,11 +6,9 @@ import { IsoTimestamp } from "./primitives";
  * A graph's link to a remote source it can sync with. `syncMode: "off"`
  * retains the link for provenance/history display without ever reading or
  * writing automatically; `"manual"` and `"automatic"` are implemented by
- * later-phase sync code.
- *
- * The `githubFile` provider is reserved but not wired up anywhere else yet,
- * so its shape exists purely to make adding it later additive rather than
- * a breaking schema change.
+ * `useGistAutoSync`/`useGithubFileAutoSync` (automatic) and
+ * `GraphsDrawer`'s Push/Pull actions (manual), one pair of implementations
+ * per provider arm below.
  */
 export const LinkedRemoteSource = z.discriminatedUnion("provider", [
   z.object({

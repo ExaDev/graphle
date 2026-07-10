@@ -21,9 +21,12 @@ import { decodeDocumentFromJson, ShareDecodeError } from "./codec";
 
 /**
  * The discriminated set of failures {@link loadDocumentFromUrl} can produce,
- * plus the gist-specific kinds `./gist` adds for the same error type (one
- * error type for the whole remote-loading domain, mirroring how
- * {@link GitHubError} covers every GitHub client failure).
+ * plus the provider-specific kinds `./gist` and `./github-file` add for the
+ * same error type (one error type for the whole remote-loading domain,
+ * mirroring how {@link GitHubError} covers every GitHub client failure).
+ * `unauthorised`/`forbidden`/`notFound` are shared by both REST providers via
+ * {@link classifyGithubRestStatus} in `./github-rest-errors`, so their
+ * messages stay provider-neutral rather than naming one or the other.
  */
 export type RemoteLoadErrorKind =
   | { type: "network"; cause: unknown }
@@ -35,7 +38,8 @@ export type RemoteLoadErrorKind =
   | { type: "unauthorised" }
   | { type: "forbidden" }
   | { type: "notFound" }
-  | { type: "gistFileNotFound"; filename: string };
+  | { type: "gistFileNotFound"; filename: string }
+  | { type: "invalidGithubFileResponse"; message: string };
 
 /**
  * Thrown by {@link loadDocumentFromUrl} for any fetch, parse, or decode
@@ -71,13 +75,15 @@ function messageForKind(kind: RemoteLoadErrorKind): string {
         ? "This gist has no files."
         : `This gist has no graph files (found: ${kind.filenames.join(", ")}).`;
     case "unauthorised":
-      return "Gist request was unauthorised (HTTP 401).";
+      return "GitHub request was unauthorised (HTTP 401).";
     case "forbidden":
-      return "Gist request forbidden (HTTP 403).";
+      return "GitHub request was forbidden (HTTP 403).";
     case "notFound":
-      return "Gist not found (HTTP 404).";
+      return "Not found on GitHub (HTTP 404).";
     case "gistFileNotFound":
       return `File "${kind.filename}" was not found in this gist revision.`;
+    case "invalidGithubFileResponse":
+      return `GitHub file API response was malformed: ${kind.message}`;
   }
 }
 
