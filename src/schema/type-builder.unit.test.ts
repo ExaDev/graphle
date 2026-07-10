@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   buildJsonSchemaFromFields,
+  fieldsFromJsonSchema,
   type FieldDefinition,
   type JsonObject,
 } from "./type-builder";
@@ -90,5 +91,41 @@ describe("buildJsonSchemaFromFields", () => {
     expect(() =>
       buildJsonSchemaFromFields([{ name: "kind", type: "enum" }]),
     ).toThrow();
+  });
+});
+
+describe("fieldsFromJsonSchema", () => {
+  it("round-trips every field type through buildJsonSchemaFromFields", () => {
+    const original: FieldDefinition[] = [
+      { name: "title", type: "string" },
+      { name: "count", type: "number" },
+      { name: "active", type: "boolean" },
+      { name: "status", type: "enum", options: ["running", "stopped"] },
+    ];
+
+    const recovered = fieldsFromJsonSchema(buildJsonSchemaFromFields(original));
+
+    expect(recovered).toEqual(original);
+  });
+
+  it("preserves field order", () => {
+    const original: FieldDefinition[] = [
+      { name: "third", type: "boolean" },
+      { name: "first", type: "string" },
+      { name: "second", type: "number" },
+    ];
+
+    const recovered = fieldsFromJsonSchema(buildJsonSchemaFromFields(original));
+
+    expect(recovered.map((field) => field.name)).toEqual([
+      "third",
+      "first",
+      "second",
+    ]);
+  });
+
+  it("returns an empty list for a JSON Schema with no properties", () => {
+    expect(fieldsFromJsonSchema({})).toEqual([]);
+    expect(fieldsFromJsonSchema({ type: "object" })).toEqual([]);
   });
 });

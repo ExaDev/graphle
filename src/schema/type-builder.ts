@@ -61,3 +61,45 @@ export function buildJsonSchemaFromFields(fields: FieldDefinition[]): JsonObject
   }
   return z.toJSONSchema(z.object(shape).strict());
 }
+
+/** Narrows `unknown` to a string-indexed record without a cast. */
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Narrows `unknown` to a `string[]` without a cast. */
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+/**
+ * Recover the editor's field-row list from a JSON Schema previously produced
+ * by {@link buildJsonSchemaFromFields}, so the type editor can pre-fill an
+ * existing type's fields when opened in edit mode. Property insertion order
+ * mirrors the order fields were originally authored in, since
+ * `buildJsonSchemaFromFields` assigns each field into `shape` in list order
+ * and object key order is preserved through `z.toJSONSchema`. A subschema
+ * that doesn't match one of the editor's four field types (string, number,
+ * boolean, or a string enum) is skipped rather than guessed at.
+ */
+export function fieldsFromJsonSchema(jsonSchema: JsonObject): FieldDefinition[] {
+  const properties = jsonSchema["properties"];
+  if (!isJsonObject(properties)) return [];
+
+  const fields: FieldDefinition[] = [];
+  for (const [name, subschema] of Object.entries(properties)) {
+    if (!isJsonObject(subschema)) continue;
+    const type = subschema["type"];
+    if (type === "string") {
+      const enumValues = subschema["enum"];
+      if (isStringArray(enumValues)) {
+        fields.push({ name, type: "enum", options: enumValues });
+      } else {
+        fields.push({ name, type: "string" });
+      }
+    } else if (type === "number" || type === "boolean") {
+      fields.push({ name, type });
+    }
+  }
+  return fields;
+}

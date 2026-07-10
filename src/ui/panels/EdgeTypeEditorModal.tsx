@@ -1,23 +1,37 @@
 /**
- * Modal for defining a new, user-authored edge type. Mirrors
- * {@link TypeEditorModal}: the user names the type, picks presentation
- * metadata (colour, stroke style), selects which of the type's fields is the
- * edge label, and authors the field list (name + JSON-Schema type, with
- * comma-separated options for enums). There is no icon (edges render as
- * lines, not badges) and no identity-field picker (edges dedup on
- * `(source, target, type)`, never on `data`).
+ * Modal for defining a new, user-authored edge type, or editing an existing
+ * one when opened with an `editing` prop. Mirrors {@link TypeEditorModal}:
+ * the user names the type, picks presentation metadata (colour, stroke
+ * style), selects which of the type's fields is the edge label, and authors
+ * the field list (name + JSON-Schema type, with comma-separated options for
+ * enums). There is no icon (edges render as lines, not badges) and no
+ * identity-field picker (edges dedup on `(source, target, type)`, never on
+ * `data`). In edit mode the name is fixed (it is the document's key for the
+ * type) and every other field pre-fills from the type being edited, via
+ * {@link fieldsFromJsonSchema} to recover the field-row list.
  *
  * On save the field list is turned into a portable JSON Schema via
  * {@link buildJsonSchemaFromFields} (Zod is the single source of truth, so the
  * output round-trips through `z.fromJSONSchema` in the type registry), wrapped
- * in an {@link EdgeTypeDefinition}, and registered on the document via
- * `store.addEdgeType`. The new type then appears in the edge type picker on
- * the inspector immediately.
+ * in an {@link EdgeTypeDefinition}, and either registered on the document via
+ * `store.addEdgeType` (create) or merged into the existing definition via
+ * `store.updateEdgeType` (edit). The type then appears in the edge type
+ * picker on the inspector immediately. When creating, checking "Also save to
+ * library" additionally appends the new type to the user's persisted type
+ * library.
+ *
+ * The form's local state lives in {@link EdgeTypeEditorFormBody}, mounted only
+ * while `opened` is true: mounting fresh on every open (rather than syncing
+ * an already-mounted form from a changed `editing` prop via an effect) is
+ * what re-initialises the fields from `editing` each time, and is also what
+ * resets a create-mode form back to blank after a cancel or save -- no
+ * imperative reset step is needed.
  */
 import {
   ActionIcon,
   Alert,
   Button,
+  Checkbox,
   Group,
   Modal,
   Select,
@@ -25,20 +39,42 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { IconPlus, IconTemplate, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { edgeTypeNameTaken } from "@/domain/type-name-collision";
 import {
-  BUILT_IN_EDGE_TYPES_BY_NAME,
   type EdgeTypeDefinition,
+  type StoredTypeLibrary,
+  type TypeLibraryDocument,
   buildJsonSchemaFromFields,
+  fieldsFromJsonSchema,
   type FieldDefinition,
 } from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
+import { db } from "@/storage/db";
+import { createTypeLibraryStore } from "@/storage/type-library-store-dexie";
 
 export interface EdgeTypeEditorModalProps {
   opened: boolean;
   onClose: () => void;
+  /** When set, the modal edits this existing type instead of creating a new
+   *  one: the name field is disabled and every other field pre-fills from
+   *  its current values. */
+  editing?: EdgeTypeDefinition;
+}
+
+/** An empty library document, used when none has been saved yet. */
+const EMPTY_LIBRARY: TypeLibraryDocument = {
+  version: 1,
+  nodeTypes: [],
+  edgeTypes: [],
+};
+
+/** Narrows an unknown thrown value to a display string. */
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -108,35 +144,75 @@ function newRow(): FieldRow {
   return { id: crypto.randomUUID(), name: "", type: "string", options: "" };
 }
 
+/** Turn a recovered {@link FieldDefinition} back into an editable row. */
+function rowFromFieldDefinition(field: FieldDefinition): FieldRow {
+  return {
+    id: crypto.randomUUID(),
+    name: field.name,
+    type: field.type,
+    options:
+      field.type === "enum" && field.options !== undefined
+        ? field.options.join(", ")
+        : "",
+  };
+}
+
+/** The field rows a fresh form starts from: `editing`'s recovered fields, or
+ *  one blank row when creating (or when `editing` has no recognisable
+ *  fields, which cannot happen for a type produced by this editor). */
+function initialFields(editing: EdgeTypeDefinition | undefined): FieldRow[] {
+  if (editing === undefined) return [newRow()];
+  const recovered = fieldsFromJsonSchema(editing.jsonSchema).map(rowFromFieldDefinition);
+  return recovered.length > 0 ? recovered : [newRow()];
+}
+
 /** The outcome of {@link buildEdgeTypeDefinition}: either a ready type or an error. */
 type BuildResult =
   | { ok: true; typeDef: EdgeTypeDefinition }
   | { ok: false; message: string };
 
-export function EdgeTypeEditorModal({ opened, onClose }: EdgeTypeEditorModalProps) {
+export function EdgeTypeEditorModal({
+  opened,
+  onClose,
+  editing,
+}: EdgeTypeEditorModalProps) {
+  return (
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title={editing === undefined ? "New edge type" : "Edit edge type"}
+      centered
+      size="lg"
+    >
+      {opened ? <EdgeTypeEditorFormBody editing={editing} onClose={onClose} /> : null}
+    </Modal>
+  );
+}
+
+interface EdgeTypeEditorFormBodyProps {
+  editing: EdgeTypeDefinition | undefined;
+  onClose: () => void;
+}
+
+/** The modal's form, mounted fresh each time the modal opens -- see the
+ *  module doc for why that replaces an effect-based resync. */
+function EdgeTypeEditorFormBody({ editing, onClose }: EdgeTypeEditorFormBodyProps) {
   const addEdgeType = useGraphStore((state) => state.addEdgeType);
+  const updateEdgeType = useGraphStore((state) => state.updateEdgeType);
   const document = useGraphStore((state) => state.document);
 
-  const [name, setName] = useState("");
-  const [label, setLabel] = useState("");
-  const [colour, setColour] = useState<string>(COLOURS[0]);
-  const [strokeStyle, setStrokeStyle] = useState<StrokeStyleName>("solid");
-  const [labelField, setLabelField] = useState<string | null>(null);
-  const [fields, setFields] = useState<FieldRow[]>([newRow()]);
+  const [name, setName] = useState(editing?.name ?? "");
+  const [label, setLabel] = useState(editing?.label ?? "");
+  const [colour, setColour] = useState<string>(editing?.color ?? COLOURS[0]);
+  const [strokeStyle, setStrokeStyle] = useState<StrokeStyleName>(
+    editing?.strokeStyle ?? "solid",
+  );
+  const [labelField, setLabelField] = useState<string | null>(
+    editing?.labelField ?? null,
+  );
+  const [fields, setFields] = useState<FieldRow[]>(() => initialFields(editing));
+  const [alsoSaveToLibrary, setAlsoSaveToLibrary] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-
-  /**
-   * Names a new type must not collide with. The document's edge types are the
-   * stated constraint; built-in names are included too because
-   * `resolveEdgeType` prefers a document-carried definition over the registry,
-   * so a user type named "owns" would silently shadow the built-in and
-   * re-resolve every existing owns edge against the new shape. Blocking the
-   * collision here is the root-cause fix.
-   */
-  const takenNames = new Set<string>([
-    ...document.edgeTypes.map((type) => type.name),
-    ...BUILT_IN_EDGE_TYPES_BY_NAME.keys(),
-  ]);
 
   /** Field names the user has actually filled in, for the label pick. */
   const definedFieldNames = fields
@@ -147,7 +223,12 @@ export function EdgeTypeEditorModal({ opened, onClose }: EdgeTypeEditorModalProp
   function buildEdgeTypeDefinition(): BuildResult {
     const trimmedName = name.trim();
     if (trimmedName === "") return fail("Give the type a name.");
-    if (takenNames.has(trimmedName)) {
+    // The type being edited keeps its own name (the field is disabled), so its
+    // unchanged name must never be flagged as already taken.
+    if (
+      (editing === undefined || trimmedName !== editing.name) &&
+      edgeTypeNameTaken(trimmedName, document.edgeTypes)
+    ) {
       return fail(`A type named "${trimmedName}" already exists.`);
     }
 
@@ -194,30 +275,60 @@ export function EdgeTypeEditorModal({ opened, onClose }: EdgeTypeEditorModalProp
     };
   }
 
-  function handleSave(): void {
+  /** Append `typeDef` to the persisted edge type library, creating it if none
+   *  is saved yet. */
+  async function addToLibrary(typeDef: EdgeTypeDefinition): Promise<void> {
+    const controller = new AbortController();
+    const store = createTypeLibraryStore(db);
+    const stored = await store.get(controller.signal);
+    const libraryDocument = stored === undefined ? EMPTY_LIBRARY : stored.document;
+    const updatedDocument: TypeLibraryDocument = {
+      ...libraryDocument,
+      edgeTypes: [...libraryDocument.edgeTypes, typeDef],
+    };
+    const updated: StoredTypeLibrary =
+      stored === undefined
+        ? { id: "library", document: updatedDocument, updatedAt: new Date().toISOString() }
+        : { ...stored, document: updatedDocument, updatedAt: new Date().toISOString() };
+    await store.save(updated, controller.signal);
+  }
+
+  async function handleSave(): Promise<void> {
     const result = buildEdgeTypeDefinition();
-    if (result.ok) {
-      addEdgeType(result.typeDef);
-      resetForm();
-      onClose();
-    } else {
+    if (!result.ok) {
       setError(result.message);
+      return;
     }
-  }
 
-  function handleClose(): void {
-    resetForm();
+    if (editing !== undefined) {
+      const patch: Partial<Omit<EdgeTypeDefinition, "name">> = {
+        label: result.typeDef.label,
+        color: result.typeDef.color,
+        strokeStyle: result.typeDef.strokeStyle,
+        labelField: result.typeDef.labelField,
+        jsonSchema: result.typeDef.jsonSchema,
+      };
+      updateEdgeType(editing.name, patch);
+      onClose();
+      return;
+    }
+
+    addEdgeType(result.typeDef);
+    if (alsoSaveToLibrary) {
+      try {
+        await addToLibrary(result.typeDef);
+        notifications.show({
+          color: "green",
+          message: `Edge type "${result.typeDef.name}" created and saved to your type library`,
+        });
+      } catch (error) {
+        notifications.show({
+          color: "red",
+          message: `Edge type created, but saving to the library failed: ${describe(error)}`,
+        });
+      }
+    }
     onClose();
-  }
-
-  function resetForm(): void {
-    setName("");
-    setLabel("");
-    setColour(COLOURS[0]);
-    setStrokeStyle("solid");
-    setLabelField(null);
-    setFields([newRow()]);
-    setError(undefined);
   }
 
   function addField(): void {
@@ -240,129 +351,133 @@ export function EdgeTypeEditorModal({ opened, onClose }: EdgeTypeEditorModalProp
   }));
 
   return (
-    <Modal
-      opened={opened}
-      onClose={handleClose}
-      title="New edge type"
-      centered
-      size="lg"
-    >
-      <Stack>
-        <TextInput
-          label="Name"
-          description="Unique key stored on each edge, e.g. depends-on"
-          placeholder="depends-on"
-          value={name}
-          onChange={(event) => setName(event.currentTarget.value)}
-        />
-        <TextInput
-          label="Display label"
-          description="Shown in the type picker"
-          placeholder="Depends on"
-          value={label}
-          onChange={(event) => setLabel(event.currentTarget.value)}
-        />
+    <Stack>
+      <TextInput
+        label="Name"
+        description="Unique key stored on each edge, e.g. depends-on"
+        placeholder="depends-on"
+        value={name}
+        onChange={(event) => setName(event.currentTarget.value)}
+        disabled={editing !== undefined}
+      />
+      <TextInput
+        label="Display label"
+        description="Shown in the type picker"
+        placeholder="Depends on"
+        value={label}
+        onChange={(event) => setLabel(event.currentTarget.value)}
+      />
 
-        <Group grow>
-          <Select
-            label="Colour"
-            data={COLOURS.map((value) => ({ value, label: capitalise(value) }))}
-            value={colour}
-            onChange={(value) => {
-              if (value !== null) setColour(value);
-            }}
-          />
-          <Select
-            label="Stroke style"
-            data={STROKE_STYLES.map((value) => ({ value, label: capitalise(value) }))}
-            value={strokeStyle}
-            onChange={(value) => {
-              if (isStrokeStyleName(value)) setStrokeStyle(value);
-            }}
-          />
-        </Group>
-
+      <Group grow>
         <Select
-          label="Label field"
-          description="Whose value is shown as the edge's label"
-          placeholder="Pick a field"
-          searchable
-          data={fieldPickData}
-          value={labelField}
-          onChange={setLabelField}
+          label="Colour"
+          data={COLOURS.map((value) => ({ value, label: capitalise(value) }))}
+          value={colour}
+          onChange={(value) => {
+            if (value !== null) setColour(value);
+          }}
         />
+        <Select
+          label="Stroke style"
+          data={STROKE_STYLES.map((value) => ({ value, label: capitalise(value) }))}
+          value={strokeStyle}
+          onChange={(value) => {
+            if (isStrokeStyleName(value)) setStrokeStyle(value);
+          }}
+        />
+      </Group>
 
-        <Stack gap="xs">
-          <Text component="label" size="sm" fw={500}>
-            Fields
-          </Text>
-          {fields.map((row) => (
-            <Group key={row.id} gap="xs" align="flex-end" wrap="nowrap">
+      <Select
+        label="Label field"
+        description="Whose value is shown as the edge's label"
+        placeholder="Pick a field"
+        searchable
+        data={fieldPickData}
+        value={labelField}
+        onChange={setLabelField}
+      />
+
+      <Stack gap="xs">
+        <Text component="label" size="sm" fw={500}>
+          Fields
+        </Text>
+        {fields.map((row) => (
+          <Group key={row.id} gap="xs" align="flex-end" wrap="nowrap">
+            <TextInput
+              placeholder="Field name"
+              value={row.name}
+              onChange={(event) =>
+                updateField(row.id, { name: event.currentTarget.value })
+              }
+              style={{ flex: 1 }}
+            />
+            <Select
+              data={FIELD_TYPES.map((value) => ({
+                value,
+                label: capitalise(value),
+              }))}
+              value={row.type}
+              onChange={(value) => {
+                if (isFieldTypeName(value)) updateField(row.id, { type: value });
+              }}
+              style={{ width: 130 }}
+            />
+            {row.type === "enum" ? (
               <TextInput
-                placeholder="Field name"
-                value={row.name}
+                placeholder="comma, separated, values"
+                value={row.options}
                 onChange={(event) =>
-                  updateField(row.id, { name: event.currentTarget.value })
+                  updateField(row.id, { options: event.currentTarget.value })
                 }
                 style={{ flex: 1 }}
               />
-              <Select
-                data={FIELD_TYPES.map((value) => ({
-                  value,
-                  label: capitalise(value),
-                }))}
-                value={row.type}
-                onChange={(value) => {
-                  if (isFieldTypeName(value)) updateField(row.id, { type: value });
-                }}
-                style={{ width: 130 }}
-              />
-              {row.type === "enum" ? (
-                <TextInput
-                  placeholder="comma, separated, values"
-                  value={row.options}
-                  onChange={(event) =>
-                    updateField(row.id, { options: event.currentTarget.value })
-                  }
-                  style={{ flex: 1 }}
-                />
-              ) : null}
-              <ActionIcon
-                color="red"
-                variant="subtle"
-                aria-label="Remove field"
-                onClick={() => removeField(row.id)}
-              >
-                <IconTrash size={16} />
-              </ActionIcon>
-            </Group>
-          ))}
-          <Button
-            variant="light"
-            size="xs"
-            leftSection={<IconPlus size={14} />}
-            onClick={addField}
-          >
-            Add field
-          </Button>
-        </Stack>
-
-        {error !== undefined ? (
-          <Alert color="red" variant="light">
-            {error}
-          </Alert>
-        ) : null}
-
-        <Group justify="flex-end">
-          <Button variant="default" onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button leftSection={<IconTemplate size={16} />} onClick={handleSave}>
-            Create type
-          </Button>
-        </Group>
+            ) : null}
+            <ActionIcon
+              color="red"
+              variant="subtle"
+              aria-label="Remove field"
+              onClick={() => removeField(row.id)}
+            >
+              <IconTrash size={16} />
+            </ActionIcon>
+          </Group>
+        ))}
+        <Button
+          variant="light"
+          size="xs"
+          leftSection={<IconPlus size={14} />}
+          onClick={addField}
+        >
+          Add field
+        </Button>
       </Stack>
-    </Modal>
+
+      {editing === undefined ? (
+        <Checkbox
+          label="Also save to library"
+          checked={alsoSaveToLibrary}
+          onChange={(event) => setAlsoSaveToLibrary(event.currentTarget.checked)}
+        />
+      ) : null}
+
+      {error !== undefined ? (
+        <Alert color="red" variant="light">
+          {error}
+        </Alert>
+      ) : null}
+
+      <Group justify="flex-end">
+        <Button variant="default" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          leftSection={<IconTemplate size={16} />}
+          onClick={() => void handleSave()}
+        >
+          {editing === undefined ? "Create type" : "Save changes"}
+        </Button>
+      </Group>
+    </Stack>
   );
 }
 
