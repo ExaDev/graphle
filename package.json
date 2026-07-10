@@ -1,7 +1,7 @@
 {
   "name": "graphle",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.7.0",
   "type": "module",
   "description": "A graph-based tool for grappling with relationships between dependent systems.",
   "scripts": {

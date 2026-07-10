@@ -1,3 +1,18 @@
+# [1.7.0](https://github.com/ExaDev/graphle/compare/v1.6.0...v1.7.0) (2026-07-10)
+
+
+### Bug Fixes
+
+* **sharing:** reuse shared JSON-shape detection for file import ([c48c5ef](https://github.com/ExaDev/graphle/commit/c48c5efacc3f91ecc1ed8ee7365488dfb0aec346))
+
+
+### Features
+
+* replace fixed edge relation enum with dynamic portable edge types ([c37803d](https://github.com/ExaDev/graphle/commit/c37803d68a4eb5523dbbac970af3e55fc103f753))
+* **sharing:** disambiguate gist URLs that name multiple graph files ([5dfe7e6](https://github.com/ExaDev/graphle/commit/5dfe7e628aa0b8237ca574ac5ed557fcdb08016e))
+* **sharing:** load a graph document from a remote URL ([b89c89d](https://github.com/ExaDev/graphle/commit/b89c89de2bb974fa4252391ed7ef232a5d30f796))
+* **ui:** wire remote URL and gist loading into the app ([975e8c5](https://github.com/ExaDev/graphle/commit/975e8c5393afba18040d523b06c402dad93c21bd))
+
 # [1.6.0](https://github.com/ExaDev/graphle/compare/v1.5.0...v1.6.0) (2026-07-10)
 
 
