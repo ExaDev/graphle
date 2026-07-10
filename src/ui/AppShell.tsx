@@ -42,6 +42,7 @@ import { ContextMenu, type ContextMenuState } from "./flow/ContextMenu";
 import { GraphCanvas } from "./flow/GraphCanvas";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
 import { EdgeTypeEditorModal } from "./panels/EdgeTypeEditorModal";
+import { GistPickerModal } from "./panels/GistPickerModal";
 import { GitHubPanel } from "./panels/GitHubPanel";
 import { GraphsDrawer } from "./panels/GraphsDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
@@ -267,6 +268,7 @@ export function AppShell() {
       <EdgeTypeEditorModal opened={edgeTypeOpened} onClose={closeEdgeType} />
       <GitHubPanel opened={githubOpened} onClose={closeGitHub} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
+      <GistPickerModal />
       <ContextMenu
         state={ctxMenu}
         onClose={() => setCtxMenu(null)}

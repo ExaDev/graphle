@@ -18,12 +18,23 @@ import {
   type GraphDelta,
   type GraphOperation,
 } from "@/domain";
+import type { GistFileCandidate } from "@/sharing/gist";
 import type { EdgeTypeDefinition, GraphDocument, NodeTypeDefinition } from "@/schema";
 
 /** The node or edge currently selected on the canvas, if any. */
 export interface GraphSelection {
   nodeId: string | undefined;
   edgeId: string | undefined;
+}
+
+/**
+ * An ambiguous gist's graph-file candidates, awaiting a pick from {@link
+ * GistPickerModal}. Ephemeral, like `selection` — set by whichever entry
+ * point (page-load `#url=`, the Graphs drawer's "Load from URL") called
+ * `resolveRemoteUrl` and got back more than one candidate.
+ */
+export interface GistPicker {
+  candidates: GistFileCandidate[];
 }
 
 interface GraphState {
@@ -77,6 +88,11 @@ interface GraphState {
   setGraphId: (id: string | undefined) => void;
   /** Mark the current document as saved (dirty = false). */
   markSaved: () => void;
+  /** Ambiguous-gist candidates awaiting a pick, or `undefined` when no picker
+   *  is pending. Ephemeral — never persisted. */
+  gistPicker: GistPicker | undefined;
+  /** Open or close the gist picker. */
+  setGistPicker: (picker: GistPicker | undefined) => void;
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -148,6 +164,8 @@ export const useGraphStore = create<GraphState>()(
     setSelection: (selection) => set({ selection }),
     setGraphId: (graphId) => set({ graphId }),
     markSaved: () => set({ dirty: false }),
+    gistPicker: undefined,
+    setGistPicker: (gistPicker) => set({ gistPicker }),
   })),
 );
 

@@ -10,8 +10,17 @@
  * Import parses through `importDocument` (the Zod-validated codec), so a
  * malformed file is reported as a notification and leaves the current document
  * untouched rather than silently producing an invalid graph.
+ *
+ * "Load from URL" resolves a remote document via `resolveRemoteUrl` (the same
+ * JSON-shape detection as `#url=` share fragments and file import, plus gist
+ * disambiguation — see `@/sharing/gist`) and, on success, points the address
+ * bar at the resolved URL via `writeRemoteUrlToLocation` so the resulting
+ * share link stays a live pointer rather than a frozen snapshot — mirroring
+ * how `useUrlSync` handles a `#url=` fragment on load. An ambiguous gist
+ * (more than one file looks like a graph) opens `GistPickerModal` instead of
+ * loading anything, via the shared `store.gistPicker` state.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ActionIcon,
@@ -24,12 +33,15 @@ import {
   ScrollArea,
   Stack,
   Text,
+  TextInput,
   UnstyledButton,
 } from "@mantine/core";
-import { IconDownload, IconPencil, IconTrash, IconUpload } from "@tabler/icons-react";
+import { IconDownload, IconPencil, IconTrash, IconUpload, IconWorldDownload } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 
+import { resolveRemoteUrl } from "@/sharing/gist";
 import { exportCanvasDocument, exportDocument, importDocument } from "@/sharing/json";
+import { writeRemoteUrlToLocation } from "@/sharing/url";
 import { type StoredGraphSummary } from "@/schema";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
@@ -56,12 +68,16 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
   const replaceDocument = useGraphStore((state) => state.replaceDocument);
   const setGraphId = useGraphStore((state) => state.setGraphId);
   const markSaved = useGraphStore((state) => state.markSaved);
+  const setGistPicker = useGraphStore((state) => state.setGistPicker);
 
   const summaries = useLiveQuery(
     async () => store.list(new AbortController().signal),
     [],
     EMPTY_SUMMARIES,
   );
+
+  const [remoteUrl, setRemoteUrl] = useState("");
+  const [remoteLoading, setRemoteLoading] = useState(false);
 
   async function handleSave(): Promise<void> {
     if (graphId === undefined) {
@@ -161,6 +177,34 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     }
   }
 
+  async function handleLoadFromUrl(): Promise<void> {
+    const trimmed = remoteUrl.trim();
+    if (trimmed === "") return;
+    setRemoteLoading(true);
+    try {
+      const result = await resolveRemoteUrl(trimmed, new AbortController().signal);
+      if (result.kind === "ambiguousGist") {
+        setGistPicker({ candidates: result.candidates });
+        return;
+      }
+      replaceDocument(result.document);
+      setGraphId(undefined);
+      // Point the address bar at the resolved URL so the resulting link
+      // stays a live pointer, shareable the same way #g= links are — and, for
+      // a gist that auto-resolved to its one graph file, points at that
+      // specific file rather than the ambiguous gist URL the user pasted.
+      writeRemoteUrlToLocation(result.resolvedUrl);
+      notifications.show({ color: "green", message: "Graph loaded from URL" });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `Could not load from URL: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      setRemoteLoading(false);
+    }
+  }
+
   return (
     <Drawer opened={opened} onClose={onClose} title="Graphs" position="right" size="md">
       <Stack gap="md">
@@ -195,6 +239,24 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
             if (file !== null) void handleImport(file);
           }}
         />
+        <Group gap="xs" align="flex-end">
+          <TextInput
+            label="Load from URL"
+            description="A hosted graphle document or JSON Canvas file (must allow cross-origin requests)"
+            placeholder="https://example.com/graph.json"
+            style={{ flex: 1 }}
+            value={remoteUrl}
+            onChange={(event) => setRemoteUrl(event.currentTarget.value)}
+          />
+          <Button
+            variant="default"
+            leftSection={<IconWorldDownload size={16} />}
+            loading={remoteLoading}
+            onClick={() => void handleLoadFromUrl()}
+          >
+            Load
+          </Button>
+        </Group>
         {dirty && (
           <Badge color="orange" variant="light" w="fit-content">
             Unsaved changes
