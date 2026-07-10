@@ -12,6 +12,7 @@ export * from "./migration";
 export * from "./node";
 export * from "./node-type";
 export * from "./primitives";
+export * from "./revision";
 export * from "./storage";
 export * from "./type-builder";
 export * from "./type-registry";
