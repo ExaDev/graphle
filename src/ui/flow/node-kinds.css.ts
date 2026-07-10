@@ -1,15 +1,15 @@
 /**
- * Colocated styles for the per-kind graph nodes. One accent colour per kind
- * (freeform: gray, org: blue, repo: grape, issue: orange, project: teal),
- * sourced from the Mantine theme via `vars` so light/dark scheme handling and
- * the design-token single source of truth are respected. No literal colours.
+ * Shared styles for the generic graph node card. There are no per-kind styles
+ * any more: every node renders through one {@link GenericNode} component, and
+ * the accent colour comes from the node type's `color` via a Mantine CSS
+ * variable applied inline (see {@link GenericNode}). Only the structural styles
+ * that are identical for every node live here; colour is data-driven.
  */
 import { style } from "@vanilla-extract/css";
 
-import type { NodeKind } from "@/schema";
 import { vars } from "@/ui/theme/vars.css.ts";
 
-/** Card body shared by every node kind. */
+/** Card body shared by every node. `borderColor` is set inline from the type. */
 export const nodeCard = style({
   display: "flex",
   flexDirection: "column",
@@ -30,28 +30,10 @@ export const nodeHeader = style({
   gap: vars.spacing.xs,
 });
 
-/** Primary label text, truncated so long repo/issue names do not stretch the card. */
+/** Primary label text, truncated so long names do not stretch the card. */
 export const nodeLabel = style({
   fontWeight: 600,
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
 });
-
-/** Per-kind accent border colour. */
-export const kindBorder: Record<NodeKind, string> = {
-  freeform: style({ borderColor: vars.colors.gray[4] }),
-  org: style({ borderColor: vars.colors.blue[6] }),
-  repo: style({ borderColor: vars.colors.grape[6] }),
-  issue: style({ borderColor: vars.colors.orange[6] }),
-  project: style({ borderColor: vars.colors.teal[6] }),
-};
-
-/** Per-kind icon tint (tabler icons use `currentColor`). */
-export const kindIcon: Record<NodeKind, string> = {
-  freeform: style({ color: vars.colors.gray[6] }),
-  org: style({ color: vars.colors.blue[6] }),
-  repo: style({ color: vars.colors.grape[6] }),
-  issue: style({ color: vars.colors.orange[6] }),
-  project: style({ color: vars.colors.teal[6] }),
-};

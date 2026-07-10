@@ -28,6 +28,7 @@ import {
   IconLink,
   IconPlus,
   IconStack2,
+  IconTemplate,
 } from "@tabler/icons-react";
 import { ReactFlowProvider } from "@xyflow/react";
 
@@ -39,6 +40,7 @@ import { AddNodeMenu } from "./panels/AddNodeMenu";
 import { GitHubPanel } from "./panels/GitHubPanel";
 import { GraphsDrawer } from "./panels/GraphsDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
+import { TypeEditorModal } from "./panels/TypeEditorModal";
 import { ThemeToggle } from "./ThemeToggle";
 import { useUrlSync } from "./sync/useUrlSync";
 
@@ -54,6 +56,7 @@ export function AppShell() {
   const apply = useGraphStore((state) => state.apply);
 
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false);
+  const [typeOpened, { open: openType, close: closeType }] = useDisclosure(false);
   const [graphsOpened, { open: openGraphs, close: closeGraphs }] =
     useDisclosure(false);
   const [githubOpened, { open: openGitHub, close: closeGitHub }] =
@@ -112,6 +115,17 @@ export function AppShell() {
           >
             <Box component="span" visibleFrom="sm">
               Add node
+            </Box>
+          </Button>
+
+          <Button
+            variant="default"
+            size="xs"
+            leftSection={<IconTemplate size={16} />}
+            onClick={openType}
+          >
+            <Box component="span" visibleFrom="sm">
+              New type
             </Box>
           </Button>
 
@@ -178,6 +192,7 @@ export function AppShell() {
       </MantineAppShell.Aside>
 
       <AddNodeMenu opened={addOpened} onClose={closeAdd} />
+      <TypeEditorModal opened={typeOpened} onClose={closeType} />
       <GitHubPanel opened={githubOpened} onClose={closeGitHub} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
     </MantineAppShell>

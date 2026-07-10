@@ -1,30 +1,39 @@
 /**
  * URL codec for sharing a graph as a self-contained, compressed fragment.
  *
- * The wire format is a compact JSON envelope:
+ * The v2 wire format is a compact JSON envelope:
  *
- *   { v: 1, n: <name>, d: [<compactNode>...], e: [<compactEdge>...] }
+ *   { v: 2, n, t: [<compactTypeDef>...], d: [<compactNode>...], e: [<compactEdge>...] }
  *
- * A compact node is a fixed-field object: a single-letter kind code
- * (`f`/`o`/`r`/`i`/`p`), `x`/`y` rounded with `Math.round`, and only the data
- * fields that are actually present (absent optionals omitted). The node id is
- * not carried — it is remapped to the node's index in `d`. A compact edge is
- * `{ s, t, r, l? }` where `s`/`t` are indices into `d` and the edge id is
- * omitted. Encoding builds these arrays in a fixed field order so
- * `JSON.stringify` is deterministic for identical input, then compresses with
- * lz-string. Decoding reverses the transform, assigning fresh ids on the way
- * back so a shared graph never collides with locally stored ids.
+ * A compact type def is `{ n, l, c, i, lf, id, s }` — the seven fields of a
+ * NodeTypeDefinition (name, label, colour, icon, labelField, identityFields,
+ * jsonSchema) inlined with short keys, so a recipient can reconstruct every type
+ * the document uses without an external registry. A compact node is
+ * `{ t, x, y, ...data }` — the type name plus the node's data fields inlined
+ * generically (no per-kind mapping); the node id is not carried, it is remapped
+ * to the node's index in `d`. A compact edge is `{ s, t, r, l? }` where `s`/`t`
+ * are indices into `d` and the edge id is omitted.
+ *
+ * Encoding builds these arrays in a fixed field order so `JSON.stringify` is
+ * deterministic for identical input, then compresses with lz-string. Decoding
+ * decompresses, then dispatches on shape: a JSON Canvas document, a full graphle
+ * document (v1 migrated, v2 parsed directly), or the v2 compact envelope — which
+ * is validated with Zod and rebuilt, assigning fresh node ids and remapping
+ * edges via an index->id map so a shared graph never collides with locally
+ * stored ids.
  */
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from "lz-string";
 import { z } from "zod";
 
-import { EdgeRelation, GraphDocument, GRAPH_DOCUMENT_VERSION } from "../schema";
-import type { GraphNode, NodeKind } from "../schema";
+import {
+  EdgeRelation,
+  GraphDocumentSchema,
+  GRAPH_DOCUMENT_VERSION,
+  migrateV1Document,
+} from "../schema";
+import type { GraphDocument, NodeTypeDefinition } from "../schema";
 
 import { parseCanvasFromUnknown } from "./jsoncanvas";
-
-/** Single-letter kind codes used in the compact wire format. */
-type NodeKindCode = "f" | "o" | "r" | "i" | "p";
 
 /** Thrown by {@link decodeDocument} for any malformed or unsupported payload. */
 export class ShareDecodeError extends Error {
@@ -36,66 +45,28 @@ export class ShareDecodeError extends Error {
 
 // --- Compact wire schemas (decode side) -------------------------------------
 
-const CompactFreeformNode = z.object({
-  k: z.literal("f"),
+/** Compact type def: short-key projection of a NodeTypeDefinition. */
+const CompactTypeDefSchema = z.object({
+  n: z.string(),
+  l: z.string(),
+  c: z.string(),
+  i: z.string(),
+  lf: z.string(),
+  id: z.array(z.string()),
+  s: z.record(z.string(), z.unknown()),
+});
+type CompactTypeDef = z.infer<typeof CompactTypeDefSchema>;
+
+/**
+ * Compact node: type name + position, with the node's data fields inlined as
+ * extra keys. `z.looseObject` preserves those extra keys through `.parse` so the
+ * generic data bag round-trips without a per-type mapping.
+ */
+const CompactNodeSchema = z.looseObject({
+  t: z.string(),
   x: z.number(),
   y: z.number(),
-  label: z.string(),
-  note: z.string().optional(),
 });
-
-const CompactOrgNode = z.object({
-  k: z.literal("o"),
-  x: z.number(),
-  y: z.number(),
-  login: z.string(),
-  name: z.string().optional(),
-  url: z.string().optional(),
-  avatarUrl: z.string().optional(),
-});
-
-const CompactRepoNode = z.object({
-  k: z.literal("r"),
-  x: z.number(),
-  y: z.number(),
-  owner: z.string(),
-  name: z.string(),
-  url: z.string().optional(),
-  description: z.string().optional(),
-  archived: z.boolean().optional(),
-});
-
-const CompactIssueNode = z.object({
-  k: z.literal("i"),
-  x: z.number(),
-  y: z.number(),
-  owner: z.string(),
-  repo: z.string(),
-  number: z.number().int(),
-  title: z.string(),
-  state: z.enum(["open", "closed"]).optional(),
-  url: z.string().optional(),
-});
-
-const CompactProjectNode = z.object({
-  k: z.literal("p"),
-  x: z.number(),
-  y: z.number(),
-  owner: z.string(),
-  number: z.number().int(),
-  title: z.string(),
-  url: z.string().optional(),
-  projectNodeId: z.string().optional(),
-});
-
-const CompactNodeSchema = z.discriminatedUnion("k", [
-  CompactFreeformNode,
-  CompactOrgNode,
-  CompactRepoNode,
-  CompactIssueNode,
-  CompactProjectNode,
-]);
-type CompactNode = z.infer<typeof CompactNodeSchema>;
 
 const CompactEdgeSchema = z.object({
   s: z.number().int(),
@@ -107,6 +78,7 @@ const CompactEdgeSchema = z.object({
 const CompactEnvelopeSchema = z.object({
   v: z.literal(GRAPH_DOCUMENT_VERSION),
   n: z.string(),
+  t: z.array(CompactTypeDefSchema),
   d: z.array(CompactNodeSchema),
   e: z.array(CompactEdgeSchema),
 });
@@ -117,12 +89,6 @@ type CompactEnvelope = z.infer<typeof CompactEnvelopeSchema>;
 /** Narrows `unknown` to a record without any cast. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Read `v` from the parsed payload, or `undefined` if it is absent. */
-function readVersion(value: unknown): unknown {
-  if (!isRecord(value)) return undefined;
-  return value.v;
 }
 
 /** Render any thrown value as a message string. */
@@ -144,132 +110,52 @@ function pickDefined(fields: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-function kindToCode(kind: NodeKind): NodeKindCode {
-  switch (kind) {
-    case "freeform":
-      return "f";
-    case "org":
-      return "o";
-    case "repo":
-      return "r";
-    case "issue":
-      return "i";
-    case "project":
-      return "p";
-  }
+/** Encode a type definition into the compact short-key form. */
+function toCompactTypeDef(type: NodeTypeDefinition): Record<string, unknown> {
+  return {
+    n: type.name,
+    l: type.label,
+    c: type.color,
+    i: type.icon,
+    lf: type.labelField,
+    id: type.identityFields,
+    s: type.jsonSchema,
+  };
 }
 
-function codeToKind(code: NodeKindCode): NodeKind {
-  switch (code) {
-    case "f":
-      return "freeform";
-    case "o":
-      return "org";
-    case "r":
-      return "repo";
-    case "i":
-      return "issue";
-    case "p":
-      return "project";
-  }
-}
-
-/** Build compact data fields (present values only) for a node, in fixed order. */
-function compactNodeData(node: GraphNode): Record<string, unknown> {
-  switch (node.kind) {
-    case "freeform":
-      return pickDefined({ label: node.data.label, note: node.data.note });
-    case "org":
-      return pickDefined({
-        login: node.data.login,
-        name: node.data.name,
-        url: node.data.url,
-        avatarUrl: node.data.avatarUrl,
-      });
-    case "repo":
-      return pickDefined({
-        owner: node.data.owner,
-        name: node.data.name,
-        url: node.data.url,
-        description: node.data.description,
-        archived: node.data.archived,
-      });
-    case "issue":
-      return pickDefined({
-        owner: node.data.owner,
-        repo: node.data.repo,
-        number: node.data.number,
-        title: node.data.title,
-        state: node.data.state,
-        url: node.data.url,
-      });
-    case "project":
-      return pickDefined({
-        owner: node.data.owner,
-        number: node.data.number,
-        title: node.data.title,
-        url: node.data.url,
-        projectNodeId: node.data.projectNodeId,
-      });
-  }
-}
-
-/** Rebuild data fields (present values only) from a compact node. */
-function decodeNodeData(compact: CompactNode): Record<string, unknown> {
-  switch (compact.k) {
-    case "f":
-      return pickDefined({ label: compact.label, note: compact.note });
-    case "o":
-      return pickDefined({
-        login: compact.login,
-        name: compact.name,
-        url: compact.url,
-        avatarUrl: compact.avatarUrl,
-      });
-    case "r":
-      return pickDefined({
-        owner: compact.owner,
-        name: compact.name,
-        url: compact.url,
-        description: compact.description,
-        archived: compact.archived,
-      });
-    case "i":
-      return pickDefined({
-        owner: compact.owner,
-        repo: compact.repo,
-        number: compact.number,
-        title: compact.title,
-        state: compact.state,
-        url: compact.url,
-      });
-    case "p":
-      return pickDefined({
-        owner: compact.owner,
-        number: compact.number,
-        title: compact.title,
-        url: compact.url,
-        projectNodeId: compact.projectNodeId,
-      });
-  }
+/** Decode a compact short-key type def back into a NodeTypeDefinition. */
+function fromCompactTypeDef(td: CompactTypeDef): NodeTypeDefinition {
+  return {
+    name: td.n,
+    label: td.l,
+    color: td.c,
+    icon: td.i,
+    labelField: td.lf,
+    identityFields: td.id,
+    jsonSchema: td.s,
+  };
 }
 
 /**
- * Rebuild a full document from the validated compact envelope. Nodes get fresh
- * ids and an index->id map is built so each edge's `s`/`t` can be repointed.
- * Returns `unknown` so the final {@link GraphDocument.parse} is the single
- * type authority for the rebuilt shape.
+ * Rebuild a full document from the validated compact envelope. Type defs are
+ * re-expanded; nodes get fresh ids and their inlined data peeled out of the
+ * compact record; an index->id map is built so each edge's `s`/`t` can be
+ * repointed. Returns `unknown` so the final {@link GraphDocumentSchema}.parse is
+ * the single type authority for the rebuilt shape.
  */
 function rebuildDocument(envelope: CompactEnvelope): unknown {
+  const types = envelope.t.map(fromCompactTypeDef);
+
   const indexToId = new Map<number, string>();
   const nodes = envelope.d.map((node, index) => {
     const id = crypto.randomUUID();
     indexToId.set(index, id);
+    const { t, x, y, ...data } = node;
     return {
       id,
-      kind: codeToKind(node.k),
-      position: { x: node.x, y: node.y },
-      data: decodeNodeData(node),
+      type: t,
+      position: { x, y },
+      data,
     };
   });
 
@@ -298,9 +184,53 @@ function rebuildDocument(envelope: CompactEnvelope): unknown {
   return {
     version: GRAPH_DOCUMENT_VERSION,
     name: envelope.n,
+    types,
     nodes,
     edges,
   };
+}
+
+/**
+ * Decode a full graphle document carried in the payload (rather than the compact
+ * envelope). A v1 document is migrated to v2 first; a v2 document is parsed
+ * directly. Returns the validated document or throws {@link ShareDecodeError}.
+ */
+function decodeFullDocument(json: Record<string, unknown>): GraphDocument {
+  const version = json.version;
+  try {
+    if (version === 1) {
+      return GraphDocumentSchema.parse(migrateV1Document(json));
+    }
+    return GraphDocumentSchema.parse(json);
+  } catch (error) {
+    if (error instanceof ShareDecodeError) throw error;
+    throw new ShareDecodeError(`Share payload is malformed: ${describe(error)}`);
+  }
+}
+
+/**
+ * Validate and rebuild a v2 compact share envelope. Any version other than 2 is
+ * unsupported (the legacy v1 compact wire format used per-kind codes that this
+ * codec no longer carries); v1 documents arrive via {@link decodeFullDocument}.
+ */
+function decodeCompactEnvelope(json: Record<string, unknown>): GraphDocument {
+  const version = json.v;
+  if (version === undefined) {
+    throw new ShareDecodeError("Share payload is missing the version field");
+  }
+  if (version !== GRAPH_DOCUMENT_VERSION) {
+    throw new ShareDecodeError(
+      `Share payload uses unsupported version ${JSON.stringify(version)}`,
+    );
+  }
+
+  try {
+    const envelope = CompactEnvelopeSchema.parse(json);
+    return GraphDocumentSchema.parse(rebuildDocument(envelope));
+  } catch (error) {
+    if (error instanceof ShareDecodeError) throw error;
+    throw new ShareDecodeError(`Share payload is malformed: ${describe(error)}`);
+  }
 }
 
 // --- Public API -------------------------------------------------------------
@@ -312,11 +242,13 @@ export function encodeDocument(doc: GraphDocument): string {
     idToIndex.set(node.id, index);
   });
 
+  const compactTypes = doc.types.map(toCompactTypeDef);
+
   const compactNodes = doc.nodes.map((node) => ({
-    k: kindToCode(node.kind),
+    t: node.type,
     x: Math.round(node.position.x),
     y: Math.round(node.position.y),
-    ...compactNodeData(node),
+    ...node.data,
   }));
 
   const compactEdges = doc.edges.map((edge) => {
@@ -343,6 +275,7 @@ export function encodeDocument(doc: GraphDocument): string {
   const envelope = {
     v: GRAPH_DOCUMENT_VERSION,
     n: doc.name,
+    t: compactTypes,
     d: compactNodes,
     e: compactEdges,
   };
@@ -367,8 +300,9 @@ export function decodeDocument(payload: string): GraphDocument {
     throw new ShareDecodeError("Share payload is not a JSON object");
   }
 
-  // JSON Canvas: has `nodes` or `edges` but not the compact `v` key.
-  if (!("v" in json) && ("nodes" in json || "edges" in json)) {
+  // JSON Canvas: carries `nodes`/`edges` but neither the compact `v` key nor a
+  // full-document `version`.
+  if (!("v" in json) && !("version" in json) && ("nodes" in json || "edges" in json)) {
     try {
       return parseCanvasFromUnknown(json);
     } catch (error) {
@@ -379,20 +313,11 @@ export function decodeDocument(payload: string): GraphDocument {
     }
   }
 
-  const version = readVersion(json);
-  if (version !== GRAPH_DOCUMENT_VERSION) {
-    throw new ShareDecodeError(
-      version === undefined
-        ? "Share payload is missing the version field"
-        : `Share payload uses unsupported version ${JSON.stringify(version)}`,
-    );
+  // Full graphle document (carries `version`): migrate v1, parse v2.
+  if ("version" in json) {
+    return decodeFullDocument(json);
   }
 
-  try {
-    const envelope = CompactEnvelopeSchema.parse(json);
-    return GraphDocument.parse(rebuildDocument(envelope));
-  } catch (error) {
-    if (error instanceof ShareDecodeError) throw error;
-    throw new ShareDecodeError(`Share payload is malformed: ${describe(error)}`);
-  }
+  // Compact share envelope (carries `v`).
+  return decodeCompactEnvelope(json);
 }

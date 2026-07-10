@@ -1,79 +1,97 @@
 import { describe, expect, it } from "vitest";
 
-import { GraphNode } from "../schema";
+import { BUILT_IN_TYPES, type GraphNode, type NodeTypeDefinition } from "../schema";
 
 import { nodeIdentityKey } from "./identity";
 
 const position = { x: 0, y: 0 };
 
+/** The built-in types as a document would carry them (portable form). */
+const types: NodeTypeDefinition[] = BUILT_IN_TYPES.map((type) => ({
+  name: type.name,
+  label: type.label,
+  color: type.color,
+  icon: type.icon,
+  labelField: type.labelField,
+  identityFields: type.identityFields,
+  jsonSchema: type.jsonSchema,
+}));
+
+function node(type: string, data: GraphNode["data"]): GraphNode {
+  return { id: crypto.randomUUID(), type, position, data };
+}
+
 describe("nodeIdentityKey", () => {
-  it("returns undefined for freeform nodes", () => {
-    const node = GraphNode.parse({
-      id: crypto.randomUUID(),
-      kind: "freeform",
-      position,
-      data: { label: "A note" },
-    });
-    expect(nodeIdentityKey(node)).toBeUndefined();
+  it("returns undefined for a type whose identityFields is empty", () => {
+    expect(nodeIdentityKey(node("freeform", { label: "A note" }), types)).toBeUndefined();
   });
 
-  it("returns an org key based on the login", () => {
-    const node = GraphNode.parse({
-      id: crypto.randomUUID(),
-      kind: "org",
-      position,
-      data: { login: "exadev" },
-    });
-    expect(nodeIdentityKey(node)).toBe("org:exadev");
+  it("returns an org key based on the login (single identity field)", () => {
+    expect(nodeIdentityKey(node("org", { login: "exadev" }), types)).toBe("org:exadev");
   });
 
   it("lowercases an org key so case variants collapse together", () => {
-    const node = GraphNode.parse({
-      id: crypto.randomUUID(),
-      kind: "org",
-      position,
-      data: { login: "ExaDev" },
-    });
-    expect(nodeIdentityKey(node)).toBe("org:exadev");
+    expect(nodeIdentityKey(node("org", { login: "ExaDev" }), types)).toBe("org:exadev");
   });
 
-  it("returns a repo key based on owner and name", () => {
-    const node = GraphNode.parse({
-      id: crypto.randomUUID(),
-      kind: "repo",
-      position,
-      data: { owner: "exadev", name: "graphle" },
-    });
-    expect(nodeIdentityKey(node)).toBe("repo:exadev/graphle");
+  it("joins multiple identity fields with '/' for a repo", () => {
+    expect(
+      nodeIdentityKey(node("repo", { owner: "exadev", name: "graphle" }), types),
+    ).toBe("repo:exadev/graphle");
   });
 
-  it("lowercases a repo key including both segments", () => {
-    const node = GraphNode.parse({
-      id: crypto.randomUUID(),
-      kind: "repo",
-      position,
-      data: { owner: "ExaDev", name: "Graphle" },
-    });
-    expect(nodeIdentityKey(node)).toBe("repo:exadev/graphle");
+  it("lowercases every segment of a multi-field key", () => {
+    expect(
+      nodeIdentityKey(node("repo", { owner: "ExaDev", name: "Graphle" }), types),
+    ).toBe("repo:exadev/graphle");
   });
 
-  it("returns an issue key rendering the number with String()", () => {
-    const node = GraphNode.parse({
-      id: crypto.randomUUID(),
-      kind: "issue",
-      position,
-      data: { owner: "exadev", repo: "graphle", number: 42, title: "Bug" },
-    });
-    expect(nodeIdentityKey(node)).toBe("issue:exadev/graphle#42");
+  it("renders a numeric identity field via String()", () => {
+    expect(
+      nodeIdentityKey(
+        node("issue", { owner: "exadev", repo: "graphle", number: 42, title: "Bug" }),
+        types,
+      ),
+    ).toBe("issue:exadev/graphle/42");
   });
 
-  it("returns a project key rendering the number with String()", () => {
-    const node = GraphNode.parse({
-      id: crypto.randomUUID(),
-      kind: "project",
-      position,
-      data: { owner: "exadev", number: 7, title: "Roadmap" },
-    });
-    expect(nodeIdentityKey(node)).toBe("project:exadev/7");
+  it("returns undefined for a type that cannot be resolved", () => {
+    expect(
+      nodeIdentityKey(node("custom", { name: "x" }), types),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for a custom type whose identityFields is empty", () => {
+    const customTypes: NodeTypeDefinition[] = [
+      ...types,
+      {
+        name: "custom",
+        label: "Custom",
+        color: "gray",
+        icon: "IconDot",
+        labelField: "name",
+        identityFields: [],
+        jsonSchema: { type: "object", properties: { name: { type: "string" } } },
+      },
+    ];
+    expect(nodeIdentityKey(node("custom", { name: "x" }), customTypes)).toBeUndefined();
+  });
+
+  it("builds a key from a custom type's identityFields", () => {
+    const customTypes: NodeTypeDefinition[] = [
+      ...types,
+      {
+        name: "custom",
+        label: "Custom",
+        color: "gray",
+        icon: "IconDot",
+        labelField: "name",
+        identityFields: ["name"],
+        jsonSchema: { type: "object", properties: { name: { type: "string" } } },
+      },
+    ];
+    expect(nodeIdentityKey(node("custom", { name: "Widget" }), customTypes)).toBe(
+      "custom:widget",
+    );
   });
 });

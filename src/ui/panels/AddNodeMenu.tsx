@@ -1,31 +1,27 @@
 /**
- * Modal for adding a node to the canvas. The user picks a kind from the
- * registry, fills the kind-specific fields (rendered by {@link NodeDataFields}
- * over a draft seeded from `NODE_KINDS[kind].defaultData()`), and on "Create"
- * the draft is validated against its per-kind Zod schema before an `addNode`
- * operation is dispatched at a cascaded position.
+ * Modal for adding a node to the canvas. The user picks a type from the
+ * document's type definitions, fills the type's fields (rendered by
+ * {@link NodeDataFields} over a draft seeded from the type's JSON Schema), and
+ * on "Create" the draft is validated against the type's Zod schema before an
+ * `addNode` operation is dispatched at a cascaded position.
  *
- * Validation uses the schema layer (`FreeformNodeData.safeParse`, etc.) rather
- * than ad-hoc checks, so a kind's required fields cannot drift out of sync
- * with the single source of truth.
+ * Validation uses {@link zodSchemaForType} (built-in types keep their original
+ * Zod schema; custom types reconstruct one from `jsonSchema`), so a type's
+ * required fields cannot drift out of sync with the single source of truth.
  */
 import { useState } from "react";
-import { Alert, Button, Modal, SegmentedControl, Stack } from "@mantine/core";
+import { Alert, Button, Modal, Select, Stack, Text } from "@mantine/core";
 
-import {
-  FreeformNodeData,
-  GraphNode,
-  IssueNodeData,
-  NodeKind,
-  OrgNodeData,
-  ProjectNodeData,
-  RepoNodeData,
-  type NodeData,
-} from "@/schema";
 import { cascadePosition } from "@/domain";
+import {
+  GraphNodeSchema,
+  type GraphNode,
+  type NodeData,
+  type NodeTypeDefinition,
+  zodSchemaForType,
+} from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
 
-import { NODE_KINDS } from "../flow/node-kinds-registry";
 import { NodeDataFields } from "./NodeDataFields";
 
 export interface AddNodeMenuProps {
@@ -33,47 +29,62 @@ export interface AddNodeMenuProps {
   onClose: () => void;
 }
 
-/** Kind options for the segmented control, derived from the Zod enum. */
-const KIND_OPTIONS = NodeKind.options.map((value) => ({
-  value,
-  label: NODE_KINDS[value].label,
-}));
-
-/**
- * Build a fresh draft node for a kind, seeded from the registry's
- * `defaultData()`. Parsed through `GraphNode` so the `kind`/`data` pairing is
- * validated rather than asserted — the registry pairs them by construction,
- * but TypeScript cannot see that a variable kind correlates with the union
- * data, so the schema is the boundary that restores the correlation.
- */
-function makeDraft(kind: NodeKind): GraphNode {
-  return GraphNode.parse({
-    // A real throwaway id: NodeId is z.string().min(1), so "" would throw a
-    // ZodError here. handleCreate overwrites the id with a fresh UUID, so this
-    // one only has to satisfy the schema while the kind/data pairing is checked.
-    id: crypto.randomUUID(),
-    kind,
-    position: { x: 0, y: 0 },
-    data: NODE_KINDS[kind].defaultData(),
-  });
+/** Narrows `unknown` to a string-indexed record without a cast. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Narrow a segmented-control value (a raw string) back to a node kind. */
-function isNodeKind(value: string): value is NodeKind {
-  return (
-    value === "freeform" ||
-    value === "org" ||
-    value === "repo" ||
-    value === "issue" ||
-    value === "project"
+/**
+ * Seed a fresh data object for a newly created node of `typeDef`. Required
+ * fields are populated with an empty default of the right JSON-Schema type
+ * (string -> "", number/integer -> 0, boolean -> false, enum -> "") so the form
+ * renders them with a placeholder value; optional fields are omitted. The
+ * values are placeholders, not valid content — `validate` catches a required
+ * string left empty before the node is created.
+ */
+function defaultDataForType(typeDef: NodeTypeDefinition): NodeData {
+  const properties = typeDef.jsonSchema["properties"];
+  if (!isRecord(properties)) return {};
+  const requiredList = typeDef.jsonSchema["required"];
+  const required = new Set(
+    Array.isArray(requiredList)
+      ? requiredList.filter((item): item is string => typeof item === "string")
+      : [],
   );
+  const data: NodeData = {};
+  for (const [name, schema] of Object.entries(properties)) {
+    if (!required.has(name) || !isRecord(schema)) continue;
+    const type = schema["type"];
+    if (type === "number" || type === "integer") {
+      data[name] = 0;
+    } else if (type === "boolean") {
+      data[name] = false;
+    } else {
+      data[name] = "";
+    }
+  }
+  return data;
+}
+
+/**
+ * Build a fresh draft node for `typeDef`, parsed through {@link GraphNode} so the
+ * `type`/`data` pairing is validated. The throwaway id is overwritten by
+ * `handleCreate` with a fresh UUID; it only has to satisfy the schema here.
+ */
+function makeDraft(typeDef: NodeTypeDefinition): GraphNode {
+  return GraphNodeSchema.parse({
+    id: crypto.randomUUID(),
+    type: typeDef.name,
+    position: { x: 0, y: 0 },
+    data: defaultDataForType(typeDef),
+  });
 }
 
 /**
  * The structural slice of a Zod safe-parse result that {@link firstIssue}
- * needs. Zod's own `SafeParseReturnType` is generic over the output type;
- * this structural shape lets one helper accept any schema's result without a
- * type parameter, since `success` and the `error.issues` array are uniform.
+ * needs. Zod's own `SafeParseReturnType` is generic over the output type; this
+ * structural shape lets one helper accept any schema's result without a type
+ * parameter, since `success` and the `error.issues` array are uniform.
  */
 type ParseResult =
   | { success: true }
@@ -86,46 +97,57 @@ function firstIssue(result: ParseResult): string | undefined {
   return first !== undefined ? first.message : "Some fields are invalid";
 }
 
-/** Validate a draft against its per-kind schema, returning the first issue. */
-function validate(kind: NodeKind, data: NodeData): string | undefined {
-  switch (kind) {
-    case "freeform":
-      return firstIssue(FreeformNodeData.safeParse(data));
-    case "org":
-      return firstIssue(OrgNodeData.safeParse(data));
-    case "repo":
-      return firstIssue(RepoNodeData.safeParse(data));
-    case "issue":
-      return firstIssue(IssueNodeData.safeParse(data));
-    case "project":
-      return firstIssue(ProjectNodeData.safeParse(data));
-  }
+/** Validate a draft against its type's Zod schema, returning the first issue. */
+function validate(typeDef: NodeTypeDefinition, data: NodeData): string | undefined {
+  return firstIssue(zodSchemaForType(typeDef).safeParse(data));
 }
 
 export function AddNodeMenu({ opened, onClose }: AddNodeMenuProps) {
   const apply = useGraphStore((state) => state.apply);
   const document = useGraphStore((state) => state.document);
 
-  const [kind, setKind] = useState<NodeKind>("freeform");
-  const [draft, setDraft] = useState<GraphNode>(() => makeDraft("freeform"));
+  const typeOptions = document.types.map((type) => ({ value: type.name, label: type.label }));
+
+  const [typeName, setTypeName] = useState<string>(() => document.types[0]?.name ?? "");
+  const typeDef = document.types.find((type) => type.name === typeName);
+  // The draft is undefined only when the document defines no node types at all
+  // (a degenerate but schema-valid document); in that case there is nothing to
+  // create and the form is replaced by a hint.
+  const [draft, setDraft] = useState<GraphNode | undefined>(() => {
+    const first = document.types[0];
+    return first !== undefined ? makeDraft(first) : undefined;
+  });
   const [error, setError] = useState<string | undefined>(undefined);
 
-  function handleKindChange(next: string): void {
-    if (!isNodeKind(next) || next === kind) return;
-    setKind(next);
-    setDraft(makeDraft(next));
+  function handleTypeChange(next: string | null): void {
+    if (next === null || next === typeName) return;
+    const nextTypeDef = document.types.find((type) => type.name === next);
+    if (nextTypeDef === undefined) return;
+    setTypeName(next);
+    setDraft(makeDraft(nextTypeDef));
     setError(undefined);
   }
 
+  function handleDataChange(data: NodeData): void {
+    setDraft((prev) =>
+      prev !== undefined ? GraphNodeSchema.parse({ ...prev, data }) : prev,
+    );
+  }
+
   function handleCreate(): void {
-    const message = validate(kind, draft.data);
+    if (typeDef === undefined || draft === undefined) return;
+    const message = validate(typeDef, draft.data);
     if (message !== undefined) {
       setError(message);
       return;
     }
     apply({
       type: "addNode",
-      node: { ...draft, id: crypto.randomUUID(), position: cascadePosition(document.nodes.length) },
+      node: {
+        ...draft,
+        id: crypto.randomUUID(),
+        position: cascadePosition(document.nodes.length),
+      },
     });
     setError(undefined);
     onClose();
@@ -139,19 +161,22 @@ export function AddNodeMenu({ opened, onClose }: AddNodeMenuProps) {
   return (
     <Modal opened={opened} onClose={handleClose} title="Add node" centered>
       <Stack>
-        <SegmentedControl
-          fullWidth
-          value={kind}
-          onChange={handleKindChange}
-          data={KIND_OPTIONS}
-        />
-        <NodeDataFields node={draft} onChange={(data) => setDraft(GraphNode.parse({ ...draft, data }))} />
+        <Select label="Type" data={typeOptions} value={typeName} onChange={handleTypeChange} />
+        {draft !== undefined && typeDef !== undefined ? (
+          <NodeDataFields node={draft} typeDef={typeDef} onChange={handleDataChange} />
+        ) : (
+          <Text size="sm" c="dimmed">
+            This graph defines no node types.
+          </Text>
+        )}
         {error !== undefined && (
           <Alert color="red" variant="light">
             {error}
           </Alert>
         )}
-        <Button onClick={handleCreate}>Create node</Button>
+        <Button onClick={handleCreate} disabled={draft === undefined || typeDef === undefined}>
+          Create node
+        </Button>
       </Stack>
     </Modal>
   );

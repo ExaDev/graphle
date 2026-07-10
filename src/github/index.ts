@@ -31,4 +31,4 @@ export {
   repoToNode,
   tracksEdge,
 } from "./materialise";
-export { expansionsFor, type Expansion, type ExpansionResult } from "./expand";
+export { expansionsForType, type Expansion, type ExpansionResult } from "./expand";

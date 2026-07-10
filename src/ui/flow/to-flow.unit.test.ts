@@ -3,34 +3,40 @@ import { describe, expect, it } from "vitest";
 import {
   GRAPH_DOCUMENT_VERSION,
   GraphEdge,
+  GraphNodeSchema,
   type GraphDocument,
-  GraphNode,
+  type GraphNode,
 } from "@/schema";
 
-import { documentToFlow, edgeToFlow, nodeToFlow } from "./to-flow";
+import {
+  FLOW_NODE_TYPE,
+  documentToFlow,
+  edgeToFlow,
+  nodeToFlow,
+} from "./to-flow";
 
 function makeFreeform(label: string, x = 0, y = 0): GraphNode {
-  return GraphNode.parse({
+  return GraphNodeSchema.parse({
     id: crypto.randomUUID(),
-    kind: "freeform",
+    type: "freeform",
     position: { x, y },
     data: { label },
   });
 }
 
 function makeOrg(login: string, x = 0, y = 0): GraphNode {
-  return GraphNode.parse({
+  return GraphNodeSchema.parse({
     id: crypto.randomUUID(),
-    kind: "org",
+    type: "org",
     position: { x, y },
     data: { login },
   });
 }
 
 function makeIssue(number: number, x = 0, y = 0): GraphNode {
-  return GraphNode.parse({
+  return GraphNodeSchema.parse({
     id: crypto.randomUUID(),
-    kind: "issue",
+    type: "issue",
     position: { x, y },
     data: { owner: "exadev", repo: "graphle", number, title: "Sample" },
   });
@@ -40,23 +46,29 @@ function documentWith(
   nodes: GraphNode[],
   edges: GraphDocument["edges"] = [],
 ): GraphDocument {
-  return { version: GRAPH_DOCUMENT_VERSION, name: "test", nodes, edges };
+  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types: [], nodes, edges };
 }
 
 describe("nodeToFlow", () => {
-  it("sets id, type to the kind, the domain position, and the whole node as data", () => {
+  it("sets id, the generic flow type, the domain position, and the whole node as data", () => {
     const node = makeFreeform("A", 10, 20);
     const flow = nodeToFlow(node);
     expect(flow.id).toBe(node.id);
-    expect(flow.type).toBe("freeform");
+    expect(flow.type).toBe(FLOW_NODE_TYPE);
     expect(flow.position).toEqual({ x: 10, y: 20 });
     expect(flow.data).toBe(node);
   });
 
-  it("maps each kind to its kind string as the React Flow type", () => {
-    expect(nodeToFlow(makeFreeform("A")).type).toBe("freeform");
-    expect(nodeToFlow(makeOrg("exadev")).type).toBe("org");
-    expect(nodeToFlow(makeIssue(7)).type).toBe("issue");
+  it("routes every graphle type through the single generic flow type", () => {
+    expect(nodeToFlow(makeFreeform("A")).type).toBe(FLOW_NODE_TYPE);
+    expect(nodeToFlow(makeOrg("exadev")).type).toBe(FLOW_NODE_TYPE);
+    expect(nodeToFlow(makeIssue(7)).type).toBe(FLOW_NODE_TYPE);
+  });
+
+  it("preserves the graphle type name on data, not on the flow type", () => {
+    expect(nodeToFlow(makeFreeform("A")).data.type).toBe("freeform");
+    expect(nodeToFlow(makeOrg("exadev")).data.type).toBe("org");
+    expect(nodeToFlow(makeIssue(7)).data.type).toBe("issue");
   });
 });
 
@@ -101,18 +113,18 @@ describe("documentToFlow", () => {
     expect(flow.edges).toHaveLength(1);
   });
 
-  it("carries positions and kinds through for a multi-kind document", () => {
+  it("carries positions and types through for a multi-type document", () => {
     const a = makeFreeform("A", 10, 20);
     const b = makeOrg("exadev", 30, 40);
     const c = makeIssue(3, 50, 60);
     const flow = documentToFlow(documentWith([a, b, c]));
     expect(flow.nodes[0]?.id).toBe(a.id);
-    expect(flow.nodes[0]?.type).toBe("freeform");
+    expect(flow.nodes[0]?.type).toBe(FLOW_NODE_TYPE);
     expect(flow.nodes[0]?.position).toEqual({ x: 10, y: 20 });
     expect(flow.nodes[0]?.data).toBe(a);
-    expect(flow.nodes[1]?.type).toBe("org");
+    expect(flow.nodes[1]?.data.type).toBe("org");
     expect(flow.nodes[1]?.position).toEqual({ x: 30, y: 40 });
-    expect(flow.nodes[2]?.type).toBe("issue");
+    expect(flow.nodes[2]?.data.type).toBe("issue");
     expect(flow.nodes[2]?.position).toEqual({ x: 50, y: 60 });
   });
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { emptyDocument, type GraphDelta } from "@/domain";
-import { GraphNode, type GraphDocument } from "@/schema";
+import { GraphNodeSchema, type GraphDocument, type GraphNode } from "@/schema";
 
 import { useGraphStore } from "./graph-store";
 
@@ -21,18 +21,18 @@ describe("useGraphStore.mergeDelta", () => {
   });
 
   function makeOrg(login: string): GraphNode {
-    return GraphNode.parse({
+    return GraphNodeSchema.parse({
       id: crypto.randomUUID(),
-      kind: "org",
+      type: "org",
       position: { x: 0, y: 0 },
       data: { login },
     });
   }
 
   function makeRepo(owner: string, name: string): GraphNode {
-    return GraphNode.parse({
+    return GraphNodeSchema.parse({
       id: crypto.randomUUID(),
-      kind: "repo",
+      type: "repo",
       position: { x: 0, y: 0 },
       data: { owner, name },
     });

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { GRAPH_DOCUMENT_VERSION } from "../schema";
+import {
+  BUILT_IN_TYPES,
+  GRAPH_DOCUMENT_VERSION,
+  toPortableTypeDefinition,
+} from "../schema";
 
 import { emptyDocument } from "./empty";
 
@@ -17,5 +21,17 @@ describe("emptyDocument", () => {
     const doc = emptyDocument("Untitled");
     expect(doc.nodes).toEqual([]);
     expect(doc.edges).toEqual([]);
+  });
+
+  it("carries every built-in type definition so the document is self-describing", () => {
+    const doc = emptyDocument("Untitled");
+    expect(doc.types).toEqual(BUILT_IN_TYPES.map(toPortableTypeDefinition));
+  });
+
+  it("carries only the portable type shape (no live Zod schema)", () => {
+    const doc = emptyDocument("Untitled");
+    for (const type of doc.types) {
+      expect(type).not.toHaveProperty("schema");
+    }
   });
 });

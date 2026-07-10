@@ -18,7 +18,7 @@ import {
   type GraphDelta,
   type GraphOperation,
 } from "@/domain";
-import type { GraphDocument } from "@/schema";
+import type { GraphDocument, NodeTypeDefinition } from "@/schema";
 
 /** The node or edge currently selected on the canvas, if any. */
 export interface GraphSelection {
@@ -48,6 +48,17 @@ interface GraphState {
   mergeDelta: (delta: GraphDelta) => string[];
   /** Replace the document wholesale (URL/storage load) and clear dirty. */
   replaceDocument: (doc: GraphDocument) => void;
+  /**
+   * Add a node-type definition to the document's `types` (used by the type
+   * editor to register a user-defined type). Marks the document dirty so the
+   * new type is persisted.
+   */
+  addType: (typeDef: NodeTypeDefinition) => void;
+  /**
+   * Remove a node-type definition by name. Throws if any node still references
+   * the type, so a removal can never orphan nodes against an unresolvable type.
+   */
+  removeType: (name: string) => void;
   /** Update the ephemeral canvas selection. */
   setSelection: (selection: GraphSelection) => void;
   /** Set the storage id backing the current document. */
@@ -79,6 +90,26 @@ export const useGraphStore = create<GraphState>()(
       return result.addedNodeIds;
     },
     replaceDocument: (doc) => set({ document: doc, dirty: false }),
+    addType: (typeDef) =>
+      set((state) => ({
+        document: { ...state.document, types: [...state.document.types, typeDef] },
+        dirty: true,
+      })),
+    removeType: (name) => {
+      // Read-then-set: the guard must read the current document before the
+      // write. Removing a type that nodes still reference would leave those
+      // nodes against an unresolvable type, so fail loudly rather than orphan.
+      const doc = get().document;
+      if (doc.nodes.some((node) => node.type === name)) {
+        throw new Error(
+          `Cannot remove type "${name}": one or more nodes still use it`,
+        );
+      }
+      set({
+        document: { ...doc, types: doc.types.filter((type) => type.name !== name) },
+        dirty: true,
+      });
+    },
     setSelection: (selection) => set({ selection }),
     setGraphId: (graphId) => set({ graphId }),
     markSaved: () => set({ dirty: false }),

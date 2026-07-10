@@ -1,22 +1,20 @@
 import {
-  FreeformNodeData,
-  IssueNodeData,
-  OrgNodeData,
-  ProjectNodeData,
-  RepoNodeData,
+  resolveType,
+  zodSchemaForType,
   type EdgeRelation,
   type GraphDocument,
   type GraphEdge,
   type GraphNode,
   type NodeData,
+  type NodeTypeDefinition,
   type Position,
 } from "../schema";
 
 /**
  * Thrown by {@link applyOperation} when an operation cannot be applied because
- * it would violate a graph invariant (a duplicate node id, or an edge whose
- * endpoint does not exist). Callers can `instanceof`-check to distinguish
- * invariant failures from other errors.
+ * it would violate a graph invariant (a duplicate node id, an edge whose
+ * endpoint does not exist, or node data that fails its type's schema). Callers
+ * can `instanceof`-check to distinguish invariant failures from other errors.
  */
 export class GraphOperationError extends Error {
   constructor(message: string) {
@@ -29,11 +27,14 @@ export class GraphOperationError extends Error {
  * A single, atomic change to a graph document. Each variant is a pure intent
  * description; {@link applyOperation} is the single place that interprets them.
  *
- * The `type` field discriminates the union.
+ * The `type` field discriminates the union. `updateNodeData` additionally
+ * carries `nodeType` — the name of the node type whose schema the new `data`
+ * must satisfy — so validation can resolve the right Zod schema without
+ * searching the document.
  */
 export type GraphOperation =
   | { type: "addNode"; node: GraphNode }
-  | { type: "updateNodeData"; id: string; data: NodeData }
+  | { type: "updateNodeData"; id: string; nodeType: string; data: NodeData }
   | { type: "moveNodes"; moves: Array<{ id: string; position: Position }> }
   | { type: "removeNode"; id: string }
   | { type: "addEdge"; edge: GraphEdge }
@@ -48,62 +49,40 @@ export type GraphOperation =
   | { type: "replaceDocument"; document: GraphDocument };
 
 /**
- * Replaces `node.data` with `data`, preserving the node's id, kind, and
- * position. Because `GraphNode` is a discriminated union on `kind`, the
- * replacement must keep `kind` and `data` correlated: this narrows `data`
- * against the per-kind schema (the single source of truth) and throws
- * {@link GraphOperationError} if the supplied data does not match the node's
- * kind. In practice callers always supply matching data; the check exists so a
- * mismatched update fails loudly instead of producing an invalid node.
+ * Narrows `unknown` to a `Record<string, unknown>` without a cast. A Zod object
+ * schema always parses to a plain object, so for valid data this always holds;
+ * the guard exists only to convert `safeParse`'s `unknown` output into the
+ * `NodeData` shape `GraphNode.data` requires.
  */
-function replaceNodeData(node: GraphNode, data: NodeData): GraphNode {
-  switch (node.kind) {
-    case "freeform": {
-      const parsed = FreeformNodeData.safeParse(data);
-      if (!parsed.success) {
-        throw new GraphOperationError(
-          "updateNodeData data does not match the freeform node kind",
-        );
-      }
-      return { ...node, data: parsed.data };
-    }
-    case "org": {
-      const parsed = OrgNodeData.safeParse(data);
-      if (!parsed.success) {
-        throw new GraphOperationError(
-          "updateNodeData data does not match the org node kind",
-        );
-      }
-      return { ...node, data: parsed.data };
-    }
-    case "repo": {
-      const parsed = RepoNodeData.safeParse(data);
-      if (!parsed.success) {
-        throw new GraphOperationError(
-          "updateNodeData data does not match the repo node kind",
-        );
-      }
-      return { ...node, data: parsed.data };
-    }
-    case "issue": {
-      const parsed = IssueNodeData.safeParse(data);
-      if (!parsed.success) {
-        throw new GraphOperationError(
-          "updateNodeData data does not match the issue node kind",
-        );
-      }
-      return { ...node, data: parsed.data };
-    }
-    case "project": {
-      const parsed = ProjectNodeData.safeParse(data);
-      if (!parsed.success) {
-        throw new GraphOperationError(
-          "updateNodeData data does not match the project node kind",
-        );
-      }
-      return { ...node, data: parsed.data };
-    }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Replaces `node.data` with `data`, preserving the node's id, type, and
+ * position. `data` is validated against the resolved node type's Zod schema
+ * (the single source of truth) via {@link zodSchemaForType}; on failure this
+ * throws {@link GraphOperationError} so a mismatched update fails loudly instead
+ * of producing an invalid node. In practice callers always supply matching
+ * data; the check exists for that invariant.
+ */
+function replaceNodeData(
+  node: GraphNode,
+  type: NodeTypeDefinition,
+  data: NodeData,
+): GraphNode {
+  const parsed = zodSchemaForType(type).safeParse(data);
+  if (!parsed.success) {
+    throw new GraphOperationError(
+      `updateNodeData data does not match the "${type.name}" node type`,
+    );
   }
+  if (!isRecord(parsed.data)) {
+    throw new GraphOperationError(
+      `updateNodeData data for "${type.name}" parsed to a non-record`,
+    );
+  }
+  return { ...node, data: parsed.data };
 }
 
 /**
@@ -142,6 +121,8 @@ function applyEdgeUpdate(
  * Invariant failures throw {@link GraphOperationError}:
  * - `addNode` with an id that already exists in the document.
  * - `addEdge` whose `source` or `target` id is not present as a node.
+ * - `updateNodeData` whose `nodeType` cannot be resolved, or whose `data` fails
+ *   the resolved type's schema.
  *
  * `removeNode` also removes every edge whose `source` or `target` is the removed
  * id, so the document never holds a dangling edge. Operations that target an id
@@ -162,8 +143,14 @@ export function applyOperation(
     }
 
     case "updateNodeData": {
+      const type = resolveType(doc.types, op.nodeType);
+      if (type === undefined) {
+        throw new GraphOperationError(
+          `Cannot update node data: unknown type "${op.nodeType}"`,
+        );
+      }
       const nodes = doc.nodes.map((node) =>
-        node.id === op.id ? replaceNodeData(node, op.data) : node,
+        node.id === op.id ? replaceNodeData(node, type, op.data) : node,
       );
       return { ...doc, nodes };
     }

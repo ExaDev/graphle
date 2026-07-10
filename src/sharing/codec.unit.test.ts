@@ -1,7 +1,13 @@
 import { compressToEncodedURIComponent } from "lz-string";
 import { describe, expect, it } from "vitest";
 
-import { GRAPH_DOCUMENT_VERSION, type GraphDocument } from "../schema";
+import {
+  BUILT_IN_TYPES_BY_NAME,
+  GRAPH_DOCUMENT_VERSION,
+  toPortableTypeDefinition,
+  type GraphDocument,
+  type NodeTypeDefinition,
+} from "../schema";
 
 import { decodeDocument, encodeDocument, ShareDecodeError } from "./codec";
 
@@ -21,33 +27,52 @@ interface DocIds {
   edgeOrgProject: string;
 }
 
-/** Build a representative document covering all five node kinds. */
+/** Project a built-in type to its portable definition for test fixtures. */
+function builtInTypeDef(name: string): NodeTypeDefinition {
+  const type = BUILT_IN_TYPES_BY_NAME.get(name);
+  if (type === undefined) {
+    throw new Error(`test fixture: built-in ${name} type must exist`);
+  }
+  return toPortableTypeDefinition(type);
+}
+
+/** The type definitions carried by the representative document. */
+const documentTypes: NodeTypeDefinition[] = [
+  builtInTypeDef("freeform"),
+  builtInTypeDef("org"),
+  builtInTypeDef("repo"),
+  builtInTypeDef("issue"),
+  builtInTypeDef("project"),
+];
+
+/** Build a representative document covering all five original node types. */
 function makeDocument(ids: DocIds): GraphDocument {
   return {
     version: GRAPH_DOCUMENT_VERSION,
     name: "Representative",
+    types: documentTypes,
     nodes: [
       {
         id: ids.freeform,
-        kind: "freeform",
+        type: "freeform",
         position: { x: 10.4, y: 20.7 },
         data: { label: "Note", note: "free-form thoughts" },
       },
       {
         id: ids.org,
-        kind: "org",
+        type: "org",
         position: { x: 0, y: 0 },
         data: { login: "exadev", name: "ExaDev", url: "https://github.com/exadev" },
       },
       {
         id: ids.repo,
-        kind: "repo",
+        type: "repo",
         position: { x: 100, y: 50 },
         data: { owner: "exadev", name: "graphle", archived: false },
       },
       {
         id: ids.issue,
-        kind: "issue",
+        type: "issue",
         position: { x: -5.5, y: 12.9 },
         data: {
           owner: "exadev",
@@ -59,7 +84,7 @@ function makeDocument(ids: DocIds): GraphDocument {
       },
       {
         id: ids.project,
-        kind: "project",
+        type: "project",
         position: { x: 33, y: 88 },
         data: {
           owner: "exadev",
@@ -113,6 +138,9 @@ describe("share codec", () => {
       expect(decoded.name).toBe(original.name);
       expect(decoded.version).toBe(original.version);
 
+      // Type definitions round-trip intact.
+      expect(decoded.types).toEqual(original.types);
+
       expect(decoded.nodes).toHaveLength(original.nodes.length);
       const originalIndex = new Map(original.nodes.map((node, i) => [node.id, i]));
       const decodedIndex = new Map(decoded.nodes.map((node, i) => [node.id, i]));
@@ -120,7 +148,7 @@ describe("share codec", () => {
       decoded.nodes.forEach((decodedNode, i) => {
         const originalNode = original.nodes[i];
         if (originalNode === undefined) throw new Error("original node missing");
-        expect(decodedNode.kind).toBe(originalNode.kind);
+        expect(decodedNode.type).toBe(originalNode.type);
         expect(decodedNode.data).toEqual(originalNode.data);
         expect(decodedNode.position.x).toBe(Math.round(originalNode.position.x));
         expect(decodedNode.position.y).toBe(Math.round(originalNode.position.y));
@@ -150,10 +178,11 @@ describe("share codec", () => {
       const doc: GraphDocument = {
         version: GRAPH_DOCUMENT_VERSION,
         name: "Optionals",
+        types: [builtInTypeDef("freeform")],
         nodes: [
           {
             id: "f1",
-            kind: "freeform",
+            type: "freeform",
             position: { x: 1, y: 2 },
             data: { label: "no note here" },
           },
@@ -165,6 +194,45 @@ describe("share codec", () => {
       if (decodedNode === undefined) throw new Error("freeform node missing");
       expect(decodedNode.data).toEqual({ label: "no note here" });
       expect("note" in decodedNode.data).toBe(false);
+    });
+
+    it("round-trips a node of a custom (non-built-in) type", () => {
+      const customType: NodeTypeDefinition = {
+        name: "service",
+        label: "Service",
+        color: "blue",
+        icon: "IconServer",
+        labelField: "name",
+        identityFields: ["name"],
+        jsonSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            url: { type: "string" },
+          },
+          required: ["name"],
+        },
+      };
+      const doc: GraphDocument = {
+        version: GRAPH_DOCUMENT_VERSION,
+        name: "Custom",
+        types: [customType],
+        nodes: [
+          {
+            id: "s1",
+            type: "service",
+            position: { x: 4, y: 8 },
+            data: { name: "api", url: "https://api.example.com" },
+          },
+        ],
+        edges: [],
+      };
+      const decoded = decodeDocument(encodeDocument(doc));
+      expect(decoded.types).toEqual([customType]);
+      const node = decoded.nodes[0];
+      if (node === undefined) throw new Error("service node missing");
+      expect(node.type).toBe("service");
+      expect(node.data).toEqual({ name: "api", url: "https://api.example.com" });
     });
   });
 
@@ -197,11 +265,20 @@ describe("share codec", () => {
       );
     });
 
-    it("throws ShareDecodeError on a payload whose version is 2", () => {
+    it("throws ShareDecodeError on an unsupported compact version", () => {
       const future = compressToEncodedURIComponent(
-        JSON.stringify({ v: 2, n: "future", d: [], e: [] }),
+        JSON.stringify({ v: 3, n: "future", t: [], d: [], e: [] }),
       );
       expect(() => decodeDocument(future)).toThrow(ShareDecodeError);
+    });
+
+    it("throws ShareDecodeError on a legacy v1 compact payload", () => {
+      // The v1 compact wire format used per-kind codes this codec no longer
+      // carries; only full v1 documents are migrated.
+      const legacy = compressToEncodedURIComponent(
+        JSON.stringify({ v: 1, n: "legacy", d: [], e: [] }),
+      );
+      expect(() => decodeDocument(legacy)).toThrow(ShareDecodeError);
     });
 
     it("throws ShareDecodeError when the version field is missing", () => {
@@ -230,12 +307,42 @@ describe("share codec", () => {
     });
   });
 
-  describe("all five node kinds", () => {
-    it("round-trips a representative document containing every kind", () => {
+  describe("all five original node types", () => {
+    it("round-trips a representative document containing every type", () => {
       const doc = makeDocument(ids);
       const decoded = decodeDocument(encodeDocument(doc));
-      const decodedKinds = decoded.nodes.map((node) => node.kind);
-      expect(decodedKinds).toEqual(["freeform", "org", "repo", "issue", "project"]);
+      const decodedTypes = decoded.nodes.map((node) => node.type);
+      expect(decodedTypes).toEqual(["freeform", "org", "repo", "issue", "project"]);
+    });
+  });
+
+  describe("v1 document migration", () => {
+    it("migrates a compressed v1 full document to v2", () => {
+      const v1 = {
+        version: 1,
+        name: "Legacy",
+        nodes: [
+          {
+            id: "n1",
+            kind: "org",
+            position: { x: 5, y: 6 },
+            data: { login: "exadev" },
+          },
+        ],
+        edges: [],
+      };
+      const payload = compressToEncodedURIComponent(JSON.stringify(v1));
+      const decoded = decodeDocument(payload);
+      expect(decoded.version).toBe(GRAPH_DOCUMENT_VERSION);
+      expect(decoded.name).toBe("Legacy");
+      // kind -> type on every node.
+      const node = decoded.nodes[0];
+      if (node === undefined) throw new Error("migrated node missing");
+      expect(node.type).toBe("org");
+      expect(node.data).toEqual({ login: "exadev" });
+      // The five v1 built-in type definitions are injected.
+      const typeNames = decoded.types.map((t) => t.name);
+      expect(typeNames).toEqual(["freeform", "org", "repo", "issue", "project"]);
     });
   });
 });
@@ -252,9 +359,9 @@ describe("decodeDocument — JSON Canvas URL detection", () => {
     const payload = compressToEncodedURIComponent(canvasJson);
     const decoded = decodeDocument(payload);
     expect(decoded.nodes).toHaveLength(2);
-    expect(decoded.nodes.every((n) => n.kind === "freeform")).toBe(true);
+    expect(decoded.nodes.every((n) => n.type === "freeform")).toBe(true);
     const first = decoded.nodes[0];
-    if (first !== undefined && first.kind === "freeform") {
+    if (first !== undefined && first.type === "freeform") {
       expect(first.data.label).toBe("Hello");
     }
     expect(decoded.edges).toHaveLength(1);

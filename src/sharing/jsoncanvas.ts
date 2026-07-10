@@ -4,16 +4,23 @@
  *
  * JSON Canvas is generic — nodes are `text`/`file`/`link`/`group`, edges have
  * `fromNode`/`toNode`/`label` — so the mapping is inherently lossy relative to
- * graphle's structured GitHub kinds. Export collapses every node to a `text`
- * card carrying the primary display label; import makes every canvas node a
- * graphle `freeform` node with the canvas content as the label.
+ * graphle's typed nodes. Export resolves each node's type definition to find its
+ * `labelField` and renders that field as the canvas card text; import makes
+ * every canvas node a graphle `freeform` node with the canvas content as the
+ * label.
  *
  * Spec: <https://github.com/obsidianmd/jsoncanvas/blob/main/spec/1.0.md>
  */
 import { z } from "zod";
 
-import { GraphDocument, GRAPH_DOCUMENT_VERSION } from "../schema";
-import type { GraphNode } from "../schema";
+import {
+  BUILT_IN_TYPES_BY_NAME,
+  GRAPH_DOCUMENT_VERSION,
+  GraphDocumentSchema,
+  resolveType,
+  toPortableTypeDefinition,
+} from "../schema";
+import type { GraphDocument, GraphNode, NodeTypeDefinition } from "../schema";
 
 // --- Zod codecs for the JSON Canvas format ---------------------------------
 
@@ -102,20 +109,23 @@ function pickDefined(fields: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-/** The primary display label for a graphle node, used as the canvas card text. */
-function nodeLabelText(node: GraphNode): string {
-  switch (node.kind) {
-    case "freeform":
-      return node.data.label;
-    case "org":
-      return node.data.login;
-    case "repo":
-      return node.data.name;
-    case "issue":
-      return `#${node.data.number} ${node.data.title}`;
-    case "project":
-      return node.data.title;
+/**
+ * The primary display label for a graphle node, used as the canvas card text.
+ * Resolves the node's type (from the document's `types`, falling back to the
+ * built-in registry) and reads the field named by its `labelField`. When the
+ * value is missing or non-string the type's display label (or, last resort, the
+ * raw type name) is used — canvas export is lossy by design, so a readable
+ * placeholder beats an empty card.
+ */
+function nodeLabelText(node: GraphNode, types: NodeTypeDefinition[]): string {
+  const type = resolveType(types, node.type);
+  const labelField = type?.labelField;
+  if (labelField !== undefined) {
+    const value = node.data[labelField];
+    if (typeof value === "string") return value;
+    if (value !== undefined) return JSON.stringify(value);
   }
+  return type?.label ?? node.type;
 }
 
 /** The graphle label for a canvas node (its content rendered as a string). */
@@ -136,8 +146,9 @@ function canvasNodeLabel(node: CanvasNode): string {
 
 /**
  * Transform a graphle document into a JSON Canvas document. Every node becomes
- * a `text` card; every edge carries the relation (or explicit label) as its
- * canvas label. Node ids are reused so edges map directly.
+ * a `text` card labelled via its type's `labelField`; every edge carries the
+ * relation (or explicit label) as its canvas label. Node ids are reused so
+ * edges map directly.
  */
 export function toCanvasDocument(doc: GraphDocument): CanvasDocument {
   const nodes: CanvasTextNode[] = doc.nodes.map((node) => ({
@@ -147,7 +158,7 @@ export function toCanvasDocument(doc: GraphDocument): CanvasDocument {
     y: Math.round(node.position.y),
     width: CANVAS_NODE_WIDTH,
     height: CANVAS_NODE_HEIGHT,
-    text: nodeLabelText(node),
+    text: nodeLabelText(node, doc.types),
   }));
 
   const edges: CanvasEdge[] = doc.edges.map((edge) => ({
@@ -163,13 +174,19 @@ export function toCanvasDocument(doc: GraphDocument): CanvasDocument {
 /**
  * Transform a validated JSON Canvas document into a graphle-compatible object.
  * Every canvas node becomes a `freeform` graphle node; canvas ids are reused so
- * edges map directly. Returns `unknown` so the final `GraphDocument.parse` is
+ * edges map directly. The freeform type definition is injected so the result is
+ * self-describing. Returns `unknown` so the final `GraphDocumentSchema`.parse is
  * the single type authority (same pattern as the compact codec).
  */
 export function fromCanvasDocument(canvas: CanvasDocument): unknown {
+  const freeformType = BUILT_IN_TYPES_BY_NAME.get("freeform");
+  if (freeformType === undefined) {
+    throw new Error("built-in freeform type must exist");
+  }
+
   const nodes = (canvas.nodes ?? []).map((node) => ({
     id: node.id,
-    kind: "freeform",
+    type: "freeform",
     position: { x: node.x, y: node.y },
     data: { label: canvasNodeLabel(node) },
   }));
@@ -187,6 +204,7 @@ export function fromCanvasDocument(canvas: CanvasDocument): unknown {
   return {
     version: GRAPH_DOCUMENT_VERSION,
     name: "Imported canvas",
+    types: [toPortableTypeDefinition(freeformType)],
     nodes,
     edges,
   };
@@ -200,12 +218,12 @@ export function parseCanvasDocument(raw: unknown): CanvasDocument {
 }
 
 /**
- * Full pipeline: validate as canvas → transform → validate as graphle. Used by
+ * Full pipeline: validate as canvas -> transform -> validate as graphle. Used by
  * the URL codec and file import when the input is detected as JSON Canvas.
  */
 export function parseCanvasFromUnknown(raw: unknown): GraphDocument {
   const canvas = parseCanvasDocument(raw);
-  return GraphDocument.parse(fromCanvasDocument(canvas));
+  return GraphDocumentSchema.parse(fromCanvasDocument(canvas));
 }
 
 /** Serialise a graphle document as a pretty-printed JSON Canvas string. */

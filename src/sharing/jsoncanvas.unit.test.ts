@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { GraphEdge, GraphNode } from "../schema";
-import { emptyDocument } from "../domain/empty";
+import { GraphEdge, GraphNodeSchema, GRAPH_DOCUMENT_VERSION } from "../schema";
+import type { GraphDocument, GraphNode } from "../schema";
 
 import {
   parseCanvasDocument,
@@ -12,28 +12,37 @@ import {
 
 const position = { x: 10, y: 20 };
 
+/**
+ * Build a document with no declared types. Built-in node types still resolve
+ * (the type registry falls back to the built-in registry), so this is the
+ * minimal valid document for exercising the canvas transforms.
+ */
+function makeDoc(name: string, nodes: GraphNode[], edges: GraphEdge[] = []): GraphDocument {
+  return { version: GRAPH_DOCUMENT_VERSION, name, types: [], nodes, edges };
+}
+
 function freeform(label: string): GraphNode {
-  return GraphNode.parse({
+  return GraphNodeSchema.parse({
     id: crypto.randomUUID(),
-    kind: "freeform",
+    type: "freeform",
     position,
     data: { label },
   });
 }
 
 function org(login: string): GraphNode {
-  return GraphNode.parse({
+  return GraphNodeSchema.parse({
     id: crypto.randomUUID(),
-    kind: "org",
+    type: "org",
     position,
     data: { login },
   });
 }
 
 function repo(owner: string, name: string): GraphNode {
-  return GraphNode.parse({
+  return GraphNodeSchema.parse({
     id: crypto.randomUUID(),
-    kind: "repo",
+    type: "repo",
     position,
     data: { owner, name },
   });
@@ -49,11 +58,8 @@ function edgeBetween(sourceId: string, targetId: string): GraphEdge {
 }
 
 describe("toCanvasDocument", () => {
-  it("maps each node kind to a text node with the primary label", () => {
-    const doc = emptyDocument("test");
-    const o = org("exadev");
-    const r = repo("exadev", "graphle");
-    doc.nodes.push(o, r);
+  it("maps each node to a text node labelled by its type's labelField", () => {
+    const doc = makeDoc("test", [org("exadev"), repo("exadev", "graphle")]);
     const canvas = toCanvasDocument(doc);
     expect(canvas.nodes).toHaveLength(2);
     expect(canvas.nodes?.[0]).toMatchObject({
@@ -68,11 +74,9 @@ describe("toCanvasDocument", () => {
   });
 
   it("maps edges with the relation as the canvas label", () => {
-    const doc = emptyDocument("test");
     const a = freeform("A");
     const b = freeform("B");
-    doc.nodes.push(a, b);
-    doc.edges.push(edgeBetween(a.id, b.id));
+    const doc = makeDoc("test", [a, b], [edgeBetween(a.id, b.id)]);
     const canvas = toCanvasDocument(doc);
     expect(canvas.edges).toHaveLength(1);
     expect(canvas.edges?.[0]).toMatchObject({
@@ -95,9 +99,7 @@ describe("canvas -> graphle transform", () => {
       edges: [],
     });
     expect(doc.nodes).toHaveLength(4);
-    const labels = doc.nodes.map((n) =>
-      n.kind === "freeform" ? n.data.label : "<wrong kind>",
-    );
+    const labels = doc.nodes.map((n) => (n.type === "freeform" ? n.data.label : "<wrong type>"));
     expect(labels).toEqual(["Hello", "note.md", "https://example.com", "My group"]);
   });
 
@@ -112,13 +114,20 @@ describe("canvas -> graphle transform", () => {
     expect(doc.edges[0]?.relation).toBe("references");
     expect(doc.edges[0]?.label).toBe("depends on");
   });
+
+  it("injects the freeform type definition so the result is self-describing", () => {
+    const doc = parseCanvasFromUnknown({
+      nodes: [{ id: "n1", type: "text", x: 0, y: 0, width: 250, height: 120, text: "Hi" }],
+      edges: [],
+    });
+    expect(doc.types).toHaveLength(1);
+    expect(doc.types[0]?.name).toBe("freeform");
+  });
 });
 
-describe("round-trip (freeform only — lossy for kinds)", () => {
+describe("round-trip (freeform only — lossy for other types)", () => {
   it("preserves freeform label and position through canvas export then import", () => {
-    const original = emptyDocument("test");
-    const node = freeform("My note");
-    original.nodes.push(node);
+    const original = makeDoc("test", [freeform("My note")]);
 
     const canvasJson = serialiseCanvasDocument(original);
     const imported = parseCanvasFromUnknown(JSON.parse(canvasJson));
@@ -126,11 +135,9 @@ describe("round-trip (freeform only — lossy for kinds)", () => {
     expect(imported.nodes).toHaveLength(1);
     const first = imported.nodes[0];
     if (first === undefined) throw new Error("expected one node");
-    expect(first.kind).toBe("freeform");
+    expect(first.type).toBe("freeform");
     expect(first.position).toEqual(position);
-    if (first.kind === "freeform") {
-      expect(first.data.label).toBe("My note");
-    }
+    expect(first.data.label).toBe("My note");
   });
 });
 

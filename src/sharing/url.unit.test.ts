@@ -13,10 +13,11 @@ import {
 const doc: GraphDocument = {
   version: GRAPH_DOCUMENT_VERSION,
   name: "Share me",
+  types: [],
   nodes: [
     {
       id: "n1",
-      kind: "freeform",
+      type: "freeform",
       position: { x: 5, y: 6 },
       data: { label: "hello" },
     },
@@ -56,7 +57,7 @@ describe("share url", () => {
         expect(result.document.nodes).toHaveLength(1);
         const node = result.document.nodes[0];
         if (node === undefined) throw new Error("node missing");
-        expect(node.kind).toBe("freeform");
+        expect(node.type).toBe("freeform");
       }
     });
   });

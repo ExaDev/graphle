@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILT_IN_TYPES,
   GRAPH_DOCUMENT_VERSION,
   GraphEdge,
+  toPortableTypeDefinition,
   type GraphDocument,
-  GraphNode,
+  type GraphNode,
+  type NodeTypeDefinition,
 } from "../schema";
 
 import {
@@ -15,29 +18,32 @@ import {
 
 const position = { x: 0, y: 0 };
 
+/** The built-in types as a document would carry them (portable form). */
+const types: NodeTypeDefinition[] = BUILT_IN_TYPES.map(toPortableTypeDefinition);
+
 function makeFreeform(label: string): GraphNode {
-  return GraphNode.parse({
+  return {
     id: crypto.randomUUID(),
-    kind: "freeform",
+    type: "freeform",
     position,
     data: { label },
-  });
+  };
 }
 
 function makeOrg(login: string): GraphNode {
-  return GraphNode.parse({
+  return {
     id: crypto.randomUUID(),
-    kind: "org",
+    type: "org",
     position,
     data: { login },
-  });
+  };
 }
 
 function documentWith(
   nodes: GraphNode[],
   edges: GraphDocument["edges"] = [],
 ): GraphDocument {
-  return { version: GRAPH_DOCUMENT_VERSION, name: "test", nodes, edges };
+  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types, nodes, edges };
 }
 
 describe("applyOperation - addNode", () => {
@@ -64,25 +70,40 @@ describe("applyOperation - addNode", () => {
 });
 
 describe("applyOperation - updateNodeData", () => {
-  it("replaces a node's data when the data matches the node kind", () => {
+  it("replaces a node's data when the data matches the node type", () => {
     const node = makeFreeform("A");
     const doc = documentWith([node]);
     const next = applyOperation(doc, {
       type: "updateNodeData",
       id: node.id,
+      nodeType: "freeform",
       data: { label: "B", note: "updated" },
     });
     expect(next.nodes[0]?.data).toEqual({ label: "B", note: "updated" });
   });
 
-  it("throws GraphOperationError when the data does not match the node kind", () => {
+  it("throws GraphOperationError when the data does not match the node type", () => {
     const node = makeFreeform("A");
     const doc = documentWith([node]);
     expect(() =>
       applyOperation(doc, {
         type: "updateNodeData",
         id: node.id,
+        nodeType: "freeform",
         data: { login: "exadev" },
+      }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("throws GraphOperationError when the node type cannot be resolved", () => {
+    const node = makeFreeform("A");
+    const doc = documentWith([node]);
+    expect(() =>
+      applyOperation(doc, {
+        type: "updateNodeData",
+        id: node.id,
+        nodeType: "no-such-type",
+        data: { label: "B" },
       }),
     ).toThrow(GraphOperationError);
   });
@@ -93,6 +114,7 @@ describe("applyOperation - updateNodeData", () => {
     const next = applyOperation(doc, {
       type: "updateNodeData",
       id: "missing",
+      nodeType: "freeform",
       data: { label: "B" },
     });
     expect(next.nodes).toEqual([node]);

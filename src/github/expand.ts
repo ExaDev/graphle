@@ -1,5 +1,5 @@
 import { placeAround, type GraphDelta } from "../domain";
-import type { GraphEdge, GraphNode, NodeKind, Position } from "../schema";
+import type { GraphEdge, GraphNode, Position } from "../schema";
 import type { GitHubClient } from "./contract";
 import {
   buildDelta,
@@ -54,14 +54,31 @@ function positionAt(positions: Position[], index: number): Position {
   return position;
 }
 
+/**
+ * Reads a required string field from a source node's `data` bag. The expansion
+ * has already guarded the node's `type`, so a missing or non-string value means
+ * the document's data does not match its declared type (a corrupt or unmigrated
+ * document) — fail loudly rather than silently send a malformed request.
+ */
+function requireString(node: GraphNode, field: string): string {
+  const value = node.data[field];
+  if (typeof value !== "string") {
+    throw new Error(
+      `expected string field "${field}" on "${node.type}" node ${node.id}`,
+    );
+  }
+  return value;
+}
+
 const orgRepos: Expansion = {
   id: "org-repos",
   label: "Repositories",
   async run(source, client, cursor, signal) {
-    if (source.kind !== "org") {
+    if (source.type !== "org") {
       throw new Error("org-repos expansion requires an org source node");
     }
-    const page = await client.listOrgRepos(source.data.login, cursor, signal);
+    const login = requireString(source, "login");
+    const page = await client.listOrgRepos(login, cursor, signal);
     const positions = placeAround(source.position, page.items.length);
     const nodes = page.items.map((repo, i) =>
       repoToNode(repo, positionAt(positions, i)),
@@ -79,13 +96,14 @@ const orgProjects: Expansion = {
   id: "org-projects",
   label: "Projects",
   async run(source, client, cursor, signal) {
-    if (source.kind !== "org") {
+    if (source.type !== "org") {
       throw new Error("org-projects expansion requires an org source node");
     }
-    const page = await client.listOrgProjects(source.data.login, cursor, signal);
+    const login = requireString(source, "login");
+    const page = await client.listOrgProjects(login, cursor, signal);
     const positions = placeAround(source.position, page.items.length);
     const nodes = page.items.map((project, i) =>
-      projectToNode(source.data.login, project, positionAt(positions, i)),
+      projectToNode(login, project, positionAt(positions, i)),
     );
     const edges = nodes.map((node) => ownsEdge(source.id, node.id));
     return {
@@ -100,23 +118,15 @@ const repoIssues: Expansion = {
   id: "repo-issues",
   label: "Issues",
   async run(source, client, cursor, signal) {
-    if (source.kind !== "repo") {
+    if (source.type !== "repo") {
       throw new Error("repo-issues expansion requires a repo source node");
     }
-    const page = await client.listRepoIssues(
-      source.data.owner,
-      source.data.name,
-      cursor,
-      signal,
-    );
+    const owner = requireString(source, "owner");
+    const name = requireString(source, "name");
+    const page = await client.listRepoIssues(owner, name, cursor, signal);
     const positions = placeAround(source.position, page.items.length);
     const nodes = page.items.map((issue, i) =>
-      issueToNode(
-        source.data.owner,
-        source.data.name,
-        issue,
-        positionAt(positions, i),
-      ),
+      issueToNode(owner, name, issue, positionAt(positions, i)),
     );
     const edges = nodes.map((node) => containsEdge(source.id, node.id));
     return {
@@ -131,18 +141,15 @@ const repoProjects: Expansion = {
   id: "repo-projects",
   label: "Projects",
   async run(source, client, cursor, signal) {
-    if (source.kind !== "repo") {
+    if (source.type !== "repo") {
       throw new Error("repo-projects expansion requires a repo source node");
     }
-    const page = await client.listRepoProjects(
-      source.data.owner,
-      source.data.name,
-      cursor,
-      signal,
-    );
+    const owner = requireString(source, "owner");
+    const name = requireString(source, "name");
+    const page = await client.listRepoProjects(owner, name, cursor, signal);
     const positions = placeAround(source.position, page.items.length);
     const nodes = page.items.map((project, i) =>
-      projectToNode(source.data.owner, project, positionAt(positions, i)),
+      projectToNode(owner, project, positionAt(positions, i)),
     );
     const edges = nodes.map((node) => ownsEdge(source.id, node.id));
     return {
@@ -157,15 +164,10 @@ const projectItems: Expansion = {
   id: "project-items",
   label: "Items",
   async run(source, client, cursor, signal) {
-    if (source.kind !== "project") {
+    if (source.type !== "project") {
       throw new Error("project-items expansion requires a project source node");
     }
-    const projectNodeId = source.data.projectNodeId;
-    if (projectNodeId === undefined) {
-      throw new Error(
-        "project-items expansion requires a project node with a projectNodeId",
-      );
-    }
+    const projectNodeId = requireString(source, "projectNodeId");
     const page = await client.listProjectItems(projectNodeId, cursor, signal);
     // Only Issue items are materialised. DraftIssue items are skipped in v1:
     // they would become freeform nodes, which carry no identity key, so
@@ -190,14 +192,20 @@ const projectItems: Expansion = {
 };
 
 /**
- * The expansions available for each node kind. `org` and `repo` nodes offer both
+ * The expansions available for a node type. `org` and `repo` nodes offer both
  * their owned children (repos / issues) and their projects; `project` nodes
- * offer their items; `issue` and `freeform` nodes have nothing to expand into.
+ * offer their items; every other type (including `issue`, `freeform`, and any
+ * custom type) has nothing to expand into, so an empty list is returned.
  */
-export const expansionsFor: Record<NodeKind, Expansion[]> = {
-  org: [orgRepos, orgProjects],
-  repo: [repoIssues, repoProjects],
-  project: [projectItems],
-  issue: [],
-  freeform: [],
-};
+export function expansionsForType(typeName: string): Expansion[] {
+  switch (typeName) {
+    case "org":
+      return [orgRepos, orgProjects];
+    case "repo":
+      return [repoIssues, repoProjects];
+    case "project":
+      return [projectItems];
+    default:
+      return [];
+  }
+}

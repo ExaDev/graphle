@@ -36,7 +36,7 @@ import {
 import { useGraphStore } from "@/ui/store/graph-store";
 
 import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
-import { nodeTypes } from "./node-kinds-registry";
+import { nodeTypes } from "./type-presentation";
 
 export function GraphCanvas() {
   const graphDocument = useGraphStore((s) => s.document);
@@ -61,7 +61,7 @@ export function GraphCanvas() {
   // changes — an add, remove, inspector data edit, or external document load —
   // but never on position-only commits, so a drag-stop does not blow away
   // React Flow's live state. Positions are deliberately excluded from the
-  // fingerprint; ids, kinds, data, relation and label are included, so edits
+  // fingerprint; ids, types, data, relation and label are included, so edits
   // made in the inspector reach the canvas without re-syncing mid-drag. The
   // previous fingerprint is kept in a ref and compared inside the effect (refs
   // must not be mutated during render).
@@ -78,7 +78,7 @@ export function GraphCanvas() {
   }, [graphId]);
   useEffect(() => {
     const nodeSignature = graphDocument.nodes
-      .map((n) => `${n.id}:${n.kind}:${JSON.stringify(n.data)}`)
+      .map((n) => `${n.id}:${n.type}:${JSON.stringify(n.data)}`)
       .join("\n");
     const edgeSignature = graphDocument.edges
       .map((e) => `${e.id}:${e.relation}:${e.label !== undefined ? e.label : ""}`)

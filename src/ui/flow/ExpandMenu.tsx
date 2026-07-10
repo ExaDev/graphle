@@ -1,7 +1,7 @@
 /**
  * Expansion menu for the currently selected node. Reads the available
- * expansions for the node's kind ({@link expansionsFor}) and renders one item
- * per expansion. Selecting one builds a client from the stored PAT, runs the
+ * expansions for the node's type ({@link expansionsForType}) and renders one
+ * item per expansion. Selecting one builds a client from the stored PAT, runs the
  * expansion, folds the resulting delta into the document via
  * `store.mergeDelta`, and reports how many nodes were added. Pagination tails
  * are tracked per expansion so a "Load more" item appears while the connection
@@ -25,7 +25,7 @@ import { IconChevronDown, IconPlaylistAdd } from "@tabler/icons-react";
 
 import {
   createGitHubClient,
-  expansionsFor,
+  expansionsForType,
   GitHubError,
   type Expansion,
 } from "@/github";
@@ -35,7 +35,7 @@ import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 export interface ExpandMenuProps {
-  /** The node whose expansions are offered. Its kind selects the expansion set. */
+  /** The node whose expansions are offered. Its type selects the expansion set. */
   node: GraphNode;
   /** Opens the GitHub panel so the user can supply a PAT when none is stored. */
   onOpenGitHub: () => void;
@@ -74,7 +74,7 @@ function expansionErrorMessage(error: GitHubError): string {
 }
 
 export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
-  const expansions = expansionsFor[node.kind];
+  const expansions = expansionsForType(node.type);
 
   const mergeDelta = useGraphStore((state) => state.mergeDelta);
 

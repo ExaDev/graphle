@@ -28,7 +28,7 @@ type ProjectIssueItem = Extract<GitHubProjectItem, { __typename: "Issue" }>;
 export function orgToNode(org: GitHubOrg, position: Position): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "org",
+    type: "org",
     position,
     data: {
       login: org.login,
@@ -42,7 +42,7 @@ export function orgToNode(org: GitHubOrg, position: Position): GraphNode {
 export function repoToNode(repo: GitHubRepo, position: Position): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "repo",
+    type: "repo",
     position,
     data: {
       owner: repo.owner.login,
@@ -62,7 +62,7 @@ export function issueToNode(
 ): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "issue",
+    type: "issue",
     position,
     data: {
       owner: repoOwner,
@@ -86,7 +86,7 @@ export function projectIssueItemToNode(
 ): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "issue",
+    type: "issue",
     position,
     data: {
       owner: content.repository.owner.login,
@@ -106,7 +106,7 @@ export function projectToNode(
 ): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "project",
+    type: "project",
     position,
     data: {
       owner: ownerLogin,

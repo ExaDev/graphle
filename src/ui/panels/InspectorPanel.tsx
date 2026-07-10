@@ -17,11 +17,10 @@
  */
 import { Button, Divider, Select, Stack, Text, TextInput } from "@mantine/core";
 
-import { EdgeRelation } from "@/schema";
+import { resolveType, EdgeRelation } from "@/schema";
 import { useGraphStore, useSelection } from "@/ui/store/graph-store";
 
 import { ExpandMenu } from "../flow/ExpandMenu";
-import { NODE_KINDS } from "../flow/node-kinds-registry";
 import { NodeDataFields } from "./NodeDataFields";
 
 /** Human-readable labels for each edge relation, keyed by the enum value. */
@@ -75,15 +74,25 @@ export function InspectorPanel({ onOpenGitHub }: InspectorPanelProps) {
   }
 
   if (node !== undefined) {
+    const typeDef = resolveType(document.types, node.type);
     return (
       <Stack p="md" gap="md">
         <Text fw={600} size="sm" c="dimmed">
-          {NODE_KINDS[node.kind].label} node
+          {typeDef?.label ?? node.type} node
         </Text>
-        <NodeDataFields
-          node={node}
-          onChange={(data) => apply({ type: "updateNodeData", id: node.id, data })}
-        />
+        {typeDef !== undefined ? (
+          <NodeDataFields
+            node={node}
+            typeDef={typeDef}
+            onChange={(data) =>
+              apply({ type: "updateNodeData", id: node.id, nodeType: node.type, data })
+            }
+          />
+        ) : (
+          <Text size="sm" c="dimmed">
+            This node's type is not defined in this graph.
+          </Text>
+        )}
         <ExpandMenu node={node} onOpenGitHub={onOpenGitHub} />
         <Divider />
         <Button

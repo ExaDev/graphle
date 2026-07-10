@@ -8,6 +8,7 @@ const now = "2024-01-15T10:30:00Z";
 const document = {
   version: GRAPH_DOCUMENT_VERSION,
   name: "Demo",
+  types: [],
   nodes: [],
   edges: [],
 };
@@ -39,7 +40,7 @@ describe("StoredGraph", () => {
     const result = StoredGraph.safeParse({
       id: crypto.randomUUID(),
       name: "Demo",
-      document: { version: 2, name: "Demo", nodes: [], edges: [] },
+      document: { version: 1, name: "Demo", types: [], nodes: [], edges: [] },
       createdAt: now,
       updatedAt: now,
     });

@@ -1,13 +1,13 @@
 import { z } from "zod";
 
-import { GraphDocument } from "./graph";
+import { GraphDocumentSchema } from "./graph";
 import { IsoTimestamp } from "./primitives";
 
 /** A complete graph document persisted in IndexedDB, keyed by `id`. */
 export const StoredGraph = z.object({
   id: z.string(),
   name: z.string(),
-  document: GraphDocument,
+  document: GraphDocumentSchema,
   createdAt: IsoTimestamp,
   updatedAt: IsoTimestamp,
 });

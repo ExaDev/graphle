@@ -1,81 +1,72 @@
 /**
- * React Flow node components for each graph node kind. This file exports ONLY
- * components (so react-refresh fast refresh stays happy); the NODE_KINDS
- * registry and `nodeTypes` wiring live in `node-kinds-registry.ts` and pull
- * presentation metadata from `node-kind-meta.ts`.
+ * The single React Flow node component. There are no per-type components any
+ * more: every graph node renders through {@link GenericNode}, which derives its
+ * icon, accent colour, and badge label from the node's type definition, and its
+ * primary label from the type's `labelField`. The type definition is resolved
+ * from the live document's `types` (falling back to the built-in registry), so
+ * user-defined and built-in types render identically.
  *
- * Each kind component narrows its `data` (the whole domain GraphNode) on `kind`
- * and delegates rendering to the shared {@link NodeCard}.
+ * This file exports ONLY the component, so react-refresh fast refresh stays
+ * happy; the `nodeTypes` wiring lives in {@link ./type-presentation.ts}.
  */
 import { Badge } from "@mantine/core";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import type { NodeKind } from "@/schema";
+import { resolveType, type GraphNode, type NodeTypeDefinition } from "@/schema";
+import { useGraphStore } from "@/ui/store/graph-store";
 
-import { KIND_PRESENTATION } from "./node-kind-meta";
-import type { GraphFlowNode } from "./to-flow";
+import { nodeCard, nodeHeader, nodeLabel } from "./node-kinds.css";
 import {
-  kindBorder,
-  kindIcon,
-  nodeCard,
-  nodeHeader,
-  nodeLabel,
-} from "./node-kinds.css";
+  DEFAULT_TYPE_PRESENTATION,
+  getTypePresentation,
+  type TypePresentation,
+} from "./type-presentation";
+import type { GraphFlowNode } from "./to-flow";
 
-interface NodeCardProps {
-  kind: NodeKind;
-  /** Primary label for the node (data-derived, so passed in by the kind component). */
-  label: string;
+/**
+ * Extract a node's display label from its data via the type's `labelField`. A
+ * non-string (missing or wrong-typed) value falls back to the type's human
+ * label, so a fresh node whose label field is not yet filled still shows a
+ * recognisable title rather than a blank.
+ */
+function extractLabel(
+  node: GraphNode,
+  typeDef: NodeTypeDefinition,
+  presentation: TypePresentation,
+): string {
+  const value = node.data[typeDef.labelField];
+  return typeof value === "string" ? value : presentation.label;
 }
 
 /**
- * Shared node shell: accent border, a target handle on the left, a source
- * handle on the right, the kind icon + primary label, and a kind badge.
- * Presentation (icon, colour, badge label) comes from {@link KIND_PRESENTATION}.
+ * Render any graph node. Presentation (glyph, accent, badge) comes from the
+ * resolved type definition via {@link getTypePresentation}; the accent colour is
+ * applied inline as a Mantine CSS variable so it tracks the type's `color`
+ * without build-time per-type style atoms.
  */
-function NodeCard({ kind, label }: NodeCardProps) {
-  const presentation = KIND_PRESENTATION[kind];
-  const Icon = presentation.icon;
+export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
+  const types = useGraphStore((state) => state.document.types);
+  const typeDef = resolveType(types, data.type);
+  const presentation =
+    typeDef !== undefined ? getTypePresentation(typeDef) : DEFAULT_TYPE_PRESENTATION;
+  const Icon = presentation.Icon;
+  const label = typeDef !== undefined ? extractLabel(data, typeDef, presentation) : data.type;
+
   return (
-    <div className={`${nodeCard} ${kindBorder[kind]}`}>
+    <div className={nodeCard} style={{ borderColor: presentation.colorVar }}>
       <Handle type="target" position={Position.Left} />
       <div className={nodeHeader}>
-        <Icon size={16} stroke={1.75} className={kindIcon[kind]} />
+        <Icon size={16} stroke={1.75} style={{ color: presentation.colorVar }} />
         <div className={nodeLabel}>{label}</div>
       </div>
-      <Badge color={presentation.color} size="xs" variant="light">
+      <Badge
+        size="xs"
+        variant="light"
+        {...(typeDef?.color !== undefined ? { color: typeDef.color } : {})}
+      >
         {presentation.label}
       </Badge>
       <Handle type="source" position={Position.Right} />
     </div>
   );
-}
-
-// React Flow routes each node to its component by `type` (the node kind), so by
-// construction `data` is always the matching variant. The `kind` guard narrows
-// the discriminated union for the type system; it never fails at runtime.
-
-export function FreeformNode({ data }: NodeProps<GraphFlowNode>) {
-  if (data.kind !== "freeform") return null;
-  return <NodeCard kind="freeform" label={data.data.label} />;
-}
-
-export function OrgNode({ data }: NodeProps<GraphFlowNode>) {
-  if (data.kind !== "org") return null;
-  return <NodeCard kind="org" label={data.data.login} />;
-}
-
-export function RepoNode({ data }: NodeProps<GraphFlowNode>) {
-  if (data.kind !== "repo") return null;
-  return <NodeCard kind="repo" label={data.data.name} />;
-}
-
-export function IssueNode({ data }: NodeProps<GraphFlowNode>) {
-  if (data.kind !== "issue") return null;
-  return <NodeCard kind="issue" label={data.data.title} />;
-}
-
-export function ProjectNode({ data }: NodeProps<GraphFlowNode>) {
-  if (data.kind !== "project") return null;
-  return <NodeCard kind="project" label={data.data.title} />;
 }

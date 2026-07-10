@@ -1,20 +1,26 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILT_IN_TYPES,
   GRAPH_DOCUMENT_VERSION,
+  toPortableTypeDefinition,
   type GraphEdge,
   type GraphDocument,
   type GraphNode,
+  type NodeTypeDefinition,
 } from "../schema";
 
 import { applyDelta, type GraphDelta } from "./merge";
 
 const position = { x: 0, y: 0 };
 
+/** The built-in types as a document would carry them (portable form). */
+const types: NodeTypeDefinition[] = BUILT_IN_TYPES.map(toPortableTypeDefinition);
+
 function orgNode(login: string): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "org",
+    type: "org",
     position,
     data: { login },
   };
@@ -23,7 +29,7 @@ function orgNode(login: string): GraphNode {
 function repoNode(owner: string, name: string): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "repo",
+    type: "repo",
     position,
     data: { owner, name },
   };
@@ -32,7 +38,7 @@ function repoNode(owner: string, name: string): GraphNode {
 function freeformNode(label: string): GraphNode {
   return {
     id: crypto.randomUUID(),
-    kind: "freeform",
+    type: "freeform",
     position,
     data: { label },
   };
@@ -54,7 +60,7 @@ function edge(
 }
 
 function documentWith(nodes: GraphNode[]): GraphDocument {
-  return { version: GRAPH_DOCUMENT_VERSION, name: "test", nodes, edges: [] };
+  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types, nodes, edges: [] };
 }
 
 describe("applyDelta - new nodes and edges", () => {
@@ -115,7 +121,7 @@ describe("applyDelta - node dedup by identity key", () => {
     expect(mergedEdge?.relation).toBe("owns");
   });
 
-  it("always adds freeform nodes, even if they share a label", () => {
+  it("always adds nodes whose type has no identity key, even if they share a label", () => {
     const doc = documentWith([]);
     const a = freeformNode("Note");
     const b = freeformNode("Note");
@@ -136,6 +142,7 @@ describe("applyDelta - edge dedup by (source, target, relation)", () => {
     const doc: GraphDocument = {
       version: GRAPH_DOCUMENT_VERSION,
       name: "test",
+      types,
       nodes: [org, repo],
       edges: [existing],
     };

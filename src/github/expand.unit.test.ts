@@ -4,7 +4,7 @@ import { emptyDocument } from "../domain/empty";
 import { applyDelta } from "../domain/merge";
 import type { GraphNode } from "../schema";
 
-import { expansionsFor } from "./expand";
+import { expansionsForType } from "./expand";
 import type { GitHubClient, Page } from "./contract";
 import type { GitHubProjectItem } from "./schema";
 
@@ -13,7 +13,7 @@ const position = { x: 10, y: 20 };
 function orgSource(): GraphNode {
   return {
     id: "org-1",
-    kind: "org",
+    type: "org",
     position,
     data: { login: "exadev" },
   };
@@ -56,7 +56,7 @@ function clientWithRepos(repos: Page<{
   };
 }
 
-describe("expansionsFor - org-repos", () => {
+describe("expansionsForType - org-repos", () => {
   it("builds repo nodes and owns edges from the source org", async () => {
     const source = orgSource();
     const client = clientWithRepos({
@@ -68,7 +68,7 @@ describe("expansionsFor - org-repos", () => {
       hasNextPage: false,
     });
 
-    const expansion = expansionsFor.org.find((e) => e.id === "org-repos");
+    const expansion = expansionsForType("org").find((e) => e.id === "org-repos");
     if (expansion === undefined) throw new Error("org-repos expansion missing");
 
     const { delta, endCursor, hasNextPage } = await expansion.run(
@@ -82,7 +82,7 @@ describe("expansionsFor - org-repos", () => {
     expect(endCursor).toBeUndefined();
 
     const repoNames = delta.nodes.map((n) =>
-      n.kind === "repo" ? n.data.name : null,
+      n.type === "repo" ? n.data.name : null,
     );
     expect(repoNames).toEqual(["graphle", "shipwright"]);
 
@@ -102,7 +102,7 @@ describe("expansionsFor - org-repos", () => {
       endCursor: undefined,
       hasNextPage: false,
     });
-    const expansion = expansionsFor.org[0];
+    const expansion = expansionsForType("org")[0];
     if (expansion === undefined) throw new Error("org-repos expansion missing");
 
     const { delta } = await expansion.run(
@@ -122,21 +122,22 @@ describe("expansionsFor - org-repos", () => {
   });
 });
 
-describe("expansionsFor - dispatch table", () => {
-  it("offers repos and projects for org nodes, nothing for issues/freeform", () => {
-    expect(expansionsFor.org.map((e) => e.id)).toEqual(["org-repos", "org-projects"]);
-    expect(expansionsFor.repo.map((e) => e.id)).toEqual(["repo-issues", "repo-projects"]);
-    expect(expansionsFor.project.map((e) => e.id)).toEqual(["project-items"]);
-    expect(expansionsFor.issue).toEqual([]);
-    expect(expansionsFor.freeform).toEqual([]);
+describe("expansionsForType - dispatch table", () => {
+  it("offers repos and projects for org/repo, items for project, nothing for issue/freeform/unknown", () => {
+    expect(expansionsForType("org").map((e) => e.id)).toEqual(["org-repos", "org-projects"]);
+    expect(expansionsForType("repo").map((e) => e.id)).toEqual(["repo-issues", "repo-projects"]);
+    expect(expansionsForType("project").map((e) => e.id)).toEqual(["project-items"]);
+    expect(expansionsForType("issue")).toEqual([]);
+    expect(expansionsForType("freeform")).toEqual([]);
+    expect(expansionsForType("custom-thing")).toEqual([]);
   });
 });
 
-describe("expansionsFor - project-items", () => {
+describe("expansionsForType - project-items", () => {
   function projectSource(): GraphNode {
     return {
       id: "project-1",
-      kind: "project",
+      type: "project",
       position,
       data: {
         owner: "exadev",
@@ -197,7 +198,7 @@ describe("expansionsFor - project-items", () => {
       hasNextPage: false,
     });
 
-    const expansion = expansionsFor.project[0];
+    const expansion = expansionsForType("project")[0];
     if (expansion === undefined) throw new Error("project-items expansion missing");
 
     const { delta } = await expansion.run(
@@ -209,7 +210,7 @@ describe("expansionsFor - project-items", () => {
 
     // One issue node, no freeform (draft) nodes; one tracks edge.
     expect(delta.nodes).toHaveLength(1);
-    expect(delta.nodes[0]?.kind).toBe("issue");
+    expect(delta.nodes[0]?.type).toBe("issue");
     expect(delta.edges).toHaveLength(1);
     expect(delta.edges[0]?.relation).toBe("tracks");
   });
@@ -230,7 +231,7 @@ describe("expansionsFor - project-items", () => {
       endCursor: undefined,
       hasNextPage: false,
     });
-    const expansion = expansionsFor.project[0];
+    const expansion = expansionsForType("project")[0];
     if (expansion === undefined) throw new Error("project-items expansion missing");
 
     const { delta } = await expansion.run(

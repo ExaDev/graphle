@@ -26,14 +26,15 @@ function edgeTripleKey(
 
 /**
  * Folds `delta` into `doc`, collapsing nodes that represent the same external
- * GitHub entity and de-duplicating edges.
+ * entity and de-duplicating edges.
  *
  * Node handling:
  * - A delta node whose {@link nodeIdentityKey} matches a node already in the
  *   document (or already added from this delta) is not re-added. Instead its id
  *   is recorded in a mapping so edges that reference it are re-pointed at the
  *   surviving node.
- * - Freeform nodes (no identity key) are always added; every one is distinct.
+ * - Nodes whose type has no identity fields (no identity key) are always added;
+ *   every one is distinct.
  *
  * Edge handling: each delta edge's endpoints are re-pointed through the id
  * mapping, then the edge is added only if no existing or already-added edge
@@ -41,8 +42,8 @@ function edgeTripleKey(
  * relation, and label.
  *
  * Returns the new document plus the ids of the delta nodes that were actually
- * added (freeform nodes and first occurrences of keyed entities). The input
- * document and delta are not mutated.
+ * added (nodes without identity keys and first occurrences of keyed entities).
+ * The input document and delta are not mutated.
  */
 export function applyDelta(
   doc: GraphDocument,
@@ -51,7 +52,7 @@ export function applyDelta(
   // identityKey -> id of the node that owns that key in the merged set so far.
   const identityIndex = new Map<string, string>();
   for (const node of doc.nodes) {
-    const key = nodeIdentityKey(node);
+    const key = nodeIdentityKey(node, doc.types);
     if (key !== undefined) {
       identityIndex.set(key, node.id);
     }
@@ -65,7 +66,7 @@ export function applyDelta(
   const idMapping = new Map<string, string>();
 
   for (const node of delta.nodes) {
-    const key = nodeIdentityKey(node);
+    const key = nodeIdentityKey(node, doc.types);
     if (key !== undefined) {
       const survivingId = identityIndex.get(key);
       if (survivingId !== undefined) {

@@ -4,36 +4,38 @@
  * structural map so it can be unit-tested in isolation and memoised at the call
  * site (GraphCanvas) rather than here.
  *
- * Each domain {@link GraphNode} becomes a React Flow node whose `type` is the
- * node kind (so React Flow routes it to the matching component in `nodeTypes`)
- * and whose `data` carries the whole domain node, so the component has the id,
- * kind, position, and kind-specific data in one place. Each domain
- * {@link GraphEdge} becomes a React Flow edge with the relation shown as the
- * edge label and the whole domain edge stashed on `data`.
+ * Every domain {@link GraphNode} becomes a React Flow node stamped with the
+ * single {@link FLOW_NODE_TYPE} type string, so React Flow routes them all
+ * through the one generic component; the graphle node type lives on `data.type`
+ * and is resolved by the component. Each domain {@link GraphEdge} becomes a
+ * React Flow edge with the relation shown as the edge label and the whole
+ * domain edge stashed on `data`.
  */
 import type { Edge, Node } from "@xyflow/react";
 
-import type {
-  GraphDocument,
-  GraphEdge,
-  GraphNode,
-  NodeKind,
-} from "@/schema";
+import type { GraphDocument, GraphEdge, GraphNode } from "@/schema";
+
+/**
+ * The React Flow node type every graphle node renders as. There is exactly one
+ * React Flow component (the generic `GenericNode`); the graphle type name is
+ * carried on `data.type` and resolved at render time.
+ */
+export const FLOW_NODE_TYPE = "default";
 
 /** React Flow node carrying the full domain node as its data. */
-export type GraphFlowNode = Node<GraphNode, NodeKind>;
+export type GraphFlowNode = Node<GraphNode, typeof FLOW_NODE_TYPE>;
 /** React Flow edge carrying the full domain edge as its data. */
 export type GraphFlowEdge = Edge<GraphEdge>;
 
 /**
- * Project a single domain node to a React Flow node. The node kind becomes the
- * React Flow `type` (used to select the rendered component); `data` is the
- * whole domain node so the component can narrow on `data.kind` for its label.
+ * Project a single domain node to a React Flow node. The constant
+ * {@link FLOW_NODE_TYPE} selects the generic component; `data` is the whole
+ * domain node so the component has the id, type, position, and data bag.
  */
 export function nodeToFlow(node: GraphNode): GraphFlowNode {
   return {
     id: node.id,
-    type: node.kind,
+    type: FLOW_NODE_TYPE,
     position: node.position,
     data: node,
   };
