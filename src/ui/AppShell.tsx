@@ -9,10 +9,11 @@
  * leaving icon-only controls.
  *
  * `useUrlSync` is mounted here, high in the tree, so the `#g=` share fragment
- * stays in sync with the document for every descendant edit. `useAutosave`
- * and `useGistAutoSync` are mounted alongside it for the same reason: both
- * are mount-time hooks with no JSX of their own that need to observe every
- * document change regardless of which descendant panel is open.
+ * stays in sync with the document for every descendant edit. `useAutosave`,
+ * `useGistAutoSync`, and `useGithubFileAutoSync` are mounted alongside it for
+ * the same reason: all are mount-time hooks with no JSX of their own that
+ * need to observe every document change regardless of which descendant panel
+ * is open.
  */
 import {
   ActionIcon,
@@ -56,6 +57,7 @@ import { TypeEditorModal } from "./panels/TypeEditorModal";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAutosave } from "./sync/useAutosave";
 import { useGistAutoSync } from "./sync/useGistAutoSync";
+import { useGithubFileAutoSync } from "./sync/useGithubFileAutoSync";
 import { useUrlSync } from "./sync/useUrlSync";
 
 /** Header height in px. The canvas is sized to fill the viewport below it, so
@@ -70,6 +72,7 @@ export function AppShell() {
   useUrlSync();
   useAutosave();
   useGistAutoSync();
+  useGithubFileAutoSync();
 
   const document = useGraphStore((state) => state.document);
   const dirty = useGraphStore((state) => state.dirty);

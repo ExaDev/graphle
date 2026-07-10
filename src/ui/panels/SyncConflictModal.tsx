@@ -1,10 +1,13 @@
 /**
- * Resolves a `store.syncConflict` — set by `useGistAutoSync` when a push or a
- * periodic check finds a linked gist's remote HEAD has moved since the
+ * Resolves a `store.syncConflict` — set by `useGistAutoSync` or
+ * `useGithubFileAutoSync` when a push or a periodic check finds a linked
+ * gist's remote HEAD, or a linked repo file's blob sha, has moved since the
  * graph's last recorded sync, so an automatic push is never silently
  * overwritten. Opens whenever `syncConflict` is set, regardless of which
  * trigger set it, mirroring `GistPickerModal`'s "one modal driven entirely by
- * a store field" pattern.
+ * a store field" pattern. `syncConflict` itself carries no provider — the
+ * conflicted graph's currently-stored `linkedRemote` is re-read fresh (see
+ * `withLinkedRemote`) and each resolution branches on its `provider`.
  *
  * "Keep mine" force-pushes the local document, overwriting the remote.
  * "Take theirs" pulls the remote revision named by `syncConflict.remoteSha`,
@@ -12,25 +15,22 @@
  * history, since this only replaces the live document, never deletes a row.
  * Either path records a revision (`origin: "local"` or `"remote-restore"`)
  * and updates the linked source's `lastSyncedRevision` before clearing the
- * conflict, so the next `useGistAutoSync` check sees a resolved state.
+ * conflict, so the next auto-sync check sees a resolved state.
  */
 import { useState } from "react";
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconCloudDownload, IconCloudUpload } from "@tabler/icons-react";
 
-import type { LinkedRemoteSource } from "@/schema";
+import type { GraphDocument, LinkedRemoteSource } from "@/schema";
 import { fetchGistRevision, pushGistFile } from "@/sharing/gist";
+import { fetchGithubBlobRevision, fetchGithubFileSha, pushGithubFileContent } from "@/sharing/github-file";
 import { serialiseDocument } from "@/sharing/json";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
 import { createRevisionStore } from "@/storage/revision-store-dexie";
 import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
-
-/** The `linkedRemote` shape this modal resolves conflicts for; `"githubFile"`
- *  is reserved but has no sync implementation to call here yet. */
-type GistLinkedRemote = Extract<LinkedRemoteSource, { provider: "gist" }>;
 
 /** Render any thrown value as a message string. */
 function describe(error: unknown): string {
@@ -47,15 +47,19 @@ export function SyncConflictModal() {
 
   function handleClose(): void {
     // Dismissing without choosing leaves the conflict in place — the next
-    // useGistAutoSync check re-reports it rather than the modal silently
+    // auto-sync conflict check re-reports it rather than the modal silently
     // forgetting it, since neither side has actually been reconciled.
     setResolving(false);
   }
 
-  async function withLinkedGist(
+  /** Re-read the conflicted graph's stored `linkedRemote` fresh and run
+   *  `action` against it, whichever provider it turns out to be — a gist or
+   *  a githubFile link both reach here, since `syncConflict` itself carries
+   *  no provider. */
+  async function withLinkedRemote(
     action: (
       graphStore: ReturnType<typeof createGraphStore>,
-      remote: GistLinkedRemote,
+      remote: LinkedRemoteSource,
     ) => Promise<void>,
   ): Promise<void> {
     if (syncConflict === undefined) return;
@@ -64,7 +68,7 @@ export function SyncConflictModal() {
       const graphStore = createGraphStore(db);
       const controller = new AbortController();
       const stored = await graphStore.get(syncConflict.graphId, controller.signal);
-      if (stored === undefined || stored.linkedRemote?.provider !== "gist") {
+      if (stored === undefined || stored.linkedRemote === undefined) {
         // The graph was deleted or unlinked while the conflict was pending —
         // nothing left to reconcile against.
         setSyncConflict(undefined);
@@ -83,7 +87,7 @@ export function SyncConflictModal() {
   }
 
   function handleKeepMine(): void {
-    void withLinkedGist(async (graphStore, remote) => {
+    void withLinkedRemote(async (graphStore, remote) => {
       if (syncConflict === undefined) return;
       const controller = new AbortController();
       const secretStore = createSecretStore(db);
@@ -95,38 +99,88 @@ export function SyncConflictModal() {
         });
         return;
       }
-      const newSha = await pushGistFile(
-        remote.gistId,
-        remote.filename,
-        serialiseDocument(syncConflict.localDocument),
-        token,
-        controller.signal,
-      );
+
+      let newSha: string;
+      let successMessage: string;
+      if (remote.provider === "githubFile") {
+        // The Contents API's PUT needs the file's CURRENT blob sha to detect
+        // a concurrent write, not `syncConflict.remoteSha` (the sha that was
+        // divergent when the conflict was first detected) — the two can
+        // differ if the remote moved again in the meantime, which a fresh
+        // read catches rather than silently overwriting.
+        const currentSha = await fetchGithubFileSha(
+          remote.owner,
+          remote.repo,
+          remote.branch,
+          remote.path,
+          token,
+          controller.signal,
+        );
+        newSha = await pushGithubFileContent(
+          remote.owner,
+          remote.repo,
+          remote.branch,
+          remote.path,
+          serialiseDocument(syncConflict.localDocument),
+          currentSha,
+          token,
+          controller.signal,
+        );
+        successMessage = "Kept your changes, pushed to the repo file";
+      } else {
+        newSha = await pushGistFile(
+          remote.gistId,
+          remote.filename,
+          serialiseDocument(syncConflict.localDocument),
+          token,
+          controller.signal,
+        );
+        successMessage = "Kept your changes, pushed to the gist";
+      }
+
       const stored = await graphStore.get(syncConflict.graphId, controller.signal);
       if (stored === undefined) return;
-      const syncedRemote: GistLinkedRemote = {
+      const syncedRemote: LinkedRemoteSource = {
         ...remote,
         lastSyncedRevision: newSha,
         lastSyncedAt: new Date().toISOString(),
       };
       await graphStore.save({ ...stored, linkedRemote: syncedRemote }, controller.signal);
-      notifications.show({ color: "green", message: "Kept your changes, pushed to the gist" });
+      notifications.show({ color: "green", message: successMessage });
     });
   }
 
   function handleTakeTheirs(): void {
-    void withLinkedGist(async (graphStore, remote) => {
+    void withLinkedRemote(async (graphStore, remote) => {
       if (syncConflict === undefined) return;
       const controller = new AbortController();
-      const pulled = await fetchGistRevision(
-        remote.gistId,
-        syncConflict.remoteSha,
-        remote.filename,
-        controller.signal,
-      );
+
+      let pulled: GraphDocument;
+      let successMessage: string;
+      if (remote.provider === "githubFile") {
+        const secretStore = createSecretStore(db);
+        const token = await secretStore.getGitHubToken(controller.signal);
+        pulled = await fetchGithubBlobRevision(
+          remote.owner,
+          remote.repo,
+          syncConflict.remoteSha,
+          token,
+          controller.signal,
+        );
+        successMessage = "Took the repo file's changes";
+      } else {
+        pulled = await fetchGistRevision(
+          remote.gistId,
+          syncConflict.remoteSha,
+          remote.filename,
+          controller.signal,
+        );
+        successMessage = "Took the gist's changes";
+      }
+
       const stored = await graphStore.get(syncConflict.graphId, controller.signal);
       if (stored === undefined) return;
-      const syncedRemote: GistLinkedRemote = {
+      const syncedRemote: LinkedRemoteSource = {
         ...remote,
         lastSyncedRevision: syncConflict.remoteSha,
         lastSyncedAt: new Date().toISOString(),
@@ -152,7 +206,7 @@ export function SyncConflictModal() {
       // open — resolving a conflict for a graph the user has since navigated
       // away from must not yank the canvas out from under them.
       if (syncConflict.graphId === graphId) replaceDocument(pulled);
-      notifications.show({ color: "green", message: "Took the gist's changes" });
+      notifications.show({ color: "green", message: successMessage });
     });
   }
 
@@ -160,12 +214,12 @@ export function SyncConflictModal() {
     <Modal
       opened={syncConflict !== undefined}
       onClose={handleClose}
-      title="Gist sync conflict"
+      title="Sync conflict"
       centered
     >
       <Stack>
         <Text size="sm" c="dimmed">
-          This graph and its linked gist have both changed since the last sync. Choose which
+          This graph and its linked remote have both changed since the last sync. Choose which
           version to keep — the other is not lost, it stays in this graph&apos;s history.
         </Text>
         <Group justify="flex-end" gap="xs">

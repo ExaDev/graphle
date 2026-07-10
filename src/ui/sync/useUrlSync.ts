@@ -13,7 +13,21 @@
  *    on success the address bar is normalised to the project's canonical URL
  *    (stripped of any `/views/{N}` or `?query=` the user pasted — this
  *    codec never tracks a view's filter/sort, it always loads every item).
- * 2. Otherwise, {@link resolveRemoteUrl} — a plain remote fetch, or gist
+ * 2. A GitHub repo-file URL ({@link parseGithubFileUrl}) — either the
+ *    human-facing `blob` page or a raw-host URL — loads via the Contents API
+ *    ({@link fetchGithubFileRevision}), since the human-facing page is an
+ *    HTML document `resolveRemoteUrl`'s plain fetch cannot parse as JSON. A
+ *    stored PAT is sent if there is one (higher rate limit, and required for
+ *    a private repo); with none stored the fetch proceeds unauthenticated
+ *    first, same as a public gist read. Only if that unauthenticated attempt
+ *    fails with an auth-shaped kind (`unauthorised`/`forbidden`/`notFound` —
+ *    a private repo's Contents API returns a 404 to an anonymous request
+ *    rather than a 401/403, to avoid leaking the repo's existence) does this
+ *    escalate to `GitHubPanel` and retry once a PAT is validated, mirroring
+ *    the Projects branch above; a failure of any other kind (the file existed
+ *    but wasn't valid JSON, say) is reported directly without escalating. On
+ *    success the address bar is normalised to the file's canonical `blob` URL.
+ * 3. Otherwise, {@link resolveRemoteUrl} — a plain remote fetch, or gist
  *    disambiguation when the URL names a gist as a whole rather than one
  *    file (opens `GistPickerModal` via `store.gistPicker` when more than one
  *    file in the gist looks like a graph).
@@ -47,6 +61,12 @@ import {
 } from "@/github";
 import { ShareDecodeError } from "@/sharing/codec";
 import { resolveRemoteUrl } from "@/sharing/gist";
+import { fetchGithubFileRevision } from "@/sharing/github-file";
+import {
+  canonicalGithubFileUrl,
+  parseGithubFileUrl,
+  type ParsedGithubFileUrl,
+} from "@/sharing/github-file-url";
 import { RemoteLoadError } from "@/sharing/remote";
 import {
   readDocumentFromLocation,
@@ -124,6 +144,58 @@ export function useUrlSync(): void {
         });
     }
 
+    /** Whether a failure means "this repo needs auth we don't have yet"
+     *  (worth prompting for a PAT and retrying) rather than a genuine failure
+     *  (wrong content, network error, etc.) not worth escalating for. */
+    function isAuthShapedFailure(error: unknown): boolean {
+      if (!(error instanceof RemoteLoadError)) return false;
+      return (
+        error.kind.type === "unauthorised" ||
+        error.kind.type === "forbidden" ||
+        error.kind.type === "notFound"
+      );
+    }
+
+    /** Load a GitHub repo-file URL. Tries unauthenticated first (works for
+     *  any public repo, same tier as a gist read); only on an auth-shaped
+     *  failure with no token yet tried does this escalate to `GitHubPanel`
+     *  and retry once a PAT is validated, mirroring `loadProjectWith`. */
+    function loadGithubFileWith(parsed: ParsedGithubFileUrl, token: string | undefined): void {
+      fetchGithubFileRevision(parsed.owner, parsed.repo, parsed.branch, parsed.path, token, controller.signal)
+        .then((revision) => {
+          if (controller.signal.aborted) return;
+          replaceDocument(revision.document);
+          writeRemoteUrlToLocation(canonicalGithubFileUrl(parsed));
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          if (token === undefined && isAuthShapedFailure(error)) {
+            openGitHubPanel(() => {
+              const secretStore = createSecretStore(db);
+              secretStore
+                .getGitHubToken(controller.signal)
+                .then((resumedToken) => {
+                  if (controller.signal.aborted || resumedToken === undefined) return;
+                  loadGithubFileWith(parsed, resumedToken);
+                  closeGitHubPanel();
+                })
+                .catch((tokenError: unknown) => {
+                  if (controller.signal.aborted) return;
+                  notifications.show({
+                    color: "red",
+                    message: `Could not read the stored GitHub token: ${describe(tokenError)}`,
+                  });
+                });
+            });
+            return;
+          }
+          notifications.show({
+            color: "red",
+            message: `Could not load the GitHub file: ${remoteLoadFailureMessage(error)}`,
+          });
+        });
+    }
+
     // Load: an inline `#g=` share takes precedence and decodes synchronously.
     // A bad payload is reported and the current document is left in place;
     // anything unexpected is rethrown.
@@ -158,30 +230,48 @@ export function useUrlSync(): void {
                 });
               });
           } else {
-            resolveRemoteUrl(remoteUrl, controller.signal)
-              .then((result) => {
-                if (controller.signal.aborted) return;
-                if (result.kind === "ambiguousGist") {
-                  setGistPicker({ candidates: result.candidates });
-                  return;
-                }
-                replaceDocument(result.document);
-                // Normalise the address bar to the resolved single-file URL
-                // so a reload skips re-resolving an ambiguous gist URL.
-                if (result.resolvedUrl !== remoteUrl) {
-                  writeRemoteUrlToLocation(result.resolvedUrl);
-                }
-              })
-              .catch((error: unknown) => {
-                if (controller.signal.aborted) return;
-                notifications.show({
-                  color: "red",
-                  message:
-                    error instanceof RemoteLoadError
-                      ? `Could not load the remote graph: ${error.message}`
-                      : `Could not load the remote graph: ${describe(error)}`,
+            const parsedGithubFile = parseGithubFileUrl(remoteUrl);
+            if (parsedGithubFile !== undefined) {
+              const secretStore = createSecretStore(db);
+              secretStore
+                .getGitHubToken(controller.signal)
+                .then((token) => {
+                  if (controller.signal.aborted) return;
+                  loadGithubFileWith(parsedGithubFile, token);
+                })
+                .catch((error: unknown) => {
+                  if (controller.signal.aborted) return;
+                  notifications.show({
+                    color: "red",
+                    message: `Could not read the stored GitHub token: ${describe(error)}`,
+                  });
                 });
-              });
+            } else {
+              resolveRemoteUrl(remoteUrl, controller.signal)
+                .then((result) => {
+                  if (controller.signal.aborted) return;
+                  if (result.kind === "ambiguousGist") {
+                    setGistPicker({ candidates: result.candidates });
+                    return;
+                  }
+                  replaceDocument(result.document);
+                  // Normalise the address bar to the resolved single-file URL
+                  // so a reload skips re-resolving an ambiguous gist URL.
+                  if (result.resolvedUrl !== remoteUrl) {
+                    writeRemoteUrlToLocation(result.resolvedUrl);
+                  }
+                })
+                .catch((error: unknown) => {
+                  if (controller.signal.aborted) return;
+                  notifications.show({
+                    color: "red",
+                    message:
+                      error instanceof RemoteLoadError
+                        ? `Could not load the remote graph: ${error.message}`
+                        : `Could not load the remote graph: ${describe(error)}`,
+                  });
+                });
+            }
           }
         }
       }
