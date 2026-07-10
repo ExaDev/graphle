@@ -8,6 +8,7 @@ export { createGitHubClient, PAGE_SIZE } from "./graphql-adapter";
 export {
   GitHubError,
   classifyByStatus,
+  githubErrorMessage,
   type GitHubErrorKind,
 } from "./errors";
 export {
@@ -32,3 +33,10 @@ export {
   tracksEdge,
 } from "./materialise";
 export { expansionsForType, type Expansion, type ExpansionResult } from "./expand";
+export {
+  canonicalProjectUrl,
+  parseProjectUrl,
+  type ParsedProjectUrl,
+  type ProjectOwnerType,
+} from "./project-url";
+export { loadProjectDocument, type ProjectLoadResult } from "./project-loader";
