@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/ExaDev/graphle/compare/v1.4.0...v1.5.0) (2026-07-10)
+
+
+### Features
+
+* **ui:** add right-click context menus to the canvas ([f18ada4](https://github.com/ExaDev/graphle/commit/f18ada4630a7881e7d69bde9e47861647f80eed8))
+
 # [1.4.0](https://github.com/ExaDev/graphle/compare/v1.3.0...v1.4.0) (2026-07-10)
 
 
