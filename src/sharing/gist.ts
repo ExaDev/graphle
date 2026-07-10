@@ -29,8 +29,8 @@ import { z } from "zod";
 import type { GraphDocument } from "../schema";
 
 import { decodeDocumentFromJson, ShareDecodeError } from "./codec";
+import { classifyGithubRestStatus } from "./github-rest-errors";
 import { loadDocumentFromUrl, RemoteLoadError } from "./remote";
-import type { RemoteLoadErrorKind } from "./remote";
 
 const GIST_API_ENDPOINT = "https://api.github.com/gists";
 
@@ -284,21 +284,6 @@ export async function fetchGistRevision(
 }
 
 /**
- * Classify a non-2xx Gist API status into a {@link RemoteLoadErrorKind}. This
- * is REST, not GraphQL — there is no `errors` array to inspect, unlike
- * {@link classifyByStatus} in `src/github/errors.ts`, which assumes a
- * GraphQL error shape gists don't have, so that classifier is not reused
- * here. Any status without a more specific kind falls back to the generic
- * `httpError` kind, carrying the status for the caller to report verbatim.
- */
-export function classifyGistStatus(status: number): RemoteLoadErrorKind {
-  if (status === 401) return { type: "unauthorised" };
-  if (status === 403) return { type: "forbidden" };
-  if (status === 404) return { type: "notFound" };
-  return { type: "httpError", status };
-}
-
-/**
  * Push new content for one file in a gist (`PATCH /gists/{id}`) — the first
  * write-capable GitHub API call in this codebase, hence the only function in
  * this module that requires a token: gist writes are access-controlled,
@@ -329,7 +314,7 @@ export async function pushGistFile(
     throw new RemoteLoadError({ type: "network", cause });
   }
   if (!response.ok) {
-    throw new RemoteLoadError(classifyGistStatus(response.status));
+    throw new RemoteLoadError(classifyGithubRestStatus(response.status));
   }
 
   const parsed = await parseGistBody(response, GistApiResponseSchema);

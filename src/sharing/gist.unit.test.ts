@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { GRAPH_DOCUMENT_VERSION } from "../schema";
 
 import {
-  classifyGistStatus,
   fetchGistRevision,
   listGistFiles,
   listGistHistory,
@@ -389,24 +388,5 @@ describe("pushGistFile", () => {
         expect(error.kind).toEqual({ type: "forbidden" });
       }
     }
-  });
-});
-
-describe("classifyGistStatus", () => {
-  it("maps 401 to unauthorised", () => {
-    expect(classifyGistStatus(401)).toEqual({ type: "unauthorised" });
-  });
-
-  it("maps 403 to forbidden", () => {
-    expect(classifyGistStatus(403)).toEqual({ type: "forbidden" });
-  });
-
-  it("maps 404 to notFound", () => {
-    expect(classifyGistStatus(404)).toEqual({ type: "notFound" });
-  });
-
-  it("maps any other status to a generic httpError carrying the status", () => {
-    expect(classifyGistStatus(500)).toEqual({ type: "httpError", status: 500 });
-    expect(classifyGistStatus(422)).toEqual({ type: "httpError", status: 422 });
   });
 });
