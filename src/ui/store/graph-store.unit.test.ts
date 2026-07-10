@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { emptyDocument, type GraphDelta, type GraphOperation } from "@/domain";
-import { GraphNodeSchema, type GraphDocument, type GraphNode } from "@/schema";
+import {
+  GraphNodeSchema,
+  type EdgeTypeDefinition,
+  type GraphDocument,
+  type GraphNode,
+  type NodeTypeDefinition,
+} from "@/schema";
 
 import { useGraphStore } from "./graph-store";
 
@@ -181,5 +187,119 @@ describe("useGraphStore undo/redo", () => {
     useGraphStore.getState().undo();
 
     expect(useGraphStore.getState().dirty).toBe(false);
+  });
+});
+
+/**
+ * Exercises {@link useGraphStore.updateType}: merging a partial patch into an
+ * existing node-type definition by name, keeping `name` unchanged, throwing
+ * on an unknown name, and participating in the undo stack like every other
+ * document-mutating action.
+ */
+describe("useGraphStore.updateType", () => {
+  function nodeType(overrides: Partial<NodeTypeDefinition> = {}): NodeTypeDefinition {
+    return {
+      name: "custom",
+      label: "Custom",
+      color: "#123456",
+      icon: "circle",
+      labelField: "name",
+      identityFields: ["name"],
+      jsonSchema: {},
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    useGraphStore.getState().replaceDocument(emptyDocument("test"));
+    useGraphStore.getState().addType(nodeType());
+    useGraphStore.getState().markSaved();
+    useGraphStore.setState({ undoStack: [], redoStack: [] });
+  });
+
+  function document(): GraphDocument {
+    return useGraphStore.getState().document;
+  }
+
+  it("merges the patch into the existing type, leaving name unchanged", () => {
+    useGraphStore.getState().updateType("custom", {
+      label: "Renamed label",
+      color: "#abcdef",
+      jsonSchema: { type: "object" },
+    });
+
+    const updated = document().types.find((type) => type.name === "custom");
+    expect(updated).toEqual(
+      nodeType({ label: "Renamed label", color: "#abcdef", jsonSchema: { type: "object" } }),
+    );
+  });
+
+  it("throws when the named type does not exist", () => {
+    expect(() => useGraphStore.getState().updateType("missing", { label: "X" })).toThrow();
+  });
+
+  it("participates in undo, restoring the prior definition", () => {
+    const before = document().types.find((type) => type.name === "custom");
+
+    useGraphStore.getState().updateType("custom", { label: "Renamed label" });
+    useGraphStore.getState().undo();
+
+    expect(document().types.find((type) => type.name === "custom")).toEqual(before);
+  });
+});
+
+/**
+ * Mirrors `useGraphStore.updateType` for edge types.
+ */
+describe("useGraphStore.updateEdgeType", () => {
+  function edgeType(overrides: Partial<EdgeTypeDefinition> = {}): EdgeTypeDefinition {
+    return {
+      name: "custom-edge",
+      label: "Custom edge",
+      color: "#123456",
+      strokeStyle: "solid",
+      labelField: "name",
+      jsonSchema: {},
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    useGraphStore.getState().replaceDocument(emptyDocument("test"));
+    useGraphStore.getState().addEdgeType(edgeType());
+    useGraphStore.getState().markSaved();
+    useGraphStore.setState({ undoStack: [], redoStack: [] });
+  });
+
+  function document(): GraphDocument {
+    return useGraphStore.getState().document;
+  }
+
+  it("merges the patch into the existing edge type, leaving name unchanged", () => {
+    useGraphStore.getState().updateEdgeType("custom-edge", {
+      label: "Renamed label",
+      color: "#abcdef",
+      jsonSchema: { type: "object" },
+    });
+
+    const updated = document().edgeTypes.find((type) => type.name === "custom-edge");
+    expect(updated).toEqual(
+      edgeType({ label: "Renamed label", color: "#abcdef", jsonSchema: { type: "object" } }),
+    );
+  });
+
+  it("throws when the named edge type does not exist", () => {
+    expect(() =>
+      useGraphStore.getState().updateEdgeType("missing", { label: "X" }),
+    ).toThrow();
+  });
+
+  it("participates in undo, restoring the prior definition", () => {
+    const before = document().edgeTypes.find((type) => type.name === "custom-edge");
+
+    useGraphStore.getState().updateEdgeType("custom-edge", { label: "Renamed label" });
+    useGraphStore.getState().undo();
+
+    expect(document().edgeTypes.find((type) => type.name === "custom-edge")).toEqual(before);
   });
 });
