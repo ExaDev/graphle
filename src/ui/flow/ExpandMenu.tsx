@@ -27,6 +27,7 @@ import {
   createGitHubClient,
   expansionsForType,
   GitHubError,
+  githubErrorMessage,
   type Expansion,
 } from "@/github";
 import type { GraphNode } from "@/schema";
@@ -51,26 +52,6 @@ type TokenState =
 interface ExpansionTail {
   cursor: string | undefined;
   hasNextPage: boolean;
-}
-
-/** Maps a {@link GitHubError} to a short notification message. */
-function expansionErrorMessage(error: GitHubError): string {
-  switch (error.kind.type) {
-    case "unauthorised":
-      return "Unauthorised — check your PAT scopes";
-    case "rateLimited":
-      return error.kind.resetAt === undefined
-        ? "GitHub rate limit exceeded"
-        : `GitHub rate limit exceeded; resets at ${error.kind.resetAt}`;
-    case "network":
-      return "Network error";
-    case "forbidden":
-      return `Forbidden: ${error.kind.message}`;
-    case "notFound":
-      return "Not found";
-    case "invalidResponse":
-      return `Invalid response: ${error.kind.message}`;
-  }
 }
 
 export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
@@ -167,7 +148,7 @@ export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
       if (controller.signal.aborted) return;
       const message =
         error instanceof GitHubError
-          ? expansionErrorMessage(error)
+          ? githubErrorMessage(error)
           : error instanceof Error
             ? error.message
             : String(error);
