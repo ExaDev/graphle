@@ -4,10 +4,14 @@ import { GRAPH_DOCUMENT_VERSION, type GraphDocument } from "../schema";
 
 import { encodeDocument } from "./codec";
 import {
+  buildRemoteShareUrl,
   buildShareUrl,
   HASH_KEY,
   readDocumentFromLocation,
+  readRemoteUrlFromLocation,
+  REMOTE_HASH_KEY,
   writeDocumentToLocation,
+  writeRemoteUrlToLocation,
 } from "./url";
 
 const doc: GraphDocument = {
@@ -29,6 +33,10 @@ const doc: GraphDocument = {
 describe("share url", () => {
   it("HASH_KEY is the single-letter g fragment key", () => {
     expect(HASH_KEY).toBe("g");
+  });
+
+  it("REMOTE_HASH_KEY is the url fragment key", () => {
+    expect(REMOTE_HASH_KEY).toBe("url");
   });
 
   describe("buildShareUrl", () => {
@@ -74,6 +82,44 @@ describe("share url", () => {
       const [url] = replaced;
       if (url === undefined) throw new Error("replace was not called");
       expect(url.startsWith("https://example.com/app#g=")).toBe(true);
+    });
+  });
+
+  describe("readRemoteUrlFromLocation", () => {
+    it("returns undefined when no #url= fragment is present", () => {
+      expect(readRemoteUrlFromLocation({ hash: "" })).toBeUndefined();
+      expect(readRemoteUrlFromLocation({ hash: "#g=payload" })).toBeUndefined();
+    });
+
+    it("reads the target URL from a #url= fragment raw, unmodified", () => {
+      const target = "https://example.com/graph.json?x=1&y=2";
+      const hash = `#url=${target}`;
+      expect(readRemoteUrlFromLocation({ hash })).toBe(target);
+    });
+  });
+
+  describe("buildRemoteShareUrl", () => {
+    it("builds an origin + pathname + #url= URL with the target embedded raw", () => {
+      const target = "https://example.com/graph.json?x=1&y=2";
+      const loc = { origin: "https://example.com", pathname: "/graphle/", hash: "" };
+      const url = buildRemoteShareUrl(target, loc);
+      expect(url).toBe(`https://example.com/graphle/#url=${target}`);
+      expect(readRemoteUrlFromLocation({ hash: url.slice(url.indexOf("#")) })).toBe(target);
+    });
+  });
+
+  describe("writeRemoteUrlToLocation", () => {
+    it("invokes replace with a #url= URL built from the target and location", () => {
+      const loc = { origin: "https://example.com", pathname: "/app", hash: "" };
+      const target = "https://example.com/graph.json";
+      const replaced: string[] = [];
+      writeRemoteUrlToLocation(target, loc, (url) => {
+        replaced.push(url);
+      });
+      expect(replaced).toHaveLength(1);
+      const [url] = replaced;
+      if (url === undefined) throw new Error("replace was not called");
+      expect(url).toBe(`https://example.com/app#url=${target}`);
     });
   });
 });
