@@ -110,6 +110,20 @@ interface GraphState {
    */
   removeType: (name: string) => void;
   /**
+   * Merge a partial update into an existing node-type definition by name.
+   * `name` itself is excluded from `patch` at the type level — renaming a
+   * type isn't supported here because `name` is the identity nodes reference
+   * (`node.type === name`); changing it in place would silently orphan every
+   * node currently pointing at the old name. Throws if the type doesn't
+   * exist, since this should only ever be called against a type the UI knows
+   * is present. Deliberately does not re-validate existing nodes against a
+   * changed `jsonSchema`: node data is only ever checked against its type
+   * schema at the point of write (node creation, or `updateNodeData` in the
+   * domain reducer), never continuously or on load, so an edit here cannot
+   * retroactively corrupt already-persisted node data.
+   */
+  updateType: (name: string, patch: Partial<Omit<NodeTypeDefinition, "name">>) => void;
+  /**
    * Add an edge-type definition to the document's `edgeTypes` (used by the
    * edge-type editor to register a user-defined type). Marks the document
    * dirty so the new type is persisted.
@@ -121,6 +135,18 @@ interface GraphState {
    * unresolvable type.
    */
   removeEdgeType: (name: string) => void;
+  /**
+   * Merge a partial update into an existing edge-type definition by name.
+   * Mirrors `updateType`: `name` is excluded from `patch` for the same
+   * reason (it's the identity `edge.type` references), and existing edges'
+   * data is deliberately left unvalidated against a changed `jsonSchema` for
+   * the same reason — edge data is only checked at write time
+   * (`updateEdge` in the domain reducer), never on load.
+   */
+  updateEdgeType: (
+    name: string,
+    patch: Partial<Omit<EdgeTypeDefinition, "name">>,
+  ) => void;
   /** Update the ephemeral canvas selection. */
   setSelection: (selection: GraphSelection) => void;
   /** Set the storage id backing the current document. */
@@ -183,8 +209,8 @@ export const useGraphStore = create<GraphState>()(
   // used by useUrlSync to watch the document slice without re-rendering.
   subscribeWithSelector((set, get) => {
     /**
-     * The single path by which any of the seven document-mutating actions
-     * commits a new document. Before the swap, it snapshots the CURRENT
+     * The single path by which any of the document-mutating actions commits
+     * a new document. Before the swap, it snapshots the CURRENT
      * (pre-mutation) document onto `undoStack` — capped by `pushHistory` —
      * and clears `redoStack`, since a fresh edit invalidates whatever branch
      * a pending redo would have replayed.
@@ -238,6 +264,22 @@ export const useGraphStore = create<GraphState>()(
           true,
         );
       },
+      updateType: (name, patch) => {
+        const doc = get().document;
+        const existing = doc.types.find((type) => type.name === name);
+        if (existing === undefined) {
+          throw new Error(`Cannot update type "${name}": no such type exists`);
+        }
+        commitDocument(
+          {
+            ...doc,
+            types: doc.types.map((type) =>
+              type.name === name ? { ...existing, ...patch } : type,
+            ),
+          },
+          true,
+        );
+      },
       addEdgeType: (typeDef) => {
         const doc = get().document;
         commitDocument({ ...doc, edgeTypes: [...doc.edgeTypes, typeDef] }, true);
@@ -251,6 +293,22 @@ export const useGraphStore = create<GraphState>()(
         }
         commitDocument(
           { ...doc, edgeTypes: doc.edgeTypes.filter((type) => type.name !== name) },
+          true,
+        );
+      },
+      updateEdgeType: (name, patch) => {
+        const doc = get().document;
+        const existing = doc.edgeTypes.find((type) => type.name === name);
+        if (existing === undefined) {
+          throw new Error(`Cannot update edge type "${name}": no such type exists`);
+        }
+        commitDocument(
+          {
+            ...doc,
+            edgeTypes: doc.edgeTypes.map((type) =>
+              type.name === name ? { ...existing, ...patch } : type,
+            ),
+          },
           true,
         );
       },
