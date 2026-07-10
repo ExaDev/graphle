@@ -117,9 +117,12 @@ const CREATE_TOKEN_URL = `https://github.com/settings/tokens/new?${new URLSearch
  * *personal* account's own Projects v2 boards — the Account-permissions table
  * has no Projects entry at all — so a fine-grained token can only ever load
  * an org-owned project through graphle; a personal one needs a classic token.
+ * `contents` is `write` (not `read`) because pushing an edited file to a
+ * linked repository via the REST Contents API's PUT endpoint requires write
+ * access, not just reading Projects-linked issues.
  */
 const FINE_GRAINED_PERMISSIONS: Record<string, string> = {
-  contents: "read",
+  contents: "write",
   issues: "read",
   organization_projects: "read",
 };
