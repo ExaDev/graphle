@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import { GRAPH_DOCUMENT_VERSION } from "../schema";
 
 import {
+  classifyGistStatus,
+  fetchGistRevision,
   listGistFiles,
+  listGistHistory,
   parseAmbiguousGistUrl,
+  pushGistFile,
   resolveRemoteUrl,
 } from "./gist";
 import { RemoteLoadError } from "./remote";
@@ -42,10 +46,18 @@ const graphB = {
   edges: [],
 };
 
-/** A gist API listing response with the given files' content inlined. */
-function gistApiResponse(files: Record<string, { content: string; truncated?: boolean }>) {
+/**
+ * A gist API listing response with the given files' content inlined. Carries
+ * an empty `history` by default since {@link GistApiResponseSchema} requires
+ * the field; pass `history` explicitly for tests that inspect it.
+ */
+function gistApiResponse(
+  files: Record<string, { content: string; truncated?: boolean }>,
+  history: ReturnType<typeof gistHistoryEntry>[] = [],
+) {
   return {
     id: GIST_ID,
+    history,
     files: Object.fromEntries(
       Object.entries(files).map(([filename, { content, truncated }]) => [
         filename,
@@ -59,6 +71,19 @@ function gistApiResponse(files: Record<string, { content: string; truncated?: bo
     ),
   };
 }
+
+/** One realistic entry for a gist API response's `history` array. */
+function gistHistoryEntry(version: string, login: string, additions: number, deletions: number) {
+  return {
+    version,
+    committed_at: "2026-07-01T12:00:00Z",
+    change_status: { additions, deletions },
+    url: `${GIST_API_ENDPOINT}/${GIST_ID}/${version}`,
+    user: { login },
+  };
+}
+
+const GIST_API_ENDPOINT = "https://api.github.com/gists";
 
 describe("parseAmbiguousGistUrl", () => {
   it("matches a gist page URL with a username", () => {
@@ -246,5 +271,142 @@ describe("resolveRemoteUrl", () => {
         expect(error.kind).toEqual({ type: "noGistGraphFiles", filenames: ["notes.md"] });
       }
     }
+  });
+});
+
+describe("listGistHistory", () => {
+  it("parses a realistic history array, newest first", async () => {
+    const history = [
+      gistHistoryEntry("sha-2", "Mearman", 3, 1),
+      gistHistoryEntry("sha-1", "Mearman", 5, 0),
+    ];
+    const fetchStub: typeof globalThis.fetch = () =>
+      Promise.resolve(
+        jsonResponse(gistApiResponse({ "graph.json": { content: JSON.stringify(graphA) } }, history)),
+      );
+    const result = await listGistHistory(GIST_ID, new AbortController().signal, fetchStub);
+    expect(result).toEqual(history);
+  });
+});
+
+describe("fetchGistRevision", () => {
+  it("fetches and decodes a specific sha's content", async () => {
+    let requestedUrl = "";
+    const fetchStub: typeof globalThis.fetch = (input) => {
+      requestedUrl = requestUrl(input);
+      return Promise.resolve(
+        jsonResponse({
+          id: GIST_ID,
+          files: { "graph.json": { filename: "graph.json", raw_url: "unused", truncated: false, content: JSON.stringify(graphB) } },
+        }),
+      );
+    };
+    const document = await fetchGistRevision(
+      GIST_ID,
+      "sha-1",
+      "graph.json",
+      new AbortController().signal,
+      fetchStub,
+    );
+    expect(document.name).toBe("Graph B");
+    expect(requestedUrl).toBe(`${GIST_API_ENDPOINT}/${GIST_ID}/sha-1`);
+  });
+
+  it("throws RemoteLoadError with kind gistFileNotFound when the filename is absent from that revision", async () => {
+    const fetchStub: typeof globalThis.fetch = () =>
+      Promise.resolve(
+        jsonResponse({
+          id: GIST_ID,
+          files: { "other.json": { filename: "other.json", raw_url: "unused", truncated: false, content: "{}" } },
+        }),
+      );
+    try {
+      await fetchGistRevision(
+        GIST_ID,
+        "sha-1",
+        "graph.json",
+        new AbortController().signal,
+        fetchStub,
+      );
+      throw new Error("expected RemoteLoadError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RemoteLoadError);
+      if (error instanceof RemoteLoadError) {
+        expect(error.kind).toEqual({ type: "gistFileNotFound", filename: "graph.json" });
+      }
+    }
+  });
+});
+
+describe("pushGistFile", () => {
+  it("sends the correct PATCH request and returns the new sha", async () => {
+    let capturedUrl = "";
+    let capturedInit: RequestInit | undefined;
+    const fetchStub: typeof globalThis.fetch = (input, init) => {
+      capturedUrl = requestUrl(input);
+      capturedInit = init;
+      return Promise.resolve(
+        jsonResponse(
+          gistApiResponse(
+            { "graph.json": { content: JSON.stringify(graphA) } },
+            [gistHistoryEntry("sha-new", "Mearman", 1, 0)],
+          ),
+        ),
+      );
+    };
+    const sha = await pushGistFile(
+      GIST_ID,
+      "graph.json",
+      JSON.stringify(graphA),
+      "test-token",
+      new AbortController().signal,
+      fetchStub,
+    );
+    expect(sha).toBe("sha-new");
+    expect(capturedUrl).toBe(`${GIST_API_ENDPOINT}/${GIST_ID}`);
+    expect(capturedInit?.method).toBe("PATCH");
+    expect(new Headers(capturedInit?.headers).get("Authorization")).toBe("Bearer test-token");
+    expect(capturedInit?.body).toBe(
+      JSON.stringify({ files: { "graph.json": { content: JSON.stringify(graphA) } } }),
+    );
+  });
+
+  it("throws a classified RemoteLoadError on a 403", async () => {
+    const fetchStub: typeof globalThis.fetch = () => Promise.resolve(jsonResponse({}, 403));
+    try {
+      await pushGistFile(
+        GIST_ID,
+        "graph.json",
+        JSON.stringify(graphA),
+        "test-token",
+        new AbortController().signal,
+        fetchStub,
+      );
+      throw new Error("expected RemoteLoadError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RemoteLoadError);
+      if (error instanceof RemoteLoadError) {
+        expect(error.kind).toEqual({ type: "forbidden" });
+      }
+    }
+  });
+});
+
+describe("classifyGistStatus", () => {
+  it("maps 401 to unauthorised", () => {
+    expect(classifyGistStatus(401)).toEqual({ type: "unauthorised" });
+  });
+
+  it("maps 403 to forbidden", () => {
+    expect(classifyGistStatus(403)).toEqual({ type: "forbidden" });
+  });
+
+  it("maps 404 to notFound", () => {
+    expect(classifyGistStatus(404)).toEqual({ type: "notFound" });
+  });
+
+  it("maps any other status to a generic httpError carrying the status", () => {
+    expect(classifyGistStatus(500)).toEqual({ type: "httpError", status: 500 });
+    expect(classifyGistStatus(422)).toEqual({ type: "httpError", status: 422 });
   });
 });

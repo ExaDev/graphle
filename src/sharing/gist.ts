@@ -28,8 +28,9 @@ import { z } from "zod";
 
 import type { GraphDocument } from "../schema";
 
-import { decodeDocumentFromJson } from "./codec";
+import { decodeDocumentFromJson, ShareDecodeError } from "./codec";
 import { loadDocumentFromUrl, RemoteLoadError } from "./remote";
+import type { RemoteLoadErrorKind } from "./remote";
 
 const GIST_API_ENDPOINT = "https://api.github.com/gists";
 
@@ -70,10 +71,36 @@ const GistApiFileSchema = z.object({
   content: z.string().optional(),
 });
 
-const GistApiResponseSchema = z.object({
+/** The `id`/`files` shape shared by every gist API response, including a single historical revision. */
+const GistFilesResponseSchema = z.object({
   id: z.string(),
   files: z.record(z.string(), GistApiFileSchema),
 });
+
+/** One entry in a gist's `history` array — a single committed revision. */
+const GistHistoryEntrySchema = z.object({
+  version: z.string(),
+  committed_at: z.string(),
+  change_status: z.object({
+    additions: z.number(),
+    deletions: z.number(),
+  }),
+  url: z.string(),
+  user: z.object({ login: z.string() }).nullable(),
+});
+export type GistHistoryEntry = z.infer<typeof GistHistoryEntrySchema>;
+
+/**
+ * The full gist listing response (`GET /gists/{id}`), which additionally
+ * carries `history` — every historical revision, newest first. A single
+ * revision fetched via `GET /gists/{id}/{sha}` shares the `files` shape but
+ * carries no `history` of its own, hence {@link GistFilesResponseSchema} is
+ * kept separate and this schema extends it rather than the other way round.
+ */
+const GistApiResponseSchema = GistFilesResponseSchema.extend({
+  history: z.array(GistHistoryEntrySchema),
+});
+type GistApiResponse = z.infer<typeof GistApiResponseSchema>;
 
 /** One file in a gist, classified as a graph document or not. */
 export interface GistFileCandidate {
@@ -132,15 +159,41 @@ async function classifyFile(
 }
 
 /**
- * Fetch a gist's files via the public Gist API and classify each as a graph
- * document or not. `fetch` is injectable so tests can stub responses without
- * touching the network, mirroring {@link loadDocumentFromUrl}.
+ * Parse a gist API response body against `schema`, translating a JSON parse
+ * failure or a schema mismatch into the matching {@link RemoteLoadError} kind.
+ * Shared by every gist endpoint response (listing, a single revision, a push
+ * result) so the parse-failure handling stays in one place.
  */
-export async function listGistFiles(
+async function parseGistBody<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    throw new RemoteLoadError({ type: "invalidJson" });
+  }
+
+  const parsed = schema.safeParse(json);
+  if (!parsed.success) {
+    throw new RemoteLoadError({
+      type: "invalidGistResponse",
+      message: parsed.error.message,
+    });
+  }
+  return parsed.data;
+}
+
+/**
+ * Fetch a gist's full API response (files plus history) from
+ * `GET /gists/{id}`. Shared by {@link listGistFiles} and
+ * {@link listGistHistory} — both need the same unauthenticated read, just a
+ * different field of the result. Stays unauthenticated like the rest of this
+ * module: gist reads need no auth, see the module docblock.
+ */
+async function fetchGistApiResponse(
   gistId: string,
   signal: AbortSignal,
-  doFetch: typeof globalThis.fetch = globalThis.fetch,
-): Promise<GistFileCandidate[]> {
+  doFetch: typeof globalThis.fetch,
+): Promise<GistApiResponse> {
   let response: Response;
   try {
     response = await doFetch(`${GIST_API_ENDPOINT}/${gistId}`, { signal });
@@ -150,25 +203,144 @@ export async function listGistFiles(
   if (!response.ok) {
     throw new RemoteLoadError({ type: "httpError", status: response.status });
   }
+  return parseGistBody(response, GistApiResponseSchema);
+}
 
+/**
+ * Fetch a gist's files via the public Gist API and classify each as a graph
+ * document or not. `fetch` is injectable so tests can stub responses without
+ * touching the network, mirroring {@link loadDocumentFromUrl}.
+ */
+export async function listGistFiles(
+  gistId: string,
+  signal: AbortSignal,
+  doFetch: typeof globalThis.fetch = globalThis.fetch,
+): Promise<GistFileCandidate[]> {
+  const response = await fetchGistApiResponse(gistId, signal, doFetch);
+  return Promise.all(
+    Object.values(response.files).map((file) => classifyFile(file, signal, doFetch)),
+  );
+}
+
+/**
+ * List a gist's revision history — every committed version, newest first.
+ * Stays unauthenticated, exactly like {@link listGistFiles}: gist reads need
+ * no auth, so history is visible with zero PAT or a read-only PAT.
+ */
+export async function listGistHistory(
+  gistId: string,
+  signal: AbortSignal,
+  doFetch: typeof globalThis.fetch = globalThis.fetch,
+): Promise<GistHistoryEntry[]> {
+  const response = await fetchGistApiResponse(gistId, signal, doFetch);
+  return response.history;
+}
+
+/**
+ * Fetch one historical revision of a gist (`GET /gists/{id}/{sha}`) and
+ * decode `filename`'s content as a graph document. A revision response
+ * shares the `files` shape of a listing response but carries no `history` of
+ * its own, hence {@link GistFilesResponseSchema} rather than
+ * {@link GistApiResponseSchema} here.
+ */
+export async function fetchGistRevision(
+  gistId: string,
+  sha: string,
+  filename: string,
+  signal: AbortSignal,
+  doFetch: typeof globalThis.fetch = globalThis.fetch,
+): Promise<GraphDocument> {
+  let response: Response;
+  try {
+    response = await doFetch(`${GIST_API_ENDPOINT}/${gistId}/${sha}`, { signal });
+  } catch (cause) {
+    throw new RemoteLoadError({ type: "network", cause });
+  }
+  if (!response.ok) {
+    throw new RemoteLoadError({ type: "httpError", status: response.status });
+  }
+
+  const parsed = await parseGistBody(response, GistFilesResponseSchema);
+  const file = parsed.files[filename];
+  if (file === undefined) {
+    throw new RemoteLoadError({ type: "gistFileNotFound", filename });
+  }
+
+  const text = await fullFileContent(file, signal, doFetch);
   let json: unknown;
   try {
-    json = await response.json();
+    json = JSON.parse(text);
   } catch {
     throw new RemoteLoadError({ type: "invalidJson" });
   }
+  try {
+    return decodeDocumentFromJson(json);
+  } catch (error) {
+    if (error instanceof ShareDecodeError) {
+      throw new RemoteLoadError({ type: "decodeError", cause: error });
+    }
+    throw error;
+  }
+}
 
-  const parsed = GistApiResponseSchema.safeParse(json);
-  if (!parsed.success) {
-    throw new RemoteLoadError({
-      type: "invalidGistResponse",
-      message: parsed.error.message,
+/**
+ * Classify a non-2xx Gist API status into a {@link RemoteLoadErrorKind}. This
+ * is REST, not GraphQL — there is no `errors` array to inspect, unlike
+ * {@link classifyByStatus} in `src/github/errors.ts`, which assumes a
+ * GraphQL error shape gists don't have, so that classifier is not reused
+ * here. Any status without a more specific kind falls back to the generic
+ * `httpError` kind, carrying the status for the caller to report verbatim.
+ */
+export function classifyGistStatus(status: number): RemoteLoadErrorKind {
+  if (status === 401) return { type: "unauthorised" };
+  if (status === 403) return { type: "forbidden" };
+  if (status === 404) return { type: "notFound" };
+  return { type: "httpError", status };
+}
+
+/**
+ * Push new content for one file in a gist (`PATCH /gists/{id}`) — the first
+ * write-capable GitHub API call in this codebase, hence the only function in
+ * this module that requires a token: gist writes are access-controlled,
+ * unlike the reads above. Returns the new HEAD sha (the version of the
+ * revision the push just created), read off the front of the response's
+ * fresh `history` array.
+ */
+export async function pushGistFile(
+  gistId: string,
+  filename: string,
+  content: string,
+  token: string,
+  signal: AbortSignal,
+  doFetch: typeof globalThis.fetch = globalThis.fetch,
+): Promise<string> {
+  let response: Response;
+  try {
+    response = await doFetch(`${GIST_API_ENDPOINT}/${gistId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ files: { [filename]: { content } } }),
+      signal,
     });
+  } catch (cause) {
+    throw new RemoteLoadError({ type: "network", cause });
+  }
+  if (!response.ok) {
+    throw new RemoteLoadError(classifyGistStatus(response.status));
   }
 
-  return Promise.all(
-    Object.values(parsed.data.files).map((file) => classifyFile(file, signal, doFetch)),
-  );
+  const parsed = await parseGistBody(response, GistApiResponseSchema);
+  const latest = parsed.history[0];
+  if (latest === undefined) {
+    throw new RemoteLoadError({
+      type: "invalidGistResponse",
+      message: "gist history is empty after push",
+    });
+  }
+  return latest.version;
 }
 
 /** The outcome of {@link resolveRemoteUrl}. */

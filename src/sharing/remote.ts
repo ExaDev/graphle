@@ -31,7 +31,11 @@ export type RemoteLoadErrorKind =
   | { type: "invalidJson" }
   | { type: "decodeError"; cause: ShareDecodeError }
   | { type: "invalidGistResponse"; message: string }
-  | { type: "noGistGraphFiles"; filenames: string[] };
+  | { type: "noGistGraphFiles"; filenames: string[] }
+  | { type: "unauthorised" }
+  | { type: "forbidden" }
+  | { type: "notFound" }
+  | { type: "gistFileNotFound"; filename: string };
 
 /**
  * Thrown by {@link loadDocumentFromUrl} for any fetch, parse, or decode
@@ -66,6 +70,14 @@ function messageForKind(kind: RemoteLoadErrorKind): string {
       return kind.filenames.length === 0
         ? "This gist has no files."
         : `This gist has no graph files (found: ${kind.filenames.join(", ")}).`;
+    case "unauthorised":
+      return "Gist request was unauthorised (HTTP 401).";
+    case "forbidden":
+      return "Gist request forbidden (HTTP 403).";
+    case "notFound":
+      return "Gist not found (HTTP 404).";
+    case "gistFileNotFound":
+      return `File "${kind.filename}" was not found in this gist revision.`;
   }
 }
 
