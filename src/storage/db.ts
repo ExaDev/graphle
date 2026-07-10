@@ -1,6 +1,6 @@
 import Dexie, { type Table } from "dexie";
 
-import type { GraphRevision, StoredGraph } from "../schema";
+import type { GraphRevision, StoredGraph, StoredTypeLibrary } from "../schema";
 
 /** A single key/value entry in the secrets table. */
 export interface SecretRecord {
@@ -16,12 +16,15 @@ export interface SecretRecord {
  * tokens (the GitHub PAT) kept apart from graph data. `revisions` holds
  * point-in-time snapshots of a graph, indexed by id and by the compound
  * `[graphId+createdAt]` key so callers can page through a graph's history in
- * order without a full table scan.
+ * order without a full table scan. `typeLibrary` is a singleton table -
+ * always exactly one row, keyed by the literal string "library" - holding
+ * the user's personal node/edge type library.
  */
 export class GraphleDB extends Dexie {
   graphs!: Table<StoredGraph, string>;
   secrets!: Table<SecretRecord, string>;
   revisions!: Table<GraphRevision, string>;
+  typeLibrary!: Table<StoredTypeLibrary, string>;
 
   constructor() {
     super("graphle");
@@ -34,6 +37,13 @@ export class GraphleDB extends Dexie {
       graphs: "id, name, updatedAt",
       secrets: "key",
       revisions: "id, graphId, createdAt, [graphId+createdAt]",
+    });
+    // Additive table only, so Dexie applies it without an upgrade callback.
+    this.version(3).stores({
+      graphs: "id, name, updatedAt",
+      secrets: "key",
+      revisions: "id, graphId, createdAt, [graphId+createdAt]",
+      typeLibrary: "id",
     });
   }
 }

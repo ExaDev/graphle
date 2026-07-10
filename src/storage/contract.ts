@@ -1,4 +1,9 @@
-import type { GraphRevision, StoredGraph, StoredGraphSummary } from "../schema";
+import type {
+  GraphRevision,
+  StoredGraph,
+  StoredGraphSummary,
+  StoredTypeLibrary,
+} from "../schema";
 
 /**
  * Read/write contract for persisted graphs. Every method carries an
@@ -36,4 +41,14 @@ export interface RevisionStore {
   untag(id: string, signal: AbortSignal): Promise<void>;
   remove(id: string, signal: AbortSignal): Promise<void>;
   prune(graphId: string, signal: AbortSignal): Promise<void>;
+}
+
+/**
+ * Read/write contract for the user's personal type library: a singleton
+ * document, so unlike GraphStore there is no id parameter or list/remove -
+ * there is exactly one row to get and save.
+ */
+export interface TypeLibraryStore {
+  get(signal: AbortSignal): Promise<StoredTypeLibrary | undefined>;
+  save(library: StoredTypeLibrary, signal: AbortSignal): Promise<void>;
 }
