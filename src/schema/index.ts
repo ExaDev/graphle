@@ -16,4 +16,5 @@ export * from "./remote-source";
 export * from "./revision";
 export * from "./storage";
 export * from "./type-builder";
+export * from "./type-library";
 export * from "./type-registry";
