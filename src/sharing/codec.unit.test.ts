@@ -239,3 +239,25 @@ describe("share codec", () => {
     });
   });
 });
+
+describe("decodeDocument — JSON Canvas URL detection", () => {
+  it("decodes a compressed JSON Canvas payload as a graphle document", () => {
+    const canvasJson = JSON.stringify({
+      nodes: [
+        { id: "n1", type: "text", x: 10, y: 20, width: 250, height: 120, text: "Hello" },
+        { id: "n2", type: "text", x: 50, y: 60, width: 250, height: 120, text: "World" },
+      ],
+      edges: [{ id: "e1", fromNode: "n1", toNode: "n2", label: "link" }],
+    });
+    const payload = compressToEncodedURIComponent(canvasJson);
+    const decoded = decodeDocument(payload);
+    expect(decoded.nodes).toHaveLength(2);
+    expect(decoded.nodes.every((n) => n.kind === "freeform")).toBe(true);
+    const first = decoded.nodes[0];
+    if (first !== undefined && first.kind === "freeform") {
+      expect(first.data.label).toBe("Hello");
+    }
+    expect(decoded.edges).toHaveLength(1);
+    expect(decoded.edges[0]?.source).toBe("n1");
+  });
+});

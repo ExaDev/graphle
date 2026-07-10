@@ -29,7 +29,7 @@ import {
 import { IconDownload, IconPencil, IconTrash, IconUpload } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 
-import { exportDocument, importDocument } from "@/sharing/json";
+import { exportCanvasDocument, exportDocument, importDocument } from "@/sharing/json";
 import { type StoredGraphSummary } from "@/schema";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
@@ -143,6 +143,10 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     exportDocument(document);
   }
 
+  function handleExportCanvas(): void {
+    exportCanvasDocument(document);
+  }
+
   async function handleImport(file: File): Promise<void> {
     try {
       const text = await file.text();
@@ -174,11 +178,18 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
           >
             Export
           </Button>
+          <Button
+            variant="default"
+            leftSection={<IconDownload size={16} />}
+            onClick={handleExportCanvas}
+          >
+            Canvas
+          </Button>
         </Group>
         <FileInput
-          label="Import JSON"
-          placeholder="Choose a graphle-export.json file"
-          accept="application/json,.json"
+          label="Import"
+          placeholder="graphle-export.json or .canvas"
+          accept="application/json,.json,.canvas"
           leftSection={<IconUpload size={16} />}
           onChange={(file) => {
             if (file !== null) void handleImport(file);

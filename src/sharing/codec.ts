@@ -21,6 +21,8 @@ import { z } from "zod";
 import { EdgeRelation, GraphDocument, GRAPH_DOCUMENT_VERSION } from "../schema";
 import type { GraphNode, NodeKind } from "../schema";
 
+import { parseCanvasFromUnknown } from "./jsoncanvas";
+
 /** Single-letter kind codes used in the compact wire format. */
 type NodeKindCode = "f" | "o" | "r" | "i" | "p";
 
@@ -359,6 +361,22 @@ export function decodeDocument(payload: string): GraphDocument {
     json = JSON.parse(decompressed);
   } catch (error) {
     throw new ShareDecodeError(`Share payload is not valid JSON: ${describe(error)}`);
+  }
+
+  if (!isRecord(json)) {
+    throw new ShareDecodeError("Share payload is not a JSON object");
+  }
+
+  // JSON Canvas: has `nodes` or `edges` but not the compact `v` key.
+  if (!("v" in json) && ("nodes" in json || "edges" in json)) {
+    try {
+      return parseCanvasFromUnknown(json);
+    } catch (error) {
+      if (error instanceof ShareDecodeError) throw error;
+      throw new ShareDecodeError(
+        `Share payload is malformed JSON Canvas: ${describe(error)}`,
+      );
+    }
   }
 
   const version = readVersion(json);
