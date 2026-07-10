@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/ExaDev/graphle/compare/v1.2.1...v1.3.0) (2026-07-10)
+
+
+### Features
+
+* **sharing:** add json canvas import export and url-read support ([d87c9fc](https://github.com/ExaDev/graphle/commit/d87c9fcf5dd5609bd5c293585bedfaf68bcbef93))
+
 ## [1.2.1](https://github.com/ExaDev/graphle/compare/v1.2.0...v1.2.1) (2026-07-09)
 
 
