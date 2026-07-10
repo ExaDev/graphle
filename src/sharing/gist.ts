@@ -237,19 +237,22 @@ export async function listGistHistory(
 }
 
 /**
- * Fetch one historical revision of a gist (`GET /gists/{id}/{sha}`) and
- * decode `filename`'s content as a graph document. A revision response
- * shares the `files` shape of a listing response but carries no `history` of
- * its own, hence {@link GistFilesResponseSchema} rather than
- * {@link GistApiResponseSchema} here.
+ * Fetch one historical revision of a gist (`GET /gists/{id}/{sha}`) and parse
+ * `filename`'s content as JSON, without deciding what document shape it is —
+ * the shared HTTP-fetch-plus-JSON-parse mechanics behind {@link
+ * fetchGistRevision}, factored out so a differently-shaped document synced to
+ * a gist (e.g. a type library) can reuse the same fetch without inheriting
+ * the graph-specific decode. A revision response shares the `files` shape of
+ * a listing response but carries no `history` of its own, hence {@link
+ * GistFilesResponseSchema} rather than {@link GistApiResponseSchema} here.
  */
-export async function fetchGistRevision(
+export async function fetchGistRevisionJson(
   gistId: string,
   sha: string,
   filename: string,
   signal: AbortSignal,
   doFetch: typeof globalThis.fetch = globalThis.fetch,
-): Promise<GraphDocument> {
+): Promise<unknown> {
   let response: Response;
   try {
     response = await doFetch(`${GIST_API_ENDPOINT}/${gistId}/${sha}`, { signal });
@@ -267,12 +270,25 @@ export async function fetchGistRevision(
   }
 
   const text = await fullFileContent(file, signal, doFetch);
-  let json: unknown;
   try {
-    json = JSON.parse(text);
+    return JSON.parse(text);
   } catch {
     throw new RemoteLoadError({ type: "invalidJson" });
   }
+}
+
+/**
+ * Fetch one historical revision of a gist and decode `filename`'s content as
+ * a graph document, via {@link fetchGistRevisionJson}.
+ */
+export async function fetchGistRevision(
+  gistId: string,
+  sha: string,
+  filename: string,
+  signal: AbortSignal,
+  doFetch: typeof globalThis.fetch = globalThis.fetch,
+): Promise<GraphDocument> {
+  const json = await fetchGistRevisionJson(gistId, sha, filename, signal, doFetch);
   try {
     return decodeDocumentFromJson(json);
   } catch (error) {

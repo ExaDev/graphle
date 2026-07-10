@@ -122,15 +122,19 @@ async function fetchBlobShape(
   return parsed.data;
 }
 
-/** Decode a fetched blob's base64 content as a graph document. */
-function decodeBlobDocument(content: string): GraphDocument {
+/** Decode a fetched blob's base64 content as parsed JSON, without deciding
+ *  what document shape it is. */
+function parseBlobContentJson(content: string): unknown {
   const text = decodeBase64(content);
-  let json: unknown;
   try {
-    json = JSON.parse(text);
+    return JSON.parse(text);
   } catch {
     throw new RemoteLoadError({ type: "invalidJson" });
   }
+}
+
+/** Decode a parsed JSON value as a graph document. */
+function decodeGraphDocumentJson(json: unknown): GraphDocument {
   try {
     return decodeDocumentFromJson(json);
   } catch (error) {
@@ -172,8 +176,34 @@ const GithubCommitEntrySchema = z.object({
 
 /**
  * Fetch a repo file's current content on `branch` (`GET
- * /repos/{owner}/{repo}/contents/{path}?ref={branch}`) and decode it as a
- * graph document, alongside its current blob sha.
+ * /repos/{owner}/{repo}/contents/{path}?ref={branch}`) and parse it as JSON,
+ * without deciding what document shape it is, alongside its current blob sha
+ * — the shared HTTP-fetch-plus-JSON-parse mechanics behind {@link
+ * fetchGithubFileRevision}, factored out so a differently-shaped document
+ * synced to a repo file (e.g. a type library) can reuse the same fetch
+ * without inheriting the graph-specific decode.
+ */
+export async function fetchGithubContentsJson(
+  owner: string,
+  repo: string,
+  branch: string,
+  path: string,
+  token: string | undefined,
+  signal: AbortSignal,
+  doFetch: typeof globalThis.fetch = globalThis.fetch,
+): Promise<{ json: unknown; sha: string }> {
+  const blob = await fetchBlobShape(
+    `${contentsUrl(owner, repo, path)}?ref=${encodeURIComponent(branch)}`,
+    token,
+    signal,
+    doFetch,
+  );
+  return { json: parseBlobContentJson(blob.content), sha: blob.sha };
+}
+
+/**
+ * Fetch a repo file's current content on `branch` and decode it as a graph
+ * document, alongside its current blob sha, via {@link fetchGithubContentsJson}.
  */
 export async function fetchGithubFileRevision(
   owner: string,
@@ -184,13 +214,16 @@ export async function fetchGithubFileRevision(
   signal: AbortSignal,
   doFetch: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<GithubFileRevision> {
-  const blob = await fetchBlobShape(
-    `${contentsUrl(owner, repo, path)}?ref=${encodeURIComponent(branch)}`,
+  const { json, sha } = await fetchGithubContentsJson(
+    owner,
+    repo,
+    branch,
+    path,
     token,
     signal,
     doFetch,
   );
-  return { document: decodeBlobDocument(blob.content), sha: blob.sha };
+  return { document: decodeGraphDocumentJson(json), sha };
 }
 
 /**
@@ -221,11 +254,32 @@ export async function fetchGithubFileSha(
 
 /**
  * Fetch one historical revision of a repo file by its exact blob sha (`GET
- * /repos/{owner}/{repo}/git/blobs/{sha}`) and decode it as a graph document —
- * the git Blob API, not the Contents API, since a blob sha is not a valid
- * `ref` for the latter (see the module doc). This is what "take theirs"
- * conflict resolution uses to pull exactly the revision that was detected as
- * the divergent remote HEAD, even if the branch has since moved again.
+ * /repos/{owner}/{repo}/git/blobs/{sha}`) and parse it as JSON, without
+ * deciding what document shape it is — the git Blob API, not the Contents
+ * API, since a blob sha is not a valid `ref` for the latter (see the module
+ * doc). The shared HTTP-fetch-plus-JSON-parse mechanics behind {@link
+ * fetchGithubBlobRevision}, factored out so a differently-shaped document
+ * synced to a repo file (e.g. a type library) can reuse the same fetch
+ * without inheriting the graph-specific decode.
+ */
+export async function fetchGithubBlobJson(
+  owner: string,
+  repo: string,
+  sha: string,
+  token: string | undefined,
+  signal: AbortSignal,
+  doFetch: typeof globalThis.fetch = globalThis.fetch,
+): Promise<unknown> {
+  const blob = await fetchBlobShape(blobUrl(owner, repo, sha), token, signal, doFetch);
+  return parseBlobContentJson(blob.content);
+}
+
+/**
+ * Fetch one historical revision of a repo file by its exact blob sha and
+ * decode it as a graph document, via {@link fetchGithubBlobJson}. This is
+ * what "take theirs" conflict resolution uses to pull exactly the revision
+ * that was detected as the divergent remote HEAD, even if the branch has
+ * since moved again.
  */
 export async function fetchGithubBlobRevision(
   owner: string,
@@ -235,8 +289,8 @@ export async function fetchGithubBlobRevision(
   signal: AbortSignal,
   doFetch: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<GraphDocument> {
-  const blob = await fetchBlobShape(blobUrl(owner, repo, sha), token, signal, doFetch);
-  return decodeBlobDocument(blob.content);
+  const json = await fetchGithubBlobJson(owner, repo, sha, token, signal, doFetch);
+  return decodeGraphDocumentJson(json);
 }
 
 /**
