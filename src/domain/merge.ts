@@ -13,15 +13,15 @@ export type GraphDelta = {
   edges: GraphEdge[];
 };
 
-/** Builds the dedup key for an edge: its (source, target, relation) triple. */
+/** Builds the dedup key for an edge: its (source, target, type) triple. */
 function edgeTripleKey(
   source: string,
   target: string,
-  relation: GraphEdge["relation"],
+  type: GraphEdge["type"],
 ): string {
   // A NUL-delimited format avoids any collision with characters that appear in
-  // ids or relations (ids are UUIDs; relations are a fixed enum).
-  return `${source}\0${target}\0${relation}`;
+  // ids or edge type names.
+  return `${source}\0${target}\0${type}`;
 }
 
 /**
@@ -38,8 +38,8 @@ function edgeTripleKey(
  *
  * Edge handling: each delta edge's endpoints are re-pointed through the id
  * mapping, then the edge is added only if no existing or already-added edge
- * shares its (source, target, relation) triple. The edge keeps its own id,
- * relation, and label.
+ * shares its (source, target, type) triple. The edge keeps its own id, type,
+ * and data.
  *
  * Returns the new document plus the ids of the delta nodes that were actually
  * added (nodes without identity keys and first occurrences of keyed entities).
@@ -84,7 +84,7 @@ export function applyDelta(
   const edgeTriples = new Set<string>();
   for (const edge of doc.edges) {
     edgeTriples.add(
-      edgeTripleKey(edge.source, edge.target, edge.relation),
+      edgeTripleKey(edge.source, edge.target, edge.type),
     );
   }
 
@@ -94,7 +94,7 @@ export function applyDelta(
     const mappedTarget = idMapping.get(edge.target);
     const source = mappedSource !== undefined ? mappedSource : edge.source;
     const target = mappedTarget !== undefined ? mappedTarget : edge.target;
-    const triple = edgeTripleKey(source, target, edge.relation);
+    const triple = edgeTripleKey(source, target, edge.type);
     if (edgeTriples.has(triple)) {
       continue;
     }

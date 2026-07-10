@@ -14,13 +14,22 @@
 import { z } from "zod";
 
 import {
+  BUILT_IN_EDGE_TYPES_BY_NAME,
   BUILT_IN_TYPES_BY_NAME,
   GRAPH_DOCUMENT_VERSION,
   GraphDocumentSchema,
+  resolveEdgeType,
   resolveType,
+  toPortableEdgeTypeDefinition,
   toPortableTypeDefinition,
 } from "../schema";
-import type { GraphDocument, GraphNode, NodeTypeDefinition } from "../schema";
+import type {
+  EdgeTypeDefinition,
+  GraphDocument,
+  GraphEdge,
+  GraphNode,
+  NodeTypeDefinition,
+} from "../schema";
 
 // --- Zod codecs for the JSON Canvas format ---------------------------------
 
@@ -100,15 +109,6 @@ const CANVAS_NODE_HEIGHT = 120;
 
 // --- Helpers ----------------------------------------------------------------
 
-/** Copy a field-ordered object, dropping keys whose value is `undefined`. */
-function pickDefined(fields: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== undefined) out[key] = value;
-  }
-  return out;
-}
-
 /**
  * The primary display label for a graphle node, used as the canvas card text.
  * Resolves the node's type (from the document's `types`, falling back to the
@@ -126,6 +126,23 @@ function nodeLabelText(node: GraphNode, types: NodeTypeDefinition[]): string {
     if (value !== undefined) return JSON.stringify(value);
   }
   return type?.label ?? node.type;
+}
+
+/**
+ * The display label for a graphle edge, used as the canvas edge label.
+ * Resolves the edge's type (from the document's `edgeTypes`, falling back to
+ * the built-in registry) and reads the field named by its `labelField`.
+ * Returns `undefined` when there is no string value to show (the canvas edge
+ * label is optional, unlike a node's card text), rather than falling back to
+ * the type's display label — an edge with no label reads better unlabelled
+ * than carrying its type name as a label on every export.
+ */
+function edgeLabelText(edge: GraphEdge, edgeTypes: EdgeTypeDefinition[]): string | undefined {
+  const type = resolveEdgeType(edgeTypes, edge.type);
+  const labelField = type?.labelField;
+  if (labelField === undefined) return undefined;
+  const value = edge.data[labelField];
+  return typeof value === "string" ? value : undefined;
 }
 
 /** The graphle label for a canvas node (its content rendered as a string). */
@@ -161,27 +178,36 @@ export function toCanvasDocument(doc: GraphDocument): CanvasDocument {
     text: nodeLabelText(node, doc.types),
   }));
 
-  const edges: CanvasEdge[] = doc.edges.map((edge) => ({
-    id: edge.id,
-    fromNode: edge.source,
-    toNode: edge.target,
-    label: edge.label ?? edge.relation,
-  }));
+  const edges: CanvasEdge[] = doc.edges.map((edge) => {
+    const label = edgeLabelText(edge, doc.edgeTypes);
+    return {
+      id: edge.id,
+      fromNode: edge.source,
+      toNode: edge.target,
+      ...(label !== undefined ? { label } : {}),
+    };
+  });
 
   return { nodes, edges };
 }
 
 /**
  * Transform a validated JSON Canvas document into a graphle-compatible object.
- * Every canvas node becomes a `freeform` graphle node; canvas ids are reused so
- * edges map directly. The freeform type definition is injected so the result is
- * self-describing. Returns `unknown` so the final `GraphDocumentSchema`.parse is
- * the single type authority (same pattern as the compact codec).
+ * Every canvas node becomes a `freeform` graphle node; every canvas edge
+ * becomes a `references` graphle edge, its label (if any) carried in
+ * `data.label`. Canvas ids are reused so edges map directly. The freeform and
+ * references type definitions are injected so the result is self-describing.
+ * Returns `unknown` so the final `GraphDocumentSchema`.parse is the single type
+ * authority (same pattern as the compact codec).
  */
 export function fromCanvasDocument(canvas: CanvasDocument): unknown {
   const freeformType = BUILT_IN_TYPES_BY_NAME.get("freeform");
   if (freeformType === undefined) {
     throw new Error("built-in freeform type must exist");
+  }
+  const referencesType = BUILT_IN_EDGE_TYPES_BY_NAME.get("references");
+  if (referencesType === undefined) {
+    throw new Error("built-in references edge type must exist");
   }
 
   const nodes = (canvas.nodes ?? []).map((node) => ({
@@ -191,20 +217,19 @@ export function fromCanvasDocument(canvas: CanvasDocument): unknown {
     data: { label: canvasNodeLabel(node) },
   }));
 
-  const edges = (canvas.edges ?? []).map((edge) =>
-    pickDefined({
-      id: edge.id,
-      source: edge.fromNode,
-      target: edge.toNode,
-      relation: "references",
-      label: edge.label,
-    }),
-  );
+  const edges = (canvas.edges ?? []).map((edge) => ({
+    id: edge.id,
+    source: edge.fromNode,
+    target: edge.toNode,
+    type: "references",
+    data: edge.label !== undefined ? { label: edge.label } : {},
+  }));
 
   return {
     version: GRAPH_DOCUMENT_VERSION,
     name: "Imported canvas",
     types: [toPortableTypeDefinition(freeformType)],
+    edgeTypes: [toPortableEdgeTypeDefinition(referencesType)],
     nodes,
     edges,
   };

@@ -1,37 +1,42 @@
 /**
  * URL codec for sharing a graph as a self-contained, compressed fragment.
  *
- * The v2 wire format is a compact JSON envelope:
+ * The v3 wire format is a compact JSON envelope:
  *
- *   { v: 2, n, t: [<compactTypeDef>...], d: [<compactNode>...], e: [<compactEdge>...] }
+ *   { v: 3, n, t: [<compactTypeDef>...], et: [<compactEdgeTypeDef>...],
+ *     d: [<compactNode>...], e: [<compactEdge>...] }
  *
  * A compact type def is `{ n, l, c, i, lf, id, s }` — the seven fields of a
  * NodeTypeDefinition (name, label, colour, icon, labelField, identityFields,
- * jsonSchema) inlined with short keys, so a recipient can reconstruct every type
- * the document uses without an external registry. A compact node is
- * `{ t, x, y, ...data }` — the type name plus the node's data fields inlined
- * generically (no per-kind mapping); the node id is not carried, it is remapped
- * to the node's index in `d`. A compact edge is `{ s, t, r, l? }` where `s`/`t`
- * are indices into `d` and the edge id is omitted.
+ * jsonSchema) inlined with short keys. A compact edge type def is
+ * `{ n, l, c, ss, lf, s }` — the six fields of an EdgeTypeDefinition (name,
+ * label, colour, strokeStyle, labelField, jsonSchema). Together they let a
+ * recipient reconstruct every node and edge type the document uses without an
+ * external registry. A compact node is `{ t, x, y, ...data }` — the type name
+ * plus the node's data fields inlined generically (no per-kind mapping); the
+ * node id is not carried, it is remapped to the node's index in `d`. A compact
+ * edge is `{ s, t, et, ...data }` — `s`/`t` are indices into `d`, `et` is the
+ * edge's type name, and the rest are the edge's data fields inlined
+ * generically; the edge id is omitted.
  *
  * Encoding builds these arrays in a fixed field order so `JSON.stringify` is
  * deterministic for identical input, then compresses with lz-string. Decoding
  * decompresses, then dispatches on shape: a JSON Canvas document, a full graphle
- * document (v1 migrated, v2 parsed directly), or the v2 compact envelope — which
- * is validated with Zod and rebuilt, assigning fresh node ids and remapping
- * edges via an index->id map so a shared graph never collides with locally
- * stored ids.
+ * document (v1/v2 migrated, v3 parsed directly), or the v3 compact envelope —
+ * which is validated with Zod and rebuilt, assigning fresh node ids and
+ * remapping edges via an index->id map so a shared graph never collides with
+ * locally stored ids.
  */
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from "lz-string";
 import { z } from "zod";
 
 import {
-  EdgeRelation,
   GraphDocumentSchema,
   GRAPH_DOCUMENT_VERSION,
   migrateV1Document,
+  migrateV2Document,
 } from "../schema";
-import type { GraphDocument, NodeTypeDefinition } from "../schema";
+import type { EdgeTypeDefinition, GraphDocument, NodeTypeDefinition } from "../schema";
 
 import { parseCanvasFromUnknown } from "./jsoncanvas";
 
@@ -57,6 +62,17 @@ const CompactTypeDefSchema = z.object({
 });
 type CompactTypeDef = z.infer<typeof CompactTypeDefSchema>;
 
+/** Compact edge type def: short-key projection of an EdgeTypeDefinition. */
+const CompactEdgeTypeDefSchema = z.object({
+  n: z.string(),
+  l: z.string(),
+  c: z.string(),
+  ss: z.enum(["solid", "dashed", "dotted"]),
+  lf: z.string(),
+  s: z.record(z.string(), z.unknown()),
+});
+type CompactEdgeTypeDef = z.infer<typeof CompactEdgeTypeDefSchema>;
+
 /**
  * Compact node: type name + position, with the node's data fields inlined as
  * extra keys. `z.looseObject` preserves those extra keys through `.parse` so the
@@ -68,17 +84,23 @@ const CompactNodeSchema = z.looseObject({
   y: z.number(),
 });
 
-const CompactEdgeSchema = z.object({
+/**
+ * Compact edge: source/target node indices + edge type name, with the edge's
+ * data fields inlined as extra keys (same generic-inlining pattern as
+ * {@link CompactNodeSchema}).
+ */
+const CompactEdgeSchema = z.looseObject({
   s: z.number().int(),
   t: z.number().int(),
-  r: EdgeRelation,
-  l: z.string().optional(),
+  et: z.string(),
 });
+type CompactEdge = z.infer<typeof CompactEdgeSchema>;
 
 const CompactEnvelopeSchema = z.object({
   v: z.literal(GRAPH_DOCUMENT_VERSION),
   n: z.string(),
   t: z.array(CompactTypeDefSchema),
+  et: z.array(CompactEdgeTypeDefSchema),
   d: z.array(CompactNodeSchema),
   e: z.array(CompactEdgeSchema),
 });
@@ -91,26 +113,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The compact edge's inlined data fields — every key except `s`/`t`/`et`. */
+const COMPACT_EDGE_ENVELOPE_KEYS = new Set(["s", "t", "et"]);
+
+/**
+ * Peel a compact edge's inlined data fields out, leaving the envelope keys
+ * (`s`, `t`, `et`) behind. Filters `Object.entries` rather than destructuring
+ * `s`/`t` into unused local bindings — both are read from `edge` directly by
+ * the caller before this runs.
+ */
+function edgeDataFields(edge: CompactEdge): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(edge)) {
+    if (COMPACT_EDGE_ENVELOPE_KEYS.has(key)) continue;
+    data[key] = value;
+  }
+  return data;
+}
+
 /** Render any thrown value as a message string. */
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Copy a field-ordered object, dropping keys whose value is `undefined`.
- * Iterating `Object.entries` preserves insertion order, so the fixed field
- * order of the input literal is carried into the serialised output and two
- * structurally equal documents encode byte-identically.
- */
-function pickDefined(fields: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== undefined) out[key] = value;
-  }
-  return out;
-}
-
-/** Encode a type definition into the compact short-key form. */
+/** Encode a node type definition into the compact short-key form. */
 function toCompactTypeDef(type: NodeTypeDefinition): Record<string, unknown> {
   return {
     n: type.name,
@@ -136,15 +162,41 @@ function fromCompactTypeDef(td: CompactTypeDef): NodeTypeDefinition {
   };
 }
 
+/** Encode an edge type definition into the compact short-key form. */
+function toCompactEdgeTypeDef(type: EdgeTypeDefinition): Record<string, unknown> {
+  return {
+    n: type.name,
+    l: type.label,
+    c: type.color,
+    ss: type.strokeStyle,
+    lf: type.labelField,
+    s: type.jsonSchema,
+  };
+}
+
+/** Decode a compact short-key edge type def back into an EdgeTypeDefinition. */
+function fromCompactEdgeTypeDef(td: CompactEdgeTypeDef): EdgeTypeDefinition {
+  return {
+    name: td.n,
+    label: td.l,
+    color: td.c,
+    strokeStyle: td.ss,
+    labelField: td.lf,
+    jsonSchema: td.s,
+  };
+}
+
 /**
  * Rebuild a full document from the validated compact envelope. Type defs are
  * re-expanded; nodes get fresh ids and their inlined data peeled out of the
  * compact record; an index->id map is built so each edge's `s`/`t` can be
- * repointed. Returns `unknown` so the final {@link GraphDocumentSchema}.parse is
- * the single type authority for the rebuilt shape.
+ * repointed and its inlined data peeled out the same way as a node's. Returns
+ * `unknown` so the final {@link GraphDocumentSchema}.parse is the single type
+ * authority for the rebuilt shape.
  */
 function rebuildDocument(envelope: CompactEnvelope): unknown {
   const types = envelope.t.map(fromCompactTypeDef);
+  const edgeTypes = envelope.et.map(fromCompactEdgeTypeDef);
 
   const indexToId = new Map<number, string>();
   const nodes = envelope.d.map((node, index) => {
@@ -172,19 +224,20 @@ function rebuildDocument(envelope: CompactEnvelope): unknown {
         `Share payload edge references out-of-range target index ${edge.t}`,
       );
     }
-    return pickDefined({
+    return {
       id: crypto.randomUUID(),
       source,
       target,
-      relation: edge.r,
-      label: edge.l,
-    });
+      type: edge.et,
+      data: edgeDataFields(edge),
+    };
   });
 
   return {
     version: GRAPH_DOCUMENT_VERSION,
     name: envelope.n,
     types,
+    edgeTypes,
     nodes,
     edges,
   };
@@ -192,14 +245,19 @@ function rebuildDocument(envelope: CompactEnvelope): unknown {
 
 /**
  * Decode a full graphle document carried in the payload (rather than the compact
- * envelope). A v1 document is migrated to v2 first; a v2 document is parsed
- * directly. Returns the validated document or throws {@link ShareDecodeError}.
+ * envelope). A v1 document is migrated straight to v3 (the v1 -> v2 -> v3 chain
+ * lives in {@link migrateV1Document}); a v2 document is migrated to v3 via
+ * {@link migrateV2Document}; a v3 document is parsed directly. Returns the
+ * validated document or throws {@link ShareDecodeError}.
  */
 function decodeFullDocument(json: Record<string, unknown>): GraphDocument {
   const version = json.version;
   try {
     if (version === 1) {
       return GraphDocumentSchema.parse(migrateV1Document(json));
+    }
+    if (version === 2) {
+      return GraphDocumentSchema.parse(migrateV2Document(json));
     }
     return GraphDocumentSchema.parse(json);
   } catch (error) {
@@ -209,9 +267,10 @@ function decodeFullDocument(json: Record<string, unknown>): GraphDocument {
 }
 
 /**
- * Validate and rebuild a v2 compact share envelope. Any version other than 2 is
- * unsupported (the legacy v1 compact wire format used per-kind codes that this
- * codec no longer carries); v1 documents arrive via {@link decodeFullDocument}.
+ * Validate and rebuild a v3 compact share envelope. Any version other than 3 is
+ * unsupported (older compact wire formats carried a different edge shape that
+ * this codec no longer produces); v1/v2 documents arrive via
+ * {@link decodeFullDocument}.
  */
 function decodeCompactEnvelope(json: Record<string, unknown>): GraphDocument {
   const version = json.v;
@@ -243,6 +302,7 @@ export function encodeDocument(doc: GraphDocument): string {
   });
 
   const compactTypes = doc.types.map(toCompactTypeDef);
+  const compactEdgeTypes = doc.edgeTypes.map(toCompactEdgeTypeDef);
 
   const compactNodes = doc.nodes.map((node) => ({
     t: node.type,
@@ -264,18 +324,19 @@ export function encodeDocument(doc: GraphDocument): string {
         `encodeDocument: edge ${edge.id} references unknown target node ${edge.target}`,
       );
     }
-    return pickDefined({
+    return {
       s: sourceIndex,
       t: targetIndex,
-      r: edge.relation,
-      l: edge.label,
-    });
+      et: edge.type,
+      ...edge.data,
+    };
   });
 
   const envelope = {
     v: GRAPH_DOCUMENT_VERSION,
     n: doc.name,
     t: compactTypes,
+    et: compactEdgeTypes,
     d: compactNodes,
     e: compactEdges,
   };
@@ -313,7 +374,7 @@ export function decodeDocument(payload: string): GraphDocument {
     }
   }
 
-  // Full graphle document (carries `version`): migrate v1, parse v2.
+  // Full graphle document (carries `version`): migrate v1/v2, parse v3.
   if ("version" in json) {
     return decodeFullDocument(json);
   }

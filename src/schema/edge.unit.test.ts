@@ -3,42 +3,55 @@ import { describe, expect, it } from "vitest";
 import { GraphEdge } from "./edge";
 
 describe("GraphEdge", () => {
-  it("accepts a valid edge without a label", () => {
+  it("accepts a valid edge with empty data", () => {
     const result = GraphEdge.safeParse({
       id: crypto.randomUUID(),
       source: crypto.randomUUID(),
       target: crypto.randomUUID(),
-      relation: "owns",
+      type: "owns",
+      data: {},
     });
     expect(result.success).toBe(true);
   });
 
-  it("accepts an edge with an optional label", () => {
+  it("accepts an edge with data fields", () => {
     const result = GraphEdge.safeParse({
       id: crypto.randomUUID(),
       source: crypto.randomUUID(),
       target: crypto.randomUUID(),
-      relation: "references",
-      label: "depends on",
+      type: "references",
+      data: { label: "depends on" },
     });
     expect(result.success).toBe(true);
   });
 
-  it("rejects an edge with an unknown relation", () => {
+  it("accepts any string as the type — validity is checked against the resolved edge type, not the schema", () => {
     const result = GraphEdge.safeParse({
       id: crypto.randomUUID(),
       source: crypto.randomUUID(),
       target: crypto.randomUUID(),
-      relation: "relates-to",
+      type: "relates-to",
+      data: {},
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("rejects an edge missing the target", () => {
     const result = GraphEdge.safeParse({
       id: crypto.randomUUID(),
       source: crypto.randomUUID(),
-      relation: "tracks",
+      type: "tracks",
+      data: {},
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an edge missing data", () => {
+    const result = GraphEdge.safeParse({
+      id: crypto.randomUUID(),
+      source: crypto.randomUUID(),
+      target: crypto.randomUUID(),
+      type: "owns",
     });
     expect(result.success).toBe(false);
   });

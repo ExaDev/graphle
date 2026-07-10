@@ -14,6 +14,7 @@ const doc: GraphDocument = {
   version: GRAPH_DOCUMENT_VERSION,
   name: "Share me",
   types: [],
+  edgeTypes: [],
   nodes: [
     {
       id: "n1",

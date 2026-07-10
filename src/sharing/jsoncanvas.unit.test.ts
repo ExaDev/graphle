@@ -18,7 +18,7 @@ const position = { x: 10, y: 20 };
  * minimal valid document for exercising the canvas transforms.
  */
 function makeDoc(name: string, nodes: GraphNode[], edges: GraphEdge[] = []): GraphDocument {
-  return { version: GRAPH_DOCUMENT_VERSION, name, types: [], nodes, edges };
+  return { version: GRAPH_DOCUMENT_VERSION, name, types: [], edgeTypes: [], nodes, edges };
 }
 
 function freeform(label: string): GraphNode {
@@ -48,12 +48,13 @@ function repo(owner: string, name: string): GraphNode {
   });
 }
 
-function edgeBetween(sourceId: string, targetId: string): GraphEdge {
+function edgeBetween(sourceId: string, targetId: string, label?: string): GraphEdge {
   return GraphEdge.parse({
     id: crypto.randomUUID(),
     source: sourceId,
     target: targetId,
-    relation: "owns",
+    type: "owns",
+    data: label === undefined ? {} : { label },
   });
 }
 
@@ -73,17 +74,27 @@ describe("toCanvasDocument", () => {
     expect(canvas.nodes?.[1]).toMatchObject({ text: "graphle" });
   });
 
-  it("maps edges with the relation as the canvas label", () => {
+  it("maps edges with the resolved type's labelField data as the canvas label", () => {
     const a = freeform("A");
     const b = freeform("B");
-    const doc = makeDoc("test", [a, b], [edgeBetween(a.id, b.id)]);
+    const doc = makeDoc("test", [a, b], [edgeBetween(a.id, b.id, "owns it")]);
     const canvas = toCanvasDocument(doc);
     expect(canvas.edges).toHaveLength(1);
     expect(canvas.edges?.[0]).toMatchObject({
       fromNode: a.id,
       toNode: b.id,
-      label: "owns",
+      label: "owns it",
     });
+  });
+
+  it("omits the canvas label entirely for an edge with no label data", () => {
+    const a = freeform("A");
+    const b = freeform("B");
+    const doc = makeDoc("test", [a, b], [edgeBetween(a.id, b.id)]);
+    const canvas = toCanvasDocument(doc);
+    const edge = canvas.edges?.[0];
+    if (edge === undefined) throw new Error("edge missing");
+    expect("label" in edge).toBe(false);
   });
 });
 
@@ -103,7 +114,7 @@ describe("canvas -> graphle transform", () => {
     expect(labels).toEqual(["Hello", "note.md", "https://example.com", "My group"]);
   });
 
-  it("maps canvas edges to graphle edges with references relation", () => {
+  it("maps canvas edges to graphle edges with the references type", () => {
     const doc = parseCanvasFromUnknown({
       nodes: [],
       edges: [{ id: "e1", fromNode: "a", toNode: "b", label: "depends on" }],
@@ -111,17 +122,27 @@ describe("canvas -> graphle transform", () => {
     expect(doc.edges).toHaveLength(1);
     expect(doc.edges[0]?.source).toBe("a");
     expect(doc.edges[0]?.target).toBe("b");
-    expect(doc.edges[0]?.relation).toBe("references");
-    expect(doc.edges[0]?.label).toBe("depends on");
+    expect(doc.edges[0]?.type).toBe("references");
+    expect(doc.edges[0]?.data.label).toBe("depends on");
   });
 
-  it("injects the freeform type definition so the result is self-describing", () => {
+  it("maps a labelless canvas edge to an edge with empty data", () => {
+    const doc = parseCanvasFromUnknown({
+      nodes: [],
+      edges: [{ id: "e1", fromNode: "a", toNode: "b" }],
+    });
+    expect(doc.edges[0]?.data).toEqual({});
+  });
+
+  it("injects the freeform node type and references edge type definitions so the result is self-describing", () => {
     const doc = parseCanvasFromUnknown({
       nodes: [{ id: "n1", type: "text", x: 0, y: 0, width: 250, height: 120, text: "Hi" }],
-      edges: [],
+      edges: [{ id: "e1", fromNode: "n1", toNode: "n1" }],
     });
     expect(doc.types).toHaveLength(1);
     expect(doc.types[0]?.name).toBe("freeform");
+    expect(doc.edgeTypes).toHaveLength(1);
+    expect(doc.edgeTypes[0]?.name).toBe("references");
   });
 });
 

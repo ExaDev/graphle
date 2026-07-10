@@ -4,49 +4,59 @@
  * - Node selected: editable fields (via {@link NodeDataFields}) that commit
  *   `updateNodeData` on every change, plus a Delete button dispatching
  *   `removeNode`.
- * - Edge selected: a relation Select and a label TextInput. Both dispatch
- *   `updateEdge`. An empty label is sent as `label: ""`, which the domain
- *   reducer treats as "clear the label" (it omits the optional key), so the
- *   document never carries an empty-string label. Plus a Delete button
- *   dispatching `removeEdge`.
+ * - Edge selected: a type Select (from `document.edgeTypes`) and, once a type
+ *   is resolved, schema-driven fields via {@link EdgeDataFields}. Both commit
+ *   `updateEdge`, which mirrors `updateNodeData`: it always carries the
+ *   current type name and the whole `data` object, validated against that
+ *   type's schema. Plus a Delete button dispatching `removeEdge`.
  * - Nothing selected: a muted hint.
  *
- * Node fields are driven directly by the document (no local state), so edits
+ * Fields are driven directly by the document (no local state), so edits
  * propagate to the store and the canvas immediately; the controlled inputs
  * stay focused because the value they render always matches what was typed.
  */
-import { Button, Divider, Select, Stack, Text, TextInput } from "@mantine/core";
+import { Button, Divider, Select, Stack, Text } from "@mantine/core";
 
-import { resolveType, EdgeRelation } from "@/schema";
+import { resolveType, resolveEdgeType, type EdgeData, type EdgeTypeDefinition } from "@/schema";
 import { useGraphStore, useSelection } from "@/ui/store/graph-store";
 
 import { ExpandMenu } from "../flow/ExpandMenu";
+import { EdgeDataFields } from "./EdgeDataFields";
 import { NodeDataFields } from "./NodeDataFields";
 
-/** Human-readable labels for each edge relation, keyed by the enum value. */
-const RELATION_LABELS: Record<EdgeRelation, string> = {
-  owns: "Owns",
-  contains: "Contains",
-  tracks: "Tracks",
-  references: "References",
-  custom: "Custom",
-};
+/** Narrows `unknown` to a string-indexed record without a cast. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-/** Select options for the relation dropdown, in enum order. */
-const RELATION_OPTIONS = EdgeRelation.options.map((value) => ({
-  value,
-  label: RELATION_LABELS[value],
-}));
-
-/** Narrows an arbitrary select value back to the edge-relation enum. */
-function isEdgeRelation(value: unknown): value is EdgeRelation {
-  return (
-    value === "owns" ||
-    value === "contains" ||
-    value === "tracks" ||
-    value === "references" ||
-    value === "custom"
+/**
+ * Seed a fresh data object for an edge switched to `typeDef`, so the
+ * subsequent `updateEdge` never fails its own type's schema. Mirrors
+ * `AddNodeMenu`'s `defaultDataForType`: required fields get an empty default
+ * of the right JSON-Schema type; optional fields are omitted.
+ */
+function defaultDataForEdgeType(typeDef: EdgeTypeDefinition): EdgeData {
+  const properties = typeDef.jsonSchema["properties"];
+  if (!isRecord(properties)) return {};
+  const requiredList = typeDef.jsonSchema["required"];
+  const required = new Set(
+    Array.isArray(requiredList)
+      ? requiredList.filter((item): item is string => typeof item === "string")
+      : [],
   );
+  const data: EdgeData = {};
+  for (const [name, schema] of Object.entries(properties)) {
+    if (!required.has(name) || !isRecord(schema)) continue;
+    const type = schema["type"];
+    if (type === "number" || type === "integer") {
+      data[name] = 0;
+    } else if (type === "boolean") {
+      data[name] = false;
+    } else {
+      data[name] = "";
+    }
+  }
+  return data;
 }
 
 export interface InspectorPanelProps {
@@ -110,29 +120,45 @@ export function InspectorPanel({ onOpenGitHub }: InspectorPanelProps) {
   }
 
   if (edge !== undefined) {
+    const edgeTypeDef = resolveEdgeType(document.edgeTypes, edge.type);
+    const edgeTypeOptions = document.edgeTypes.map((type) => ({
+      value: type.name,
+      label: type.label,
+    }));
+
+    const handleEdgeDataChange = (data: EdgeData): void => {
+      if (edgeTypeDef === undefined) return;
+      apply({ type: "updateEdge", id: edge.id, edgeType: edgeTypeDef.name, data });
+    };
+
     return (
       <Stack p="md" gap="md">
         <Text fw={600} size="sm" c="dimmed">
           Edge
         </Text>
         <Select
-          label="Relation"
-          data={RELATION_OPTIONS}
-          value={edge.relation}
+          label="Type"
+          data={edgeTypeOptions}
+          value={edge.type}
           onChange={(value) => {
-            if (isEdgeRelation(value)) {
-              apply({ type: "updateEdge", id: edge.id, relation: value });
-            }
+            if (value === null || value === edge.type) return;
+            const nextTypeDef = resolveEdgeType(document.edgeTypes, value);
+            if (nextTypeDef === undefined) return;
+            apply({
+              type: "updateEdge",
+              id: edge.id,
+              edgeType: value,
+              data: defaultDataForEdgeType(nextTypeDef),
+            });
           }}
         />
-        <TextInput
-          label="Label"
-          placeholder="Optional"
-          value={edge.label ?? ""}
-          onChange={(event) =>
-            apply({ type: "updateEdge", id: edge.id, label: event.currentTarget.value })
-          }
-        />
+        {edgeTypeDef !== undefined ? (
+          <EdgeDataFields edge={edge} typeDef={edgeTypeDef} onChange={handleEdgeDataChange} />
+        ) : (
+          <Text size="sm" c="dimmed">
+            This edge's type is not defined in this graph.
+          </Text>
+        )}
         <Divider />
         <Button
           variant="light"

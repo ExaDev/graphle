@@ -125,7 +125,8 @@ export function ownsEdge(parentId: string, childId: string): GraphEdge {
     id: crypto.randomUUID(),
     source: parentId,
     target: childId,
-    relation: "owns",
+    type: "owns",
+    data: {},
   };
 }
 
@@ -134,7 +135,8 @@ export function containsEdge(parentId: string, childId: string): GraphEdge {
     id: crypto.randomUUID(),
     source: parentId,
     target: childId,
-    relation: "contains",
+    type: "contains",
+    data: {},
   };
 }
 
@@ -143,7 +145,8 @@ export function tracksEdge(projectId: string, issueId: string): GraphEdge {
     id: crypto.randomUUID(),
     source: projectId,
     target: issueId,
-    relation: "tracks",
+    type: "tracks",
+    data: {},
   };
 }
 

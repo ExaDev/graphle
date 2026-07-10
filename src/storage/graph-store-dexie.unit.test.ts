@@ -17,7 +17,14 @@ function makeGraph({
   id = crypto.randomUUID(),
   name = "Test graph",
   updatedAt = "2024-01-15T10:30:00Z",
-  document = { version: GRAPH_DOCUMENT_VERSION, name, types: [], nodes: [], edges: [] },
+  document = {
+    version: GRAPH_DOCUMENT_VERSION,
+    name,
+    types: [],
+    edgeTypes: [],
+    nodes: [],
+    edges: [],
+  },
   createdAt = updatedAt,
 }: {
   id?: string;

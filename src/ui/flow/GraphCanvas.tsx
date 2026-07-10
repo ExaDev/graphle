@@ -93,7 +93,7 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
       .map((n) => `${n.id}:${n.type}:${JSON.stringify(n.data)}`)
       .join("\n");
     const edgeSignature = graphDocument.edges
-      .map((e) => `${e.id}:${e.relation}:${e.label !== undefined ? e.label : ""}`)
+      .map((e) => `${e.id}:${e.type}:${JSON.stringify(e.data)}`)
       .join("\n");
     const signature = `${nodeSignature}|${edgeSignature}`;
     if (signature === prevStructureRef.current) return;
@@ -168,7 +168,8 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
           id: crypto.randomUUID(),
           source: connection.source,
           target: connection.target,
-          relation: "references",
+          type: "references",
+          data: {},
         },
       });
     },

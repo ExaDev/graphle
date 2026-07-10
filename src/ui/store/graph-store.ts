@@ -18,7 +18,7 @@ import {
   type GraphDelta,
   type GraphOperation,
 } from "@/domain";
-import type { GraphDocument, NodeTypeDefinition } from "@/schema";
+import type { EdgeTypeDefinition, GraphDocument, NodeTypeDefinition } from "@/schema";
 
 /** The node or edge currently selected on the canvas, if any. */
 export interface GraphSelection {
@@ -59,6 +59,18 @@ interface GraphState {
    * the type, so a removal can never orphan nodes against an unresolvable type.
    */
   removeType: (name: string) => void;
+  /**
+   * Add an edge-type definition to the document's `edgeTypes` (used by the
+   * edge-type editor to register a user-defined type). Marks the document
+   * dirty so the new type is persisted.
+   */
+  addEdgeType: (typeDef: EdgeTypeDefinition) => void;
+  /**
+   * Remove an edge-type definition by name. Throws if any edge still
+   * references the type, so a removal can never orphan edges against an
+   * unresolvable type.
+   */
+  removeEdgeType: (name: string) => void;
   /** Update the ephemeral canvas selection. */
   setSelection: (selection: GraphSelection) => void;
   /** Set the storage id backing the current document. */
@@ -107,6 +119,29 @@ export const useGraphStore = create<GraphState>()(
       }
       set({
         document: { ...doc, types: doc.types.filter((type) => type.name !== name) },
+        dirty: true,
+      });
+    },
+    addEdgeType: (typeDef) =>
+      set((state) => ({
+        document: {
+          ...state.document,
+          edgeTypes: [...state.document.edgeTypes, typeDef],
+        },
+        dirty: true,
+      })),
+    removeEdgeType: (name) => {
+      const doc = get().document;
+      if (doc.edges.some((edge) => edge.type === name)) {
+        throw new Error(
+          `Cannot remove edge type "${name}": one or more edges still use it`,
+        );
+      }
+      set({
+        document: {
+          ...doc,
+          edgeTypes: doc.edgeTypes.filter((type) => type.name !== name),
+        },
         dirty: true,
       });
     },

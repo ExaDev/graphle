@@ -90,7 +90,7 @@ describe("expansionsForType - org-repos", () => {
     expect(delta.edges).toHaveLength(2);
     for (const edge of delta.edges) {
       expect(edge.source).toBe(source.id);
-      expect(edge.relation).toBe("owns");
+      expect(edge.type).toBe("owns");
       expect(delta.nodes.some((n) => n.id === edge.target)).toBe(true);
     }
   });
@@ -212,7 +212,7 @@ describe("expansionsForType - project-items", () => {
     expect(delta.nodes).toHaveLength(1);
     expect(delta.nodes[0]?.type).toBe("issue");
     expect(delta.edges).toHaveLength(1);
-    expect(delta.edges[0]?.relation).toBe("tracks");
+    expect(delta.edges[0]?.type).toBe("tracks");
   });
 
   it("re-expanding the same items adds nothing (no draft-issue duplication)", async () => {

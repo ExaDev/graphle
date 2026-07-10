@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILT_IN_EDGE_TYPES,
   BUILT_IN_TYPES,
   GRAPH_DOCUMENT_VERSION,
+  toPortableEdgeTypeDefinition,
   toPortableTypeDefinition,
+  type EdgeTypeDefinition,
   type GraphEdge,
   type GraphDocument,
   type GraphNode,
@@ -16,6 +19,8 @@ const position = { x: 0, y: 0 };
 
 /** The built-in types as a document would carry them (portable form). */
 const types: NodeTypeDefinition[] = BUILT_IN_TYPES.map(toPortableTypeDefinition);
+/** The built-in edge types as a document would carry them (portable form). */
+const edgeTypes: EdgeTypeDefinition[] = BUILT_IN_EDGE_TYPES.map(toPortableEdgeTypeDefinition);
 
 function orgNode(login: string): GraphNode {
   return {
@@ -47,20 +52,20 @@ function freeformNode(label: string): GraphNode {
 function edge(
   source: string,
   target: string,
-  relation: GraphEdge["relation"],
+  type: GraphEdge["type"],
   label?: string,
 ): GraphEdge {
-  const base = {
+  return {
     id: crypto.randomUUID(),
     source,
     target,
-    relation,
+    type,
+    data: label === undefined ? {} : { label },
   };
-  return label === undefined ? base : { ...base, label };
 }
 
 function documentWith(nodes: GraphNode[]): GraphDocument {
-  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types, nodes, edges: [] };
+  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types, edgeTypes, nodes, edges: [] };
 }
 
 describe("applyDelta - new nodes and edges", () => {
@@ -118,7 +123,7 @@ describe("applyDelta - node dedup by identity key", () => {
     const mergedEdge = next.edges[0];
     expect(mergedEdge?.source).toBe(existing.id);
     expect(mergedEdge?.target).toBe(repo.id);
-    expect(mergedEdge?.relation).toBe("owns");
+    expect(mergedEdge?.type).toBe("owns");
   });
 
   it("always adds nodes whose type has no identity key, even if they share a label", () => {
@@ -134,7 +139,7 @@ describe("applyDelta - node dedup by identity key", () => {
   });
 });
 
-describe("applyDelta - edge dedup by (source, target, relation)", () => {
+describe("applyDelta - edge dedup by (source, target, type)", () => {
   it("drops a delta edge whose re-pointed triple already exists in the document", () => {
     const org = orgNode("exadev");
     const repo = repoNode("exadev", "graphle");
@@ -143,6 +148,7 @@ describe("applyDelta - edge dedup by (source, target, relation)", () => {
       version: GRAPH_DOCUMENT_VERSION,
       name: "test",
       types,
+      edgeTypes,
       nodes: [org, repo],
       edges: [existing],
     };
@@ -174,7 +180,7 @@ describe("applyDelta - edge dedup by (source, target, relation)", () => {
     const { document: next } = applyDelta(doc, delta);
 
     expect(next.edges).toHaveLength(1);
-    expect(next.edges[0]?.label).toBe("first");
+    expect(next.edges[0]?.data.label).toBe("first");
     expect(next.edges[0]?.source).toBe(existing.id);
     expect(next.edges[0]?.target).toBe(repo.id);
   });

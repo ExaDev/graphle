@@ -8,12 +8,13 @@
  * single {@link FLOW_NODE_TYPE} type string, so React Flow routes them all
  * through the one generic component; the graphle node type lives on `data.type`
  * and is resolved by the component. Each domain {@link GraphEdge} becomes a
- * React Flow edge with the relation shown as the edge label and the whole
- * domain edge stashed on `data`.
+ * React Flow edge with its label and line style (colour, dash pattern) derived
+ * from its resolved edge type, and the whole domain edge stashed on `data`.
  */
 import type { Edge, Node } from "@xyflow/react";
 
-import type { GraphDocument, GraphEdge, GraphNode } from "@/schema";
+import { resolveEdgeType } from "@/schema";
+import type { EdgeTypeDefinition, GraphDocument, GraphEdge, GraphNode } from "@/schema";
 
 /**
  * The React Flow node type every graphle node renders as. There is exactly one
@@ -42,16 +43,65 @@ export function nodeToFlow(node: GraphNode): GraphFlowNode {
 }
 
 /**
- * Project a single domain edge to a React Flow edge. The relation is surfaced
- * as the visible `label` (React Flow renders it on the edge); the whole domain
- * edge is kept on `data` for any future edge interactions.
+ * Mantine's accent shade — the one Badge/Button render for colour-aware
+ * "light"/"filled" variants. Edge lines share it with node accents so a
+ * type's colour reads consistently across the canvas.
  */
-export function edgeToFlow(edge: GraphEdge): GraphFlowEdge {
+const ACCENT_SHADE = 6;
+
+/** CSS variable reference for a Mantine colour's accent shade. */
+function accentColorVar(color: string): string {
+  return `var(--mantine-color-${color}-${String(ACCENT_SHADE)})`;
+}
+
+/** SVG `stroke-dasharray` for each edge-type stroke style; `undefined` draws
+ *  a plain solid line (React Flow's default, no dasharray needed). */
+const STROKE_DASH_ARRAYS: Record<EdgeTypeDefinition["strokeStyle"], string | undefined> = {
+  solid: undefined,
+  dashed: "6 4",
+  dotted: "1 4",
+};
+
+/**
+ * The display label for a graph edge, read from `data` via the resolved
+ * type's `labelField`. Falls back to the type's display label (or, last
+ * resort, the raw type name) so an edge whose label field is empty still
+ * shows a recognisable tag on the canvas, mirroring {@link GenericNode}'s
+ * `extractLabel`.
+ */
+function edgeLabelText(edge: GraphEdge, type: EdgeTypeDefinition | undefined): string {
+  const labelField = type?.labelField;
+  if (labelField !== undefined) {
+    const value = edge.data[labelField];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return type?.label ?? edge.type;
+}
+
+/** Line style (colour + dash pattern) for an edge's resolved type. */
+function edgeTypeStyle(
+  type: EdgeTypeDefinition | undefined,
+): { stroke: string; strokeDasharray?: string } | undefined {
+  if (type === undefined) return undefined;
+  const dash = STROKE_DASH_ARRAYS[type.strokeStyle];
+  return { stroke: accentColorVar(type.color), ...(dash !== undefined ? { strokeDasharray: dash } : {}) };
+}
+
+/**
+ * Project a single domain edge to a React Flow edge. The label and line style
+ * are derived from the edge's resolved type (from `edgeTypes`, falling back to
+ * the built-in registry); the whole domain edge is kept on `data` for any
+ * future edge interactions.
+ */
+export function edgeToFlow(edge: GraphEdge, edgeTypes: EdgeTypeDefinition[]): GraphFlowEdge {
+  const type = resolveEdgeType(edgeTypes, edge.type);
+  const style = edgeTypeStyle(type);
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    label: edge.relation,
+    label: edgeLabelText(edge, type),
+    ...(style !== undefined ? { style } : {}),
     data: edge,
   };
 }
@@ -67,6 +117,6 @@ export function documentToFlow(document: GraphDocument): {
 } {
   return {
     nodes: document.nodes.map(nodeToFlow),
-    edges: document.edges.map(edgeToFlow),
+    edges: document.edges.map((edge) => edgeToFlow(edge, document.edgeTypes)),
   };
 }

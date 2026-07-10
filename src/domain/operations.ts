@@ -1,7 +1,10 @@
 import {
+  resolveEdgeType,
   resolveType,
+  zodSchemaForEdgeType,
   zodSchemaForType,
-  type EdgeRelation,
+  type EdgeData,
+  type EdgeTypeDefinition,
   type GraphDocument,
   type GraphEdge,
   type GraphNode,
@@ -30,7 +33,9 @@ export class GraphOperationError extends Error {
  * The `type` field discriminates the union. `updateNodeData` additionally
  * carries `nodeType` — the name of the node type whose schema the new `data`
  * must satisfy — so validation can resolve the right Zod schema without
- * searching the document.
+ * searching the document. `updateEdge` mirrors this: it carries `edgeType`
+ * and replaces the edge's `data` wholesale, validated against that type's
+ * schema.
  */
 export type GraphOperation =
   | { type: "addNode"; node: GraphNode }
@@ -38,12 +43,7 @@ export type GraphOperation =
   | { type: "moveNodes"; moves: Array<{ id: string; position: Position }> }
   | { type: "removeNode"; id: string }
   | { type: "addEdge"; edge: GraphEdge }
-  | {
-      type: "updateEdge";
-      id: string;
-      relation?: EdgeRelation;
-      label?: string;
-    }
+  | { type: "updateEdge"; id: string; edgeType: string; data: EdgeData }
   | { type: "removeEdge"; id: string }
   | { type: "renameGraph"; name: string }
   | { type: "replaceDocument"; document: GraphDocument };
@@ -86,32 +86,29 @@ function replaceNodeData(
 }
 
 /**
- * Applies `op.relation` and `op.label` to `edge`, honouring
- * `exactOptionalPropertyTypes`: a field is only overwritten when the caller
- * actually supplied it. Under that flag an optional property cannot carry
- * `undefined`, so `!== undefined` is a precise test for "was this field
- * provided". Fields the caller omitted are left untouched.
- *
- * The one exception is an empty-string `label`: that is treated as "clear the
- * label", not "set the label to the empty string". Because the cleared edge
- * must OMIT the `label` key entirely (optional props cannot hold `undefined`
- * under exactOptionalPropertyTypes), it is rebuilt from the required fields.
+ * Replaces `edge.type`/`edge.data`, preserving the edge's id, source, and
+ * target. `data` is validated against the resolved edge type's Zod schema
+ * (the single source of truth) via {@link zodSchemaForEdgeType}; on failure
+ * this throws {@link GraphOperationError} so a mismatched update fails loudly
+ * instead of producing an invalid edge. Mirrors {@link replaceNodeData}.
  */
-function applyEdgeUpdate(
+function replaceEdgeData(
   edge: GraphEdge,
-  op: { relation?: EdgeRelation; label?: string },
+  type: EdgeTypeDefinition,
+  data: EdgeData,
 ): GraphEdge {
-  if (op.relation === undefined && op.label === undefined) {
-    return edge;
+  const parsed = zodSchemaForEdgeType(type).safeParse(data);
+  if (!parsed.success) {
+    throw new GraphOperationError(
+      `updateEdge data does not match the "${type.name}" edge type`,
+    );
   }
-  const relation = op.relation !== undefined ? op.relation : edge.relation;
-  if (op.label === "") {
-    return { id: edge.id, source: edge.source, target: edge.target, relation };
+  if (!isRecord(parsed.data)) {
+    throw new GraphOperationError(
+      `updateEdge data for "${type.name}" parsed to a non-record`,
+    );
   }
-  if (op.label !== undefined) {
-    return { ...edge, relation, label: op.label };
-  }
-  return { ...edge, relation };
+  return { ...edge, type: type.name, data: parsed.data };
 }
 
 /**
@@ -123,6 +120,8 @@ function applyEdgeUpdate(
  * - `addEdge` whose `source` or `target` id is not present as a node.
  * - `updateNodeData` whose `nodeType` cannot be resolved, or whose `data` fails
  *   the resolved type's schema.
+ * - `updateEdge` whose `edgeType` cannot be resolved, or whose `data` fails the
+ *   resolved type's schema.
  *
  * `removeNode` also removes every edge whose `source` or `target` is the removed
  * id, so the document never holds a dangling edge. Operations that target an id
@@ -189,8 +188,14 @@ export function applyOperation(
     }
 
     case "updateEdge": {
+      const type = resolveEdgeType(doc.edgeTypes, op.edgeType);
+      if (type === undefined) {
+        throw new GraphOperationError(
+          `Cannot update edge: unknown type "${op.edgeType}"`,
+        );
+      }
       const edges = doc.edges.map((edge) =>
-        edge.id === op.id ? applyEdgeUpdate(edge, op) : edge,
+        edge.id === op.id ? replaceEdgeData(edge, type, op.data) : edge,
       );
       return { ...doc, edges };
     }

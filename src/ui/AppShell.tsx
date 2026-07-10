@@ -25,6 +25,7 @@ import { notifications } from "@mantine/notifications";
 import {
   IconAdjustmentsHorizontal,
   IconBrandGithub,
+  IconArrowsSplit2,
   IconLink,
   IconPlus,
   IconStack2,
@@ -40,6 +41,7 @@ import { useGraphStore } from "@/ui/store/graph-store";
 import { ContextMenu, type ContextMenuState } from "./flow/ContextMenu";
 import { GraphCanvas } from "./flow/GraphCanvas";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
+import { EdgeTypeEditorModal } from "./panels/EdgeTypeEditorModal";
 import { GitHubPanel } from "./panels/GitHubPanel";
 import { GraphsDrawer } from "./panels/GraphsDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
@@ -66,6 +68,8 @@ export function AppShell() {
   const [addOpened, { open: openAdd, close: closeAddDisclosure }] =
     useDisclosure(false);
   const [typeOpened, { open: openType, close: closeType }] = useDisclosure(false);
+  const [edgeTypeOpened, { open: openEdgeType, close: closeEdgeType }] =
+    useDisclosure(false);
   const [graphsOpened, { open: openGraphs, close: closeGraphs }] =
     useDisclosure(false);
   const [githubOpened, { open: openGitHub, close: closeGitHub }] =
@@ -184,6 +188,17 @@ export function AppShell() {
           <Button
             variant="default"
             size="xs"
+            leftSection={<IconArrowsSplit2 size={16} />}
+            onClick={openEdgeType}
+          >
+            <Box component="span" visibleFrom="sm">
+              New edge type
+            </Box>
+          </Button>
+
+          <Button
+            variant="default"
+            size="xs"
             leftSection={<IconLink size={16} />}
             onClick={() => void handleCopyShareUrl()}
           >
@@ -249,6 +264,7 @@ export function AppShell() {
         initialPosition={addHerePos}
       />
       <TypeEditorModal opened={typeOpened} onClose={closeType} />
+      <EdgeTypeEditorModal opened={edgeTypeOpened} onClose={closeEdgeType} />
       <GitHubPanel opened={githubOpened} onClose={closeGitHub} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
       <ContextMenu

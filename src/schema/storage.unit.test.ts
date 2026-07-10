@@ -9,6 +9,7 @@ const document = {
   version: GRAPH_DOCUMENT_VERSION,
   name: "Demo",
   types: [],
+  edgeTypes: [],
   nodes: [],
   edges: [],
 };

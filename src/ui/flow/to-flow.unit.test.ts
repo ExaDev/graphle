@@ -4,6 +4,7 @@ import {
   GRAPH_DOCUMENT_VERSION,
   GraphEdge,
   GraphNodeSchema,
+  type EdgeTypeDefinition,
   type GraphDocument,
   type GraphNode,
 } from "@/schema";
@@ -42,11 +43,21 @@ function makeIssue(number: number, x = 0, y = 0): GraphNode {
   });
 }
 
+/** No document-carried edge types: `edgeToFlow` falls back to the built-in registry. */
+const noEdgeTypes: EdgeTypeDefinition[] = [];
+
 function documentWith(
   nodes: GraphNode[],
   edges: GraphDocument["edges"] = [],
 ): GraphDocument {
-  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types: [], nodes, edges };
+  return {
+    version: GRAPH_DOCUMENT_VERSION,
+    name: "test",
+    types: [],
+    edgeTypes: noEdgeTypes,
+    nodes,
+    edges,
+  };
 }
 
 describe("nodeToFlow", () => {
@@ -73,21 +84,67 @@ describe("nodeToFlow", () => {
 });
 
 describe("edgeToFlow", () => {
-  it("sets id, source, target, the relation as label, and the whole edge as data", () => {
+  it("sets id, source, target, and the whole edge as data", () => {
     const a = makeFreeform("A");
     const b = makeFreeform("B");
     const edge = GraphEdge.parse({
       id: crypto.randomUUID(),
       source: a.id,
       target: b.id,
-      relation: "owns",
+      type: "owns",
+      data: {},
     });
-    const flow = edgeToFlow(edge);
+    const flow = edgeToFlow(edge, noEdgeTypes);
     expect(flow.id).toBe(edge.id);
     expect(flow.source).toBe(a.id);
     expect(flow.target).toBe(b.id);
-    expect(flow.label).toBe("owns");
     expect(flow.data).toBe(edge);
+  });
+
+  it("falls back to the resolved type's display label when data has no label field set", () => {
+    const edge = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: crypto.randomUUID(),
+      target: crypto.randomUUID(),
+      type: "owns",
+      data: {},
+    });
+    // "owns" resolves to the built-in edge type registry (falls back since
+    // `noEdgeTypes` carries no document-level override).
+    expect(edgeToFlow(edge, noEdgeTypes).label).toBe("Owns");
+  });
+
+  it("uses data.label as the label when present", () => {
+    const edge = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: crypto.randomUUID(),
+      target: crypto.randomUUID(),
+      type: "references",
+      data: { label: "depends on" },
+    });
+    expect(edgeToFlow(edge, noEdgeTypes).label).toBe("depends on");
+  });
+
+  it("derives a line style (colour + dash pattern) from the resolved type", () => {
+    const dashed = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: crypto.randomUUID(),
+      target: crypto.randomUUID(),
+      type: "tracks",
+      data: {},
+    });
+    const solid = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: crypto.randomUUID(),
+      target: crypto.randomUUID(),
+      type: "owns",
+      data: {},
+    });
+    const dashedFlow = edgeToFlow(dashed, noEdgeTypes);
+    const solidFlow = edgeToFlow(solid, noEdgeTypes);
+    expect(dashedFlow.style).toMatchObject({ strokeDasharray: "6 4" });
+    expect(solidFlow.style).not.toHaveProperty("strokeDasharray");
+    expect(solidFlow.style).toMatchObject({ stroke: "var(--mantine-color-green-6)" });
   });
 });
 
@@ -106,7 +163,8 @@ describe("documentToFlow", () => {
       id: crypto.randomUUID(),
       source: a.id,
       target: b.id,
-      relation: "references",
+      type: "references",
+      data: {},
     });
     const flow = documentToFlow(documentWith([a, b, c], [edge]));
     expect(flow.nodes).toHaveLength(3);
@@ -128,25 +186,27 @@ describe("documentToFlow", () => {
     expect(flow.nodes[2]?.position).toEqual({ x: 50, y: 60 });
   });
 
-  it("keeps edge ids, endpoints, and the relation-as-label in projection order", () => {
+  it("keeps edge ids, endpoints, and projection order", () => {
     const a = makeFreeform("A");
     const b = makeFreeform("B");
     const first = GraphEdge.parse({
       id: "e1",
       source: a.id,
       target: b.id,
-      relation: "owns",
+      type: "owns",
+      data: {},
     });
     const second = GraphEdge.parse({
       id: "e2",
       source: b.id,
       target: a.id,
-      relation: "references",
+      type: "references",
+      data: {},
     });
     const flow = documentToFlow(documentWith([a, b], [first, second]));
     expect(flow.edges[0]?.id).toBe("e1");
-    expect(flow.edges[0]?.label).toBe("owns");
+    expect(flow.edges[0]?.label).toBe("Owns");
     expect(flow.edges[1]?.id).toBe("e2");
-    expect(flow.edges[1]?.label).toBe("references");
+    expect(flow.edges[1]?.label).toBe("References");
   });
 });

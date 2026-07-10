@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILT_IN_EDGE_TYPES,
   BUILT_IN_TYPES,
   GRAPH_DOCUMENT_VERSION,
   GraphEdge,
+  toPortableEdgeTypeDefinition,
   toPortableTypeDefinition,
+  type EdgeTypeDefinition,
   type GraphDocument,
   type GraphNode,
   type NodeTypeDefinition,
@@ -20,6 +23,8 @@ const position = { x: 0, y: 0 };
 
 /** The built-in types as a document would carry them (portable form). */
 const types: NodeTypeDefinition[] = BUILT_IN_TYPES.map(toPortableTypeDefinition);
+/** The built-in edge types as a document would carry them (portable form). */
+const edgeTypes: EdgeTypeDefinition[] = BUILT_IN_EDGE_TYPES.map(toPortableEdgeTypeDefinition);
 
 function makeFreeform(label: string): GraphNode {
   return {
@@ -43,7 +48,7 @@ function documentWith(
   nodes: GraphNode[],
   edges: GraphDocument["edges"] = [],
 ): GraphDocument {
-  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types, nodes, edges };
+  return { version: GRAPH_DOCUMENT_VERSION, name: "test", types, edgeTypes, nodes, edges };
 }
 
 describe("applyOperation - addNode", () => {
@@ -162,13 +167,15 @@ describe("applyOperation - removeNode", () => {
       id: crypto.randomUUID(),
       source: a.id,
       target: b.id,
-      relation: "references",
+      type: "references",
+      data: {},
     });
     const edgeBC = GraphEdge.parse({
       id: crypto.randomUUID(),
       source: b.id,
       target: c.id,
-      relation: "references",
+      type: "references",
+      data: {},
     });
     const doc = documentWith([a, b, c], [edgeAB, edgeBC]);
     const next = applyOperation(doc, { type: "removeNode", id: b.id });
@@ -186,7 +193,8 @@ describe("applyOperation - addEdge", () => {
       id: crypto.randomUUID(),
       source: a.id,
       target: b.id,
-      relation: "owns",
+      type: "owns",
+      data: {},
     });
     const next = applyOperation(doc, { type: "addEdge", edge });
     expect(next.edges).toEqual([edge]);
@@ -199,7 +207,8 @@ describe("applyOperation - addEdge", () => {
       id: crypto.randomUUID(),
       source: crypto.randomUUID(),
       target: b.id,
-      relation: "owns",
+      type: "owns",
+      data: {},
     });
     expect(() => applyOperation(doc, { type: "addEdge", edge })).toThrow(
       GraphOperationError,
@@ -213,7 +222,8 @@ describe("applyOperation - addEdge", () => {
       id: crypto.randomUUID(),
       source: a.id,
       target: crypto.randomUUID(),
-      relation: "owns",
+      type: "owns",
+      data: {},
     });
     expect(() => applyOperation(doc, { type: "addEdge", edge })).toThrow(
       GraphOperationError,
@@ -229,72 +239,82 @@ describe("applyOperation - updateEdge", () => {
       id: crypto.randomUUID(),
       source: a.id,
       target: b.id,
-      relation: "references",
-      label: "original",
+      type: "references",
+      data: { label: "original" },
     });
     return { doc: documentWith([a, b], [edge]), edge };
   }
 
-  it("updates only the relation when only relation is supplied (label preserved)", () => {
+  it("replaces an edge's data when the data matches the edge type", () => {
     const { doc, edge } = docWithEdge();
     const next = applyOperation(doc, {
       type: "updateEdge",
       id: edge.id,
-      relation: "owns",
+      edgeType: "references",
+      data: { label: "renamed" },
     });
-    expect(next.edges[0]?.relation).toBe("owns");
-    expect(next.edges[0]?.label).toBe("original");
+    expect(next.edges[0]?.type).toBe("references");
+    expect(next.edges[0]?.data).toEqual({ label: "renamed" });
   });
 
-  it("updates only the label when only label is supplied (relation preserved)", () => {
+  it("changes the edge's type and data together", () => {
     const { doc, edge } = docWithEdge();
     const next = applyOperation(doc, {
       type: "updateEdge",
       id: edge.id,
-      label: "renamed",
+      edgeType: "owns",
+      data: {},
     });
-    expect(next.edges[0]?.relation).toBe("references");
-    expect(next.edges[0]?.label).toBe("renamed");
+    expect(next.edges[0]?.type).toBe("owns");
+    expect(next.edges[0]?.data).toEqual({});
   });
 
-  it("updates both relation and label when both are supplied", () => {
+  it("throws GraphOperationError when the data does not match the edge type", () => {
     const { doc, edge } = docWithEdge();
-    const next = applyOperation(doc, {
+    expect(() =>
+      applyOperation(doc, {
+        type: "updateEdge",
+        id: edge.id,
+        edgeType: "references",
+        data: { label: 123 },
+      }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("throws GraphOperationError when the edge type cannot be resolved", () => {
+    const { doc, edge } = docWithEdge();
+    expect(() =>
+      applyOperation(doc, {
+        type: "updateEdge",
+        id: edge.id,
+        edgeType: "no-such-type",
+        data: {},
+      }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("is a no-op when the id is not present", () => {
+    const { doc, edge } = docWithEdge();
+    const op: GraphOperation = {
       type: "updateEdge",
-      id: edge.id,
-      relation: "contains",
-      label: "renamed",
-    });
-    expect(next.edges[0]?.relation).toBe("contains");
-    expect(next.edges[0]?.label).toBe("renamed");
-  });
-
-  it("is a no-op when neither field is supplied", () => {
-    const { doc, edge } = docWithEdge();
-    const op: GraphOperation = { type: "updateEdge", id: edge.id };
+      id: "missing",
+      edgeType: "references",
+      data: { label: "new" },
+    };
     const next = applyOperation(doc, op);
-    expect(next.edges[0]?.relation).toBe("references");
-    expect(next.edges[0]?.label).toBe("original");
+    expect(next.edges[0]).toEqual(edge);
   });
 
-  it("clears the label (omits the key) when an empty-string label is supplied", () => {
-    const { doc, edge } = docWithEdge();
-    const next = applyOperation(doc, { type: "updateEdge", id: edge.id, label: "" });
-    expect(next.edges[0]?.relation).toBe("references");
-    expect(next.edges[0]?.label).toBeUndefined();
-    expect("label" in (next.edges[0] ?? {})).toBe(false);
-  });
-
-  it("clears the label while also updating the relation", () => {
+  it("clears the label (omits the key) when data omits it", () => {
     const { doc, edge } = docWithEdge();
     const next = applyOperation(doc, {
       type: "updateEdge",
       id: edge.id,
-      relation: "owns",
-      label: "",
+      edgeType: "references",
+      data: {},
     });
-    expect(next.edges[0]?.relation).toBe("owns");
-    expect(next.edges[0]?.label).toBeUndefined();
+    expect(next.edges[0]?.data).toEqual({});
+    expect("label" in (next.edges[0]?.data ?? {})).toBe(false);
   });
 });
 
@@ -307,14 +327,15 @@ describe("applyOperation - removeEdge", () => {
       id: crypto.randomUUID(),
       source: a.id,
       target: b.id,
-      relation: "references",
+      type: "references",
+      data: {},
     });
     const second = GraphEdge.parse({
       id: crypto.randomUUID(),
       source: b.id,
       target: c.id,
-      relation: "owns",
-      label: "kept",
+      type: "owns",
+      data: { label: "kept" },
     });
     return { doc: documentWith([a, b, c], [first, second]), first, second };
   }

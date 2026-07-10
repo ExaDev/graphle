@@ -2,9 +2,12 @@ import { compressToEncodedURIComponent } from "lz-string";
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILT_IN_EDGE_TYPES_BY_NAME,
   BUILT_IN_TYPES_BY_NAME,
   GRAPH_DOCUMENT_VERSION,
+  toPortableEdgeTypeDefinition,
   toPortableTypeDefinition,
+  type EdgeTypeDefinition,
   type GraphDocument,
   type NodeTypeDefinition,
 } from "../schema";
@@ -27,13 +30,22 @@ interface DocIds {
   edgeOrgProject: string;
 }
 
-/** Project a built-in type to its portable definition for test fixtures. */
+/** Project a built-in node type to its portable definition for test fixtures. */
 function builtInTypeDef(name: string): NodeTypeDefinition {
   const type = BUILT_IN_TYPES_BY_NAME.get(name);
   if (type === undefined) {
     throw new Error(`test fixture: built-in ${name} type must exist`);
   }
   return toPortableTypeDefinition(type);
+}
+
+/** Project a built-in edge type to its portable definition for test fixtures. */
+function builtInEdgeTypeDef(name: string): EdgeTypeDefinition {
+  const type = BUILT_IN_EDGE_TYPES_BY_NAME.get(name);
+  if (type === undefined) {
+    throw new Error(`test fixture: built-in ${name} edge type must exist`);
+  }
+  return toPortableEdgeTypeDefinition(type);
 }
 
 /** The type definitions carried by the representative document. */
@@ -45,12 +57,20 @@ const documentTypes: NodeTypeDefinition[] = [
   builtInTypeDef("project"),
 ];
 
+/** The edge type definitions carried by the representative document. */
+const documentEdgeTypes: EdgeTypeDefinition[] = [
+  builtInEdgeTypeDef("owns"),
+  builtInEdgeTypeDef("contains"),
+  builtInEdgeTypeDef("tracks"),
+];
+
 /** Build a representative document covering all five original node types. */
 function makeDocument(ids: DocIds): GraphDocument {
   return {
     version: GRAPH_DOCUMENT_VERSION,
     name: "Representative",
     types: documentTypes,
+    edgeTypes: documentEdgeTypes,
     nodes: [
       {
         id: ids.freeform,
@@ -99,20 +119,22 @@ function makeDocument(ids: DocIds): GraphDocument {
         id: ids.edgeOrgRepo,
         source: ids.org,
         target: ids.repo,
-        relation: "owns",
-        label: "owns",
+        type: "owns",
+        data: { label: "owns" },
       },
       {
         id: ids.edgeRepoIssue,
         source: ids.repo,
         target: ids.issue,
-        relation: "contains",
+        type: "contains",
+        data: {},
       },
       {
         id: ids.edgeOrgProject,
         source: ids.org,
         target: ids.project,
-        relation: "tracks",
+        type: "tracks",
+        data: {},
       },
     ],
   };
@@ -140,6 +162,7 @@ describe("share codec", () => {
 
       // Type definitions round-trip intact.
       expect(decoded.types).toEqual(original.types);
+      expect(decoded.edgeTypes).toEqual(original.edgeTypes);
 
       expect(decoded.nodes).toHaveLength(original.nodes.length);
       const originalIndex = new Map(original.nodes.map((node, i) => [node.id, i]));
@@ -160,8 +183,8 @@ describe("share codec", () => {
       decoded.edges.forEach((decodedEdge, i) => {
         const originalEdge = original.edges[i];
         if (originalEdge === undefined) throw new Error("original edge missing");
-        expect(decodedEdge.relation).toBe(originalEdge.relation);
-        expect(decodedEdge.label).toBe(originalEdge.label);
+        expect(decodedEdge.type).toBe(originalEdge.type);
+        expect(decodedEdge.data).toEqual(originalEdge.data);
         // Edge endpoints follow the node remap: the source/target indices in
         // the original and decoded arrays must line up.
         expect(originalIndex.get(originalEdge.source)).toBe(
@@ -179,6 +202,7 @@ describe("share codec", () => {
         version: GRAPH_DOCUMENT_VERSION,
         name: "Optionals",
         types: [builtInTypeDef("freeform")],
+        edgeTypes: [],
         nodes: [
           {
             id: "f1",
@@ -217,6 +241,7 @@ describe("share codec", () => {
         version: GRAPH_DOCUMENT_VERSION,
         name: "Custom",
         types: [customType],
+        edgeTypes: [],
         nodes: [
           {
             id: "s1",
@@ -233,6 +258,56 @@ describe("share codec", () => {
       if (node === undefined) throw new Error("service node missing");
       expect(node.type).toBe("service");
       expect(node.data).toEqual({ name: "api", url: "https://api.example.com" });
+    });
+
+    it("round-trips an edge of a custom (non-built-in) type", () => {
+      const customEdgeType: EdgeTypeDefinition = {
+        name: "depends-on",
+        label: "Depends on",
+        color: "red",
+        strokeStyle: "dashed",
+        labelField: "reason",
+        jsonSchema: {
+          type: "object",
+          properties: { reason: { type: "string" } },
+          required: ["reason"],
+        },
+      };
+      const doc: GraphDocument = {
+        version: GRAPH_DOCUMENT_VERSION,
+        name: "Custom edge",
+        types: [builtInTypeDef("freeform")],
+        edgeTypes: [customEdgeType],
+        nodes: [
+          {
+            id: "a",
+            type: "freeform",
+            position: { x: 0, y: 0 },
+            data: { label: "A" },
+          },
+          {
+            id: "b",
+            type: "freeform",
+            position: { x: 1, y: 1 },
+            data: { label: "B" },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "a",
+            target: "b",
+            type: "depends-on",
+            data: { reason: "build order" },
+          },
+        ],
+      };
+      const decoded = decodeDocument(encodeDocument(doc));
+      expect(decoded.edgeTypes).toEqual([customEdgeType]);
+      const edge = decoded.edges[0];
+      if (edge === undefined) throw new Error("custom edge missing");
+      expect(edge.type).toBe("depends-on");
+      expect(edge.data).toEqual({ reason: "build order" });
     });
   });
 
@@ -267,7 +342,7 @@ describe("share codec", () => {
 
     it("throws ShareDecodeError on an unsupported compact version", () => {
       const future = compressToEncodedURIComponent(
-        JSON.stringify({ v: 3, n: "future", t: [], d: [], e: [] }),
+        JSON.stringify({ v: 4, n: "future", t: [], et: [], d: [], e: [] }),
       );
       expect(() => decodeDocument(future)).toThrow(ShareDecodeError);
     });
@@ -317,7 +392,7 @@ describe("share codec", () => {
   });
 
   describe("v1 document migration", () => {
-    it("migrates a compressed v1 full document to v2", () => {
+    it("migrates a compressed v1 full document to v3", () => {
       const v1 = {
         version: 1,
         name: "Legacy",
@@ -340,9 +415,44 @@ describe("share codec", () => {
       if (node === undefined) throw new Error("migrated node missing");
       expect(node.type).toBe("org");
       expect(node.data).toEqual({ login: "exadev" });
-      // The five v1 built-in type definitions are injected.
+      // The five v1 built-in node type definitions are injected.
       const typeNames = decoded.types.map((t) => t.name);
       expect(typeNames).toEqual(["freeform", "org", "repo", "issue", "project"]);
+      // The five built-in edge type definitions are injected by the chained
+      // v2 -> v3 step.
+      const edgeTypeNames = decoded.edgeTypes.map((t) => t.name);
+      expect(edgeTypeNames).toEqual(["owns", "contains", "tracks", "references", "custom"]);
+    });
+  });
+
+  describe("v2 document migration", () => {
+    it("migrates a compressed v2 full document to v3, folding relation/label into type/data", () => {
+      const v2 = {
+        version: 2,
+        name: "Old share",
+        types: [builtInTypeDef("org"), builtInTypeDef("repo")],
+        nodes: [
+          { id: "n1", type: "org", position: { x: 0, y: 0 }, data: { login: "exadev" } },
+          {
+            id: "n2",
+            type: "repo",
+            position: { x: 1, y: 1 },
+            data: { owner: "exadev", name: "graphle" },
+          },
+        ],
+        edges: [
+          { id: "e1", source: "n1", target: "n2", relation: "owns", label: "owns it" },
+        ],
+      };
+      const payload = compressToEncodedURIComponent(JSON.stringify(v2));
+      const decoded = decodeDocument(payload);
+      expect(decoded.version).toBe(GRAPH_DOCUMENT_VERSION);
+      const edge = decoded.edges[0];
+      if (edge === undefined) throw new Error("migrated edge missing");
+      expect(edge.type).toBe("owns");
+      expect(edge.data).toEqual({ label: "owns it" });
+      const edgeTypeNames = decoded.edgeTypes.map((t) => t.name);
+      expect(edgeTypeNames).toEqual(["owns", "contains", "tracks", "references", "custom"]);
     });
   });
 });
@@ -366,5 +476,7 @@ describe("decodeDocument — JSON Canvas URL detection", () => {
     }
     expect(decoded.edges).toHaveLength(1);
     expect(decoded.edges[0]?.source).toBe("n1");
+    expect(decoded.edges[0]?.type).toBe("references");
+    expect(decoded.edges[0]?.data.label).toBe("link");
   });
 });
