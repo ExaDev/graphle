@@ -20,12 +20,13 @@ import {
   Group,
   TextInput,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useHotkeys } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustmentsHorizontal,
   IconBrandGithub,
   IconArrowsSplit2,
+  IconHistory,
   IconLink,
   IconPlus,
   IconStack2,
@@ -45,6 +46,7 @@ import { EdgeTypeEditorModal } from "./panels/EdgeTypeEditorModal";
 import { GistPickerModal } from "./panels/GistPickerModal";
 import { GitHubPanel } from "./panels/GitHubPanel";
 import { GraphsDrawer } from "./panels/GraphsDrawer";
+import { HistoryDrawer } from "./panels/HistoryDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
 import { TypeEditorModal } from "./panels/TypeEditorModal";
 import { ThemeToggle } from "./ThemeToggle";
@@ -65,6 +67,12 @@ export function AppShell() {
   const dirty = useGraphStore((state) => state.dirty);
   const apply = useGraphStore((state) => state.apply);
   const setSelection = useGraphStore((state) => state.setSelection);
+  const undo = useGraphStore((state) => state.undo);
+  const redo = useGraphStore((state) => state.redo);
+  useHotkeys([
+    ["mod+Z", () => undo()],
+    ["mod+shift+Z", () => redo()],
+  ]);
   // The GitHub drawer's open state lives in the store, not local useDisclosure
   // like the other panels — useUrlSync (a mount-time hook with no JSX of its
   // own) needs to be able to open it to prompt for a PAT, and to attach a
@@ -79,6 +87,8 @@ export function AppShell() {
   const [edgeTypeOpened, { open: openEdgeType, close: closeEdgeType }] =
     useDisclosure(false);
   const [graphsOpened, { open: openGraphs, close: closeGraphs }] =
+    useDisclosure(false);
+  const [historyOpened, { open: openHistory, close: closeHistory }] =
     useDisclosure(false);
   const [inspectorOpened, { toggle: toggleInspector }] = useDisclosure(false);
 
@@ -233,6 +243,15 @@ export function AppShell() {
             <IconBrandGithub size={16} />
           </ActionIcon>
 
+          <ActionIcon
+            variant="default"
+            size="lg"
+            aria-label="History"
+            onClick={openHistory}
+          >
+            <IconHistory size={16} />
+          </ActionIcon>
+
           <ThemeToggle />
 
           <ActionIcon
@@ -273,6 +292,7 @@ export function AppShell() {
       <EdgeTypeEditorModal opened={edgeTypeOpened} onClose={closeEdgeType} />
       <GitHubPanel opened={githubPanelOpened} onClose={closeGitHubPanel} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
+      <HistoryDrawer opened={historyOpened} onClose={closeHistory} />
       <GistPickerModal />
       <ContextMenu
         state={ctxMenu}
