@@ -47,6 +47,35 @@ describe("StoredGraph", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts a stored graph linked to a remote gist", () => {
+    const result = StoredGraph.safeParse({
+      id: crypto.randomUUID(),
+      name: "Demo",
+      document,
+      createdAt: now,
+      updatedAt: now,
+      linkedRemote: {
+        provider: "gist",
+        gistId: "abc123",
+        filename: "graph.json",
+        syncMode: "manual",
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a stored graph with a malformed linkedRemote", () => {
+    const result = StoredGraph.safeParse({
+      id: crypto.randomUUID(),
+      name: "Demo",
+      document,
+      createdAt: now,
+      updatedAt: now,
+      linkedRemote: { provider: "gist" },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("StoredGraphSummary", () => {
