@@ -1,3 +1,14 @@
+# [1.10.0](https://github.com/ExaDev/graphle/compare/v1.9.0...v1.10.0) (2026-07-10)
+
+
+### Features
+
+* **github:** request write access to repository contents ([6402113](https://github.com/ExaDev/graphle/commit/640211365c517e761d1f59fa5b1bf65e610256d6))
+* **sharing:** parse GitHub repo file URLs ([470b08a](https://github.com/ExaDev/graphle/commit/470b08a7f309eaa7d8480823425a5bf2df75ebd6))
+* **sharing:** read, list history of, and write a GitHub repo file ([ed049d7](https://github.com/ExaDev/graphle/commit/ed049d706093fb8821ab253728cca4041d4c3a87))
+* **ui:** auto-sync a linked graph to its GitHub repo file ([f6f174f](https://github.com/ExaDev/graphle/commit/f6f174f66d39f9ead7034ad8f53db1838d146af0))
+* **ui:** load, sync, and browse history for a linked GitHub repo file ([4b447c8](https://github.com/ExaDev/graphle/commit/4b447c81249ca9c05a55b538f9a6413706aa004a))
+
 # [1.9.0](https://github.com/ExaDev/graphle/compare/v1.8.0...v1.9.0) (2026-07-10)
 
 
