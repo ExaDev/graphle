@@ -1,3 +1,23 @@
+# [1.9.0](https://github.com/ExaDev/graphle/compare/v1.8.0...v1.9.0) (2026-07-10)
+
+
+### Features
+
+* **domain:** add capped undo/redo history stack helper ([9df40b6](https://github.com/ExaDev/graphle/commit/9df40b6dd25a9747b6dc14be159c949168af3952))
+* **schema:** add GraphRevision schema for point-in-time graph checkpoints ([d5a5054](https://github.com/ExaDev/graphle/commit/d5a50541840b25d75fdb7150f1f7a3d290a21189))
+* **schema:** add LinkedRemoteSource discriminated union ([abe3c38](https://github.com/ExaDev/graphle/commit/abe3c385f78bdc6b900bf7e9705b19918e6fee3a))
+* **schema:** link stored graphs to an optional remote source ([288ebfb](https://github.com/ExaDev/graphle/commit/288ebfbcf091d753646306a4423c70ad3872dd89))
+* **sharing:** add gist history read and write API calls ([8c538f3](https://github.com/ExaDev/graphle/commit/8c538f3c31bb876587643ec934f12455598cc1ae))
+* **storage:** add Dexie-backed RevisionStore adapter ([31bfd12](https://github.com/ExaDev/graphle/commit/31bfd12d50ec3aae096ec098bcf60d80fd4d56bd))
+* **storage:** add revisions table to Dexie schema ([f7cf997](https://github.com/ExaDev/graphle/commit/f7cf997ffdf3f0492ab6e15b94459af6e03ee470))
+* **storage:** add RevisionStore contract ([e62e77c](https://github.com/ExaDev/graphle/commit/e62e77cc5b80cdcd23358c337792e5523445ab96))
+* **ui:** add ephemeral undo/redo stacks to the graph store ([babde6a](https://github.com/ExaDev/graphle/commit/babde6ac7b6f5486f898fc847abc6fecbb8f725d))
+* **ui:** add HistoryDrawer panel for browsing and restoring graph revisions ([9e61109](https://github.com/ExaDev/graphle/commit/9e61109e83066b26b59d5e259a7e68ad82b417f6))
+* **ui:** auto-sync a linked graph to its gist and detect drift ([63eb4b6](https://github.com/ExaDev/graphle/commit/63eb4b6a5143874259247801af51d5554609ab74))
+* **ui:** autosave dirty saved graphs and append revision history ([80f6eb9](https://github.com/ExaDev/graphle/commit/80f6eb9fe4d85e7d78e93682c50795c75de36201))
+* **ui:** wire autosave/gist-sync hooks, add gist push/pull and conflict UI ([2772c6e](https://github.com/ExaDev/graphle/commit/2772c6eeffd9ea4dde13effaca4d91fe6c262d4b))
+* **ui:** wire mod+Z/mod+shift+Z undo-redo hotkeys and a history drawer toggle ([6b0fb25](https://github.com/ExaDev/graphle/commit/6b0fb25cb8f0877f7b66789579de5f1f8b616784))
+
 # [1.8.0](https://github.com/ExaDev/graphle/compare/v1.7.0...v1.8.0) (2026-07-10)
 
 
