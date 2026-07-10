@@ -12,6 +12,7 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "prepare": "husky",
     "release": "semantic-release"
   },
@@ -47,6 +48,7 @@
     "@vanilla-extract/css": "^1.21.1",
     "@vanilla-extract/vite-plugin": "^5.2.4",
     "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.10",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^10.6.0",
     "eslint-plugin-react-hooks": "^7.1.1",

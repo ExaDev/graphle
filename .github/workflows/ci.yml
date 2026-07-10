@@ -22,7 +22,31 @@ jobs:
       - uses: ./.github/actions/setup-and-run
         with:
           task: quality
-          command: pnpm lint && pnpm typecheck && pnpm test
+          command: pnpm lint && pnpm typecheck && pnpm test:coverage
+      - name: Post coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e "
+              const cov = require('./coverage/coverage-summary.json');
+              const t = cov.total;
+              const pct = (k) => t[k].pct.toFixed(1) + '%';
+              const row = (label, k) => '| ' + label + ' | ' + pct(k) + ' |';
+              console.log('## Coverage');
+              console.log('');
+              console.log('| Metric | Coverage |');
+              console.log('|--------|----------|');
+              console.log(row('Lines', 'lines'));
+              console.log(row('Statements', 'statements'));
+              console.log(row('Functions', 'functions'));
+              console.log(row('Branches', 'branches'));
+            " >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
 
   release:
     name: Release

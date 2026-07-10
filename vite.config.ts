@@ -187,6 +187,20 @@ export default defineConfig({
     // own `environment`, `include`, and `setupFiles` explicitly rather than
     // relying on inheritance of the (deliberately unset) root test options.
     passWithNoTests: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov", "json-summary"],
+      reportsDirectory: "coverage",
+      include: ["src/**/*.ts", "src/**/*.tsx"],
+      exclude: [
+        "src/**/*.unit.test.ts",
+        "src/**/*.smoke.test.ts",
+        "src/test/**",
+        "src/main.tsx",
+        "src/vite-env.d.ts",
+        "src/**/*.css.ts",
+      ],
+    },
     projects: [
       {
         extends: true,
