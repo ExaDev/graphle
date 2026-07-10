@@ -112,6 +112,20 @@ them fails the gate or the review.
   public repos by default), and a private repo's Pages needs a paid plan. A
   visibility flip also disables Pages, which is why `configure-pages` runs with
   `enablement: true`.
+- **Multi-phase Workflow runs against this repo have a reproducible
+  worktree base-commit race.** When a Workflow script's phases have real
+  cross-phase file dependencies (phase N+1 imports a file phase N created),
+  a later phase's `isolation: "worktree"` agent can get a worktree that
+  doesn't reflect an earlier phase's already-merged output, even though the
+  script's own `await` ordering guarantees the merge landed first — seen
+  3+ times across two separate feature builds, including once for a single
+  non-parallel agent. Run dependent phases on the shared tree instead
+  (agents within a phase already write disjoint files by design, so there's
+  nothing to race); reserve worktree isolation for genuinely independent
+  fan-out. Always verify a run's result yourself afterwards (`git status
+  --short`, grep new exports for real callers, diff the shipped surface
+  against the plan) — a green gate does not prove the claimed work landed
+  or was committed.
 
 ## Contributing
 
