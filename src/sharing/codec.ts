@@ -21,11 +21,14 @@
  *
  * Encoding builds these arrays in a fixed field order so `JSON.stringify` is
  * deterministic for identical input, then compresses with lz-string. Decoding
- * decompresses, then dispatches on shape: a JSON Canvas document, a full graphle
- * document (v1/v2 migrated, v3 parsed directly), or the v3 compact envelope —
- * which is validated with Zod and rebuilt, assigning fresh node ids and
- * remapping edges via an index->id map so a shared graph never collides with
- * locally stored ids.
+ * decompresses, then dispatches on shape via {@link decodeDocumentFromJson}: a
+ * JSON Canvas document, a full graphle document (v1/v2 migrated, v3 parsed
+ * directly), or the v3 compact envelope — which is validated with Zod and
+ * rebuilt, assigning fresh node ids and remapping edges via an index->id map
+ * so a shared graph never collides with locally stored ids. The shape
+ * detection is exported on its own so other entry points that already have
+ * plain (uncompressed) JSON — file import, a fetched remote URL — reuse it
+ * rather than re-implementing the dispatch.
  */
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from "lz-string";
 import { z } from "zod";
@@ -343,20 +346,16 @@ export function encodeDocument(doc: GraphDocument): string {
   return compressToEncodedURIComponent(JSON.stringify(envelope));
 }
 
-/** Decompress a share string back into a validated graph document. */
-export function decodeDocument(payload: string): GraphDocument {
-  const decompressed = decompressFromEncodedURIComponent(payload);
-  if (!decompressed) {
-    throw new ShareDecodeError("Share payload could not be decompressed");
-  }
-
-  let json: unknown;
-  try {
-    json = JSON.parse(decompressed);
-  } catch (error) {
-    throw new ShareDecodeError(`Share payload is not valid JSON: ${describe(error)}`);
-  }
-
+/**
+ * Detect and decode a parsed JSON value as a graph document: a JSON Canvas
+ * document, a full graphle document (v1/v2 migrated, v3 parsed directly), or
+ * the v3 compact share envelope. This is the shape-detection {@link
+ * decodeDocument} runs after decompressing a `#g=` payload; it is exported
+ * separately so any other entry point that already has plain JSON — a file
+ * import, a fetched remote URL — can reuse the exact same detection instead
+ * of re-implementing it.
+ */
+export function decodeDocumentFromJson(json: unknown): GraphDocument {
   if (!isRecord(json)) {
     throw new ShareDecodeError("Share payload is not a JSON object");
   }
@@ -381,4 +380,21 @@ export function decodeDocument(payload: string): GraphDocument {
 
   // Compact share envelope (carries `v`).
   return decodeCompactEnvelope(json);
+}
+
+/** Decompress a share string back into a validated graph document. */
+export function decodeDocument(payload: string): GraphDocument {
+  const decompressed = decompressFromEncodedURIComponent(payload);
+  if (!decompressed) {
+    throw new ShareDecodeError("Share payload could not be decompressed");
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(decompressed);
+  } catch (error) {
+    throw new ShareDecodeError(`Share payload is not valid JSON: ${describe(error)}`);
+  }
+
+  return decodeDocumentFromJson(json);
 }

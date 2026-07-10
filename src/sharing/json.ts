@@ -4,10 +4,10 @@
  * so a hand-edited or third-party file is validated exactly like a freshly
  * authored one.
  */
-import { GraphDocumentSchema, migrateV1Document } from "../schema";
 import type { GraphDocument } from "../schema";
 
-import { parseCanvasFromUnknown, serialiseCanvasDocument } from "./jsoncanvas";
+import { decodeDocumentFromJson } from "./codec";
+import { serialiseCanvasDocument } from "./jsoncanvas";
 
 /** Serialise a document to a pretty JSON string. */
 export function serialiseDocument(doc: GraphDocument): string {
@@ -33,34 +33,16 @@ export function exportDocument(doc: GraphDocument): void {
 }
 
 /**
- * Parse a JSON string into a graph document, auto-detecting the format:
- * tries graphle's own v2 schema first, then a v1 graphle document (migrated to
- * v2), and finally JSON Canvas. A file that is none of these throws the canvas
- * codec's Zod error (the last, most generic attempt).
+ * Parse a JSON string into a graph document, auto-detecting the format via
+ * {@link decodeDocumentFromJson}: graphle's own current schema, a v1 or v2
+ * graphle document (migrated forward), or JSON Canvas — the same detection
+ * every other document entry point (the `#g=` share fragment, a fetched
+ * remote URL) uses, so a hand-edited or third-party file is validated
+ * identically regardless of how it reached the app.
  */
 export function importDocument(json: string): GraphDocument {
   const raw: unknown = JSON.parse(json);
-  const result = GraphDocumentSchema.safeParse(raw);
-  if (result.success) return result.data;
-  // A v1 graphle document (version: 1) migrates to v2 and re-validates.
-  if (isV1Document(raw)) {
-    return GraphDocumentSchema.parse(migrateV1Document(raw));
-  }
-  return parseCanvasFromUnknown(raw);
-}
-
-/**
- * Whether `raw` looks like a v1 graphle document. The authoritative signal is
- * the `version: 1` field that every v1 document carries — and that
- * {@link migrateV1Document} requires to migrate successfully.
- */
-function isV1Document(raw: unknown): boolean {
-  return isRecord(raw) && raw.version === 1;
-}
-
-/** Narrows `unknown` to a record without any cast. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return decodeDocumentFromJson(raw);
 }
 
 /**
