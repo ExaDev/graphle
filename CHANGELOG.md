@@ -1,3 +1,19 @@
+# [1.8.0](https://github.com/ExaDev/graphle/compare/v1.7.0...v1.8.0) (2026-07-10)
+
+
+### Bug Fixes
+
+* **github:** classify GraphQL NOT_FOUND errors and share message formatting ([58a32fd](https://github.com/ExaDev/graphle/commit/58a32fd10f1710ecb88ac4b33281ce89f8c1518a))
+
+
+### Features
+
+* **github:** load a full project document from a parsed URL ([509c346](https://github.com/ExaDev/graphle/commit/509c346de9fd74658a2f6fc7fe49cb8bdaf793d4))
+* **github:** look up an org or user project by number ([993530c](https://github.com/ExaDev/graphle/commit/993530c283cd1f88b13a7328b20dd5a8645c56b0))
+* **github:** parse GitHub Projects v2 URLs ([e8fe7ef](https://github.com/ExaDev/graphle/commit/e8fe7efd59cf556c36989d804908b472777c70c3))
+* **ui:** load GitHub Projects URLs from the address bar and graphs drawer ([3a18701](https://github.com/ExaDev/graphle/commit/3a1870197495f3879e8fc7d04ba91b258211fdbf))
+* **ui:** resume a pending GitHub action after PAT validation, link prefilled token scopes ([0ecda58](https://github.com/ExaDev/graphle/commit/0ecda586b123cf139790a7739f9be6f306a6e600))
+
 # [1.7.0](https://github.com/ExaDev/graphle/compare/v1.6.0...v1.7.0) (2026-07-10)
 
 
