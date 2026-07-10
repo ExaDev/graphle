@@ -4,6 +4,7 @@
  * which remains the single source of truth for every data shape.
  */
 export { nodeIdentityKey } from "./identity";
+export { MAX_UNDO_DEPTH, pushHistory } from "./history";
 export {
   EXPANSION_ANGLE_STEP,
   EXPANSION_RADIUS,
