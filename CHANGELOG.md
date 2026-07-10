@@ -1,3 +1,20 @@
+# [1.11.0](https://github.com/ExaDev/graphle/compare/v1.10.0...v1.11.0) (2026-07-10)
+
+
+### Features
+
+* **domain:** extract type-name collision checks ([f964071](https://github.com/ExaDev/graphle/commit/f964071b11640ce9dde6afd2468851d380f28a1e))
+* **schema:** add type library document and its storage schema ([2300393](https://github.com/ExaDev/graphle/commit/23003933461e622689fb843a435b4f9976393227))
+* **sharing:** add JSON serialisation for type library documents ([a824d51](https://github.com/ExaDev/graphle/commit/a824d51bf8a2375787c0ef7ff32b5a8a0a91c59c))
+* **sharing:** add revision fetchers for synced type libraries ([0ee6aae](https://github.com/ExaDev/graphle/commit/0ee6aaecda5aead28ddf0559561e1b285a722896))
+* **storage:** add type library store ([49fe34d](https://github.com/ExaDev/graphle/commit/49fe34dc49e63037f97f75eaa49a10bf606a181d))
+* **ui:** add modal for copying types from the library into a graph ([b00138a](https://github.com/ExaDev/graphle/commit/b00138a826f58c99f2d37bcee2a4881a242b8206))
+* **ui:** add TypesDrawer combining type management and library sync ([1115764](https://github.com/ExaDev/graphle/commit/1115764ca1766cb1091f57c4b065fddad4a0acca))
+* **ui:** add updateType and updateEdgeType store actions ([394a81b](https://github.com/ExaDev/graphle/commit/394a81b010bbb855d1af2457091bfc9910594905))
+* **ui:** auto-sync the type library on load and tab focus ([9ccad27](https://github.com/ExaDev/graphle/commit/9ccad27a4c4f394e8acdec9aa5ef836ad4ae433a))
+* **ui:** mount type library sync and manage-types drawer in AppShell ([0b98dde](https://github.com/ExaDev/graphle/commit/0b98ddece7623c8bdf1458cafacd47bb2ef5371d))
+* **ui:** support editing existing node and edge types ([db22a6c](https://github.com/ExaDev/graphle/commit/db22a6ce9f2eb505745c27f966dfd3e4fb512c72))
+
 # [1.10.0](https://github.com/ExaDev/graphle/compare/v1.9.0...v1.10.0) (2026-07-10)
 
 
