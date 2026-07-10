@@ -65,6 +65,13 @@ export function AppShell() {
   const dirty = useGraphStore((state) => state.dirty);
   const apply = useGraphStore((state) => state.apply);
   const setSelection = useGraphStore((state) => state.setSelection);
+  // The GitHub drawer's open state lives in the store, not local useDisclosure
+  // like the other panels — useUrlSync (a mount-time hook with no JSX of its
+  // own) needs to be able to open it to prompt for a PAT, and to attach a
+  // pending action to resume once one is validated (see graph-store.ts).
+  const githubPanelOpened = useGraphStore((state) => state.githubPanelOpened);
+  const openGitHubPanel = useGraphStore((state) => state.openGitHubPanel);
+  const closeGitHubPanel = useGraphStore((state) => state.closeGitHubPanel);
 
   const [addOpened, { open: openAdd, close: closeAddDisclosure }] =
     useDisclosure(false);
@@ -72,8 +79,6 @@ export function AppShell() {
   const [edgeTypeOpened, { open: openEdgeType, close: closeEdgeType }] =
     useDisclosure(false);
   const [graphsOpened, { open: openGraphs, close: closeGraphs }] =
-    useDisclosure(false);
-  const [githubOpened, { open: openGitHub, close: closeGitHub }] =
     useDisclosure(false);
   const [inspectorOpened, { toggle: toggleInspector }] = useDisclosure(false);
 
@@ -223,7 +228,7 @@ export function AppShell() {
             variant="default"
             size="lg"
             aria-label="GitHub"
-            onClick={openGitHub}
+            onClick={() => openGitHubPanel()}
           >
             <IconBrandGithub size={16} />
           </ActionIcon>
@@ -255,7 +260,7 @@ export function AppShell() {
 
       <MantineAppShell.Aside p="xs">
         <MantineAppShell.Section grow>
-          <InspectorPanel onOpenGitHub={openGitHub} />
+          <InspectorPanel onOpenGitHub={() => openGitHubPanel()} />
         </MantineAppShell.Section>
       </MantineAppShell.Aside>
 
@@ -266,7 +271,7 @@ export function AppShell() {
       />
       <TypeEditorModal opened={typeOpened} onClose={closeType} />
       <EdgeTypeEditorModal opened={edgeTypeOpened} onClose={closeEdgeType} />
-      <GitHubPanel opened={githubOpened} onClose={closeGitHub} />
+      <GitHubPanel opened={githubPanelOpened} onClose={closeGitHubPanel} />
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
       <GistPickerModal />
       <ContextMenu

@@ -18,6 +18,7 @@ import {
   type GraphDelta,
   type GraphOperation,
 } from "@/domain";
+import type { GitHubClient } from "@/github";
 import type { GistFileCandidate } from "@/sharing/gist";
 import type { EdgeTypeDefinition, GraphDocument, NodeTypeDefinition } from "@/schema";
 
@@ -93,6 +94,28 @@ interface GraphState {
   gistPicker: GistPicker | undefined;
   /** Open or close the gist picker. */
   setGistPicker: (picker: GistPicker | undefined) => void;
+  /** Whether the GitHub PAT-entry/browse drawer is open. Lives in the store
+   *  (rather than local component state) so a non-component caller — the
+   *  page-mount `useUrlSync` hook, which has no JSX of its own — can open it
+   *  without prop drilling, the same reason `gistPicker` lives here. */
+  githubPanelOpened: boolean;
+  /**
+   * A one-shot callback to run with the freshly authenticated {@link
+   * GitHubClient} once the user validates a PAT, or `undefined` when the
+   * panel was opened for plain browsing. The callback owns its own async
+   * work, error handling, and notifications — `GitHubPanel` only ever calls
+   * it once and clears it; it never inspects what the callback does, so the
+   * panel stays a general auth+browse drawer rather than coupling to any one
+   * caller's use case (e.g. resuming a pending GitHub Projects URL load).
+   */
+  pendingGitHubAction: ((client: GitHubClient) => void) | undefined;
+  /** Open the GitHub panel, optionally with a pending action to run once a
+   *  PAT is validated. Omit the argument for plain browsing. */
+  openGitHubPanel: (pendingAction?: (client: GitHubClient) => void) => void;
+  /** Close the GitHub panel. Always clears `pendingGitHubAction` too, so
+   *  cancelling without validating can never leave a stale callback to fire
+   *  on some later, unrelated validation. */
+  closeGitHubPanel: () => void;
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -166,6 +189,11 @@ export const useGraphStore = create<GraphState>()(
     markSaved: () => set({ dirty: false }),
     gistPicker: undefined,
     setGistPicker: (gistPicker) => set({ gistPicker }),
+    githubPanelOpened: false,
+    pendingGitHubAction: undefined,
+    openGitHubPanel: (pendingAction) =>
+      set({ githubPanelOpened: true, pendingGitHubAction: pendingAction }),
+    closeGitHubPanel: () => set({ githubPanelOpened: false, pendingGitHubAction: undefined }),
   })),
 );
 

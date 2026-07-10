@@ -12,6 +12,14 @@
  * 3. Pagination tails: each list offers "Load more" while its connection has a
  *    next page.
  *
+ * Opening and closing lives in `store.githubPanelOpened` rather than local
+ * component state — a caller with no JSX of its own (`useUrlSync`, on page
+ * mount) can still open this drawer to prompt for a PAT. Such a caller can
+ * also attach a one-shot `store.pendingGitHubAction`, run with the freshly
+ * validated client right after a successful `handleValidate` and then
+ * cleared; this component never inspects what that action does (e.g. resume
+ * a GitHub Projects URL load) — it stays a general auth+browse drawer.
+ *
  * SECURITY: the PAT is sensitive credential material. It lives only in the
  * SecretStore (IndexedDB `secrets` table, separate from graph data) and in the
  * Authorization header `createGitHubClient` sends. It is never written to the
@@ -25,7 +33,7 @@
  * surface through Mantine notifications with kind-specific guidance
  * (unauthorised -> check scopes, rateLimited -> reset time, network -> network).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Anchor,
   Badge,
@@ -54,6 +62,7 @@ import {
   buildDelta,
   createGitHubClient,
   GitHubError,
+  githubErrorMessage,
   orgToNode,
   projectToNode,
   repoToNode,
@@ -82,32 +91,49 @@ interface PageTail {
 
 const NO_PAGE: PageTail = { cursor: undefined, hasNextPage: false };
 
-/** GitHub token settings URL, linked from the PAT help text. */
-const TOKEN_SETTINGS_URL = "https://github.com/settings/tokens";
+/** Classic scopes graphle's GraphQL queries need — kept as the single source
+ *  for both the help text and {@link CREATE_TOKEN_URL} so they can't drift. */
+const REQUIRED_CLASSIC_SCOPES = ["repo", "read:org", "read:project"];
 
 /**
- * Maps a {@link GitHubError} to a short, actionable notification message. The
- * kind discriminator drives the branch so the user gets scope/rate-limit/
- * network guidance rather than a raw error string.
+ * Deep-links straight to a pre-filled classic-token creation form (GitHub
+ * supports `scopes`/`description` query params on `tokens/new` for exactly
+ * this) so the user doesn't have to hunt through the scope checkboxes
+ * themselves — the required scopes are already ticked when the page loads.
  */
-function githubErrorMessage(error: GitHubError): string {
-  switch (error.kind.type) {
-    case "unauthorised":
-      return "Unauthorised — check your PAT scopes";
-    case "rateLimited":
-      return error.kind.resetAt === undefined
-        ? "GitHub rate limit exceeded"
-        : `GitHub rate limit exceeded; resets at ${error.kind.resetAt}`;
-    case "network":
-      return "Network error";
-    case "forbidden":
-      return `Forbidden: ${error.kind.message}`;
-    case "notFound":
-      return "Not found";
-    case "invalidResponse":
-      return `Invalid response: ${error.kind.message}`;
-  }
-}
+const CREATE_TOKEN_URL = `https://github.com/settings/tokens/new?${new URLSearchParams({
+  scopes: REQUIRED_CLASSIC_SCOPES.join(","),
+  description: "graphle",
+}).toString()}`;
+
+/**
+ * Fine-grained permission slugs graphle needs, confirmed against GitHub's own
+ * docs source (github/docs, managing-your-personal-access-tokens.md — the
+ * page's own changelog announcement gives only worked examples, not a full
+ * parameter reference, so the source file was the only way to get this
+ * right): `contents`/`issues` are repository permissions (apply to either a
+ * user or organization resource owner); `organization_projects` is an
+ * ORGANIZATION-only permission. There is no fine-grained equivalent for a
+ * *personal* account's own Projects v2 boards — the Account-permissions table
+ * has no Projects entry at all — so a fine-grained token can only ever load
+ * an org-owned project through graphle; a personal one needs a classic token.
+ */
+const FINE_GRAINED_PERMISSIONS: Record<string, string> = {
+  contents: "read",
+  issues: "read",
+  organization_projects: "read",
+};
+
+/**
+ * Deep-links to a pre-filled fine-grained token creation form. `target_name`
+ * is deliberately omitted — GitHub defaults it to the current user's own
+ * account, and graphle can't know in advance which organization the user
+ * wants to target; they pick (or type) the resource owner on GitHub's own
+ * page, where these permissions are already ticked.
+ */
+const CREATE_FINE_GRAINED_TOKEN_URL = `https://github.com/settings/personal-access-tokens/new?${new URLSearchParams(
+  { name: "graphle", description: "graphle", ...FINE_GRAINED_PERMISSIONS },
+).toString()}`;
 
 function notifyGitHubError(error: unknown): void {
   if (error instanceof GitHubError) {
@@ -265,6 +291,18 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
     setViewer(result);
     setRateLimit(client.lastRateLimit);
     notifications.show({ color: "green", message: `Signed in as ${result.login}` });
+
+    // Resume any pending action (e.g. a GitHub Projects URL load waiting on
+    // auth) with the freshly validated client, then clear it. This panel
+    // doesn't inspect what the action does, or decide whether to close
+    // itself afterwards — that's the caller's call, made when it set the
+    // action via store.openGitHubPanel(pendingAction).
+    const pendingAction = useGraphStore.getState().pendingGitHubAction;
+    if (pendingAction !== undefined) {
+      useGraphStore.setState({ pendingGitHubAction: undefined });
+      pendingAction(client);
+    }
+
     // Reset browse state for the freshly authenticated viewer, then load orgs.
     setSelectedOrgLogin(undefined);
     setRepos([]);
@@ -349,16 +387,38 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
           />
           <Stack gap={2}>
             <Text size="xs" c="dimmed">
-              Classic token needs <Code>repo</Code>, <Code>read:org</Code>,{" "}
-              <Code>read:project</Code>. Fine-grained needs the org's Projects
-              (read).
+              Classic token needs{" "}
+              {REQUIRED_CLASSIC_SCOPES.map((scope, index) => (
+                <Fragment key={scope}>
+                  {index > 0 && ", "}
+                  <Code>{scope}</Code>
+                </Fragment>
+              ))}
+              . Fine-grained needs{" "}
+              {Object.keys(FINE_GRAINED_PERMISSIONS).map((permission, index) => (
+                <Fragment key={permission}>
+                  {index > 0 && ", "}
+                  <Code>{permission}</Code>
+                </Fragment>
+              ))}{" "}
+              — but only for an org-owned project; a fine-grained token can't
+              read a personal account's own Projects boards, use a classic
+              token for those.
             </Text>
-            <Anchor size="xs" href={TOKEN_SETTINGS_URL} target="_blank">
-              <Group gap={4}>
-                Manage tokens
-                <IconExternalLink size={12} />
-              </Group>
-            </Anchor>
+            <Group gap="sm">
+              <Anchor size="xs" href={CREATE_TOKEN_URL} target="_blank">
+                <Group gap={4}>
+                  Create a classic token
+                  <IconExternalLink size={12} />
+                </Group>
+              </Anchor>
+              <Anchor size="xs" href={CREATE_FINE_GRAINED_TOKEN_URL} target="_blank">
+                <Group gap={4}>
+                  Create a fine-grained token
+                  <IconExternalLink size={12} />
+                </Group>
+              </Anchor>
+            </Group>
           </Stack>
           <Group gap="xs">
             <Button variant="default" onClick={() => void handleSaveToken()}>
