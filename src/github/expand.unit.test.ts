@@ -50,6 +50,12 @@ function clientWithRepos(repos: Page<{
     listProjectItems() {
       return Promise.reject(new Error("unexpected listProjectItems call"));
     },
+    getOrgProject() {
+      return Promise.reject(new Error("unexpected getOrgProject call"));
+    },
+    getUserProject() {
+      return Promise.reject(new Error("unexpected getUserProject call"));
+    },
     get lastRateLimit() {
       return undefined;
     },
@@ -173,6 +179,12 @@ describe("expansionsForType - project-items", () => {
       },
       listProjectItems() {
         return Promise.resolve(items);
+      },
+      getOrgProject() {
+        return Promise.reject(new Error("unexpected getOrgProject call"));
+      },
+      getUserProject() {
+        return Promise.reject(new Error("unexpected getUserProject call"));
       },
       get lastRateLimit() {
         return undefined;

@@ -175,6 +175,30 @@ export const RepoProjectsResponse = z.object({
 export type RepoProjectsResponse = z.infer<typeof RepoProjectsResponse>;
 
 /**
+ * `organization` is nullable (unknown login); its nested `projectV2` is
+ * independently nullable (unknown project number for a known org) —
+ * confirmed empirically: GitHub reports either case as HTTP 200 with the
+ * relevant field `null` plus a `NOT_FOUND` GraphQL error, never HTTP 404.
+ */
+export const OrgProjectResponse = z.object({
+  data: z.object({
+    organization: z.object({ projectV2: GitHubProject.nullable() }).nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type OrgProjectResponse = z.infer<typeof OrgProjectResponse>;
+
+/** `user` is nullable; its nested `projectV2` is independently nullable —
+ *  mirrors {@link OrgProjectResponse} for a user-owned project. */
+export const UserProjectResponse = z.object({
+  data: z.object({
+    user: z.object({ projectV2: GitHubProject.nullable() }).nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type UserProjectResponse = z.infer<typeof UserProjectResponse>;
+
+/**
  * Content of a project item at the response level. The first two arms are the
  * materialisable kinds ({@link IssueContent}, {@link DraftIssueContent}); the
  * third is a permissive passthrough keyed on any `__typename`, which lets a

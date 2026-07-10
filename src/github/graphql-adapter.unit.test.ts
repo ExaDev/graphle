@@ -206,6 +206,115 @@ describe("createGitHubClient - pagination", () => {
   });
 });
 
+describe("createGitHubClient - getOrgProject / getUserProject", () => {
+  it("resolves an org-owned project by number", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        OrgProject: () =>
+          jsonResponse({
+            data: {
+              organization: {
+                projectV2: {
+                  id: "PVT_1",
+                  number: 1,
+                  title: "Roadmap",
+                  url: "https://github.com/orgs/exadev/projects/1",
+                  closed: false,
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const project = await client.getOrgProject("exadev", 1, new AbortController().signal);
+    expect(project).toEqual({
+      id: "PVT_1",
+      number: 1,
+      title: "Roadmap",
+      url: "https://github.com/orgs/exadev/projects/1",
+      closed: false,
+    });
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("resolves a user-owned project by number", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        UserProject: () =>
+          jsonResponse({
+            data: {
+              user: {
+                projectV2: {
+                  id: "PVT_2",
+                  number: 3,
+                  title: "Personal board",
+                  url: "https://github.com/users/joe/projects/3",
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const project = await client.getUserProject("joe", 3, new AbortController().signal);
+    expect(project.id).toBe("PVT_2");
+    expect(project.title).toBe("Personal board");
+  });
+
+  it("throws notFound when the organization itself doesn't resolve", async () => {
+    // GitHub reports this as HTTP 200 with organization: null plus a
+    // NOT_FOUND GraphQL error, never an HTTP 404 — confirmed empirically.
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        OrgProject: () =>
+          jsonResponse({
+            data: { organization: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to an Organization" }],
+          }),
+      }),
+    });
+    await expect(
+      client.getOrgProject("no-such-org", 1, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("throws notFound when the org exists but the project number doesn't", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        OrgProject: () =>
+          jsonResponse({
+            data: { organization: { projectV2: null }, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a ProjectV2" }],
+          }),
+      }),
+    });
+    await expect(
+      client.getOrgProject("exadev", 999, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("throws notFound when the user exists but the project number doesn't", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        UserProject: () =>
+          jsonResponse({
+            data: { user: { projectV2: null }, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a ProjectV2" }],
+          }),
+      }),
+    });
+    await expect(
+      client.getUserProject("joe", 999, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+});
+
 describe("createGitHubClient - errors", () => {
   it("classifies a 401 as unauthorised", async () => {
     const client = createGitHubClient({

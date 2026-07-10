@@ -1,11 +1,13 @@
 import type { GitHubClient } from "./contract";
 import { GitHubError, classifyByStatus } from "./errors";
 import {
+  OrgProjectResponse,
   OrgProjectsResponse,
   OrgReposResponse,
   ProjectItemsResponse,
   RepoIssuesResponse,
   RepoProjectsResponse,
+  UserProjectResponse,
   ViewerOrgsResponse,
   ViewerResponse,
   type GitHubProjectItem,
@@ -36,6 +38,10 @@ const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:
 const REPO_PROJECTS_QUERY = `query RepoProjects($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
 const PROJECT_ITEMS_QUERY = `query ProjectItems($projectId:ID!,$first:Int!,$after:String){ node(id:$projectId){ ...on ProjectV2 { items(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ content{ __typename ...on Issue{ number title state url repository{name owner{login}} } ...on DraftIssue{ title } } } } } } rateLimit{remaining resetAt} }`;
+
+const ORG_PROJECT_QUERY = `query OrgProject($login:String!,$number:Int!){ organization(login:$login){ projectV2(number:$number){ id number title url closed } } rateLimit{remaining resetAt} }`;
+
+const USER_PROJECT_QUERY = `query UserProject($login:String!,$number:Int!){ user(login:$login){ projectV2(number:$number){ id number title url closed } } rateLimit{remaining resetAt} }`;
 
 /** Returns the GraphQL `errors` array from `body`, or undefined when absent. */
 function extractErrors(body: unknown): unknown[] | undefined {
@@ -247,6 +253,44 @@ export function createGitHubClient(parameters: {
             content.__typename === "Issue" || content.__typename === "DraftIssue",
         );
       return { items, ...toPage(rawItems.pageInfo) };
+    },
+
+    async getOrgProject(login, number, signal) {
+      const result = await graphql(
+        ORG_PROJECT_QUERY,
+        { login, number },
+        OrgProjectResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const org = result.data.organization;
+      if (org === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const project = org.projectV2;
+      if (project === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      return project;
+    },
+
+    async getUserProject(login, number, signal) {
+      const result = await graphql(
+        USER_PROJECT_QUERY,
+        { login, number },
+        UserProjectResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const user = result.data.user;
+      if (user === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const project = user.projectV2;
+      if (project === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      return project;
     },
   };
 }

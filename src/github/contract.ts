@@ -58,5 +58,20 @@ export interface GitHubClient {
     cursor: string | undefined,
     signal: AbortSignal,
   ): Promise<Page<GitHubProjectItem>>;
+  /** Resolve an org-owned project by its number (as shown in its URL, e.g.
+   *  `/orgs/{login}/projects/{number}`). Throws `GitHubError({type:"notFound"})`
+   *  when the org or the project number doesn't exist or isn't visible. */
+  getOrgProject(
+    login: string,
+    number: number,
+    signal: AbortSignal,
+  ): Promise<GitHubProject>;
+  /** Resolve a user-owned project by its number (`/users/{login}/projects/{number}`).
+   *  Mirrors {@link getOrgProject} for the user-owned case. */
+  getUserProject(
+    login: string,
+    number: number,
+    signal: AbortSignal,
+  ): Promise<GitHubProject>;
   readonly lastRateLimit: { remaining: number; resetAt: string } | undefined;
 }
