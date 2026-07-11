@@ -7,6 +7,7 @@ import {
   ProjectItemsResponse,
   RepoIssuesResponse,
   RepoProjectsResponse,
+  RepoResponse,
   UserProjectResponse,
   ViewerOrgsResponse,
   ViewerResponse,
@@ -42,6 +43,8 @@ const PROJECT_ITEMS_QUERY = `query ProjectItems($projectId:ID!,$first:Int!,$afte
 const ORG_PROJECT_QUERY = `query OrgProject($login:String!,$number:Int!){ organization(login:$login){ projectV2(number:$number){ id number title url closed } } rateLimit{remaining resetAt} }`;
 
 const USER_PROJECT_QUERY = `query UserProject($login:String!,$number:Int!){ user(login:$login){ projectV2(number:$number){ id number title url closed } } rateLimit{remaining resetAt} }`;
+
+const REPO_QUERY = `query Repo($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ owner{login} name url description isArchived } rateLimit{remaining resetAt} }`;
 
 /** Returns the GraphQL `errors` array from `body`, or undefined when absent. */
 function extractErrors(body: unknown): unknown[] | undefined {
@@ -291,6 +294,16 @@ export function createGitHubClient(parameters: {
         throw new GitHubError({ type: "notFound" });
       }
       return project;
+    },
+
+    async getRepo(owner, name, signal) {
+      const result = await graphql(REPO_QUERY, { owner, name }, RepoResponse, signal);
+      lastRateLimit = result.data.rateLimit;
+      const repo = result.data.repository;
+      if (repo === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      return repo;
     },
   };
 }

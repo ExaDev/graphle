@@ -198,6 +198,15 @@ export const UserProjectResponse = z.object({
 });
 export type UserProjectResponse = z.infer<typeof UserProjectResponse>;
 
+/** `repository` is nullable: GitHub returns `null` for an unknown owner/name. */
+export const RepoResponse = z.object({
+  data: z.object({
+    repository: GitHubRepo.nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type RepoResponse = z.infer<typeof RepoResponse>;
+
 /**
  * Content of a project item at the response level. The first two arms are the
  * materialisable kinds ({@link IssueContent}, {@link DraftIssueContent}); the

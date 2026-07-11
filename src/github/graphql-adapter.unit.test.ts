@@ -315,6 +315,74 @@ describe("createGitHubClient - getOrgProject / getUserProject", () => {
   });
 });
 
+describe("createGitHubClient - getRepo", () => {
+  it("resolves a repository by owner and name", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        Repo: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                owner: { login: "exadev" },
+                name: "graphle",
+                url: "https://github.com/exadev/graphle",
+                description: "A graph tool",
+                isArchived: false,
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const repo = await client.getRepo("exadev", "graphle", new AbortController().signal);
+    expect(repo).toEqual({
+      owner: { login: "exadev" },
+      name: "graphle",
+      url: "https://github.com/exadev/graphle",
+      description: "A graph tool",
+      isArchived: false,
+    });
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("throws notFound when the repository doesn't resolve", async () => {
+    // Mirrors the project lookups: GitHub reports this as HTTP 200 with
+    // repository: null plus a NOT_FOUND GraphQL error, never an HTTP 404.
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        Repo: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+          }),
+      }),
+    });
+    await expect(
+      client.getRepo("exadev", "no-such-repo", new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("passes through rate-limit classification for getRepo", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        Repo: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "RATE_LIMITED", message: "too many" }],
+          }),
+      }),
+    });
+    await expect(
+      client.getRepo("exadev", "graphle", new AbortController().signal),
+    ).rejects.toMatchObject({
+      kind: { type: "rateLimited", resetAt: RATE.resetAt },
+    });
+  });
+});
+
 describe("createGitHubClient - errors", () => {
   it("classifies a 401 as unauthorised", async () => {
     const client = createGitHubClient({

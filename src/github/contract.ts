@@ -73,5 +73,9 @@ export interface GitHubClient {
     number: number,
     signal: AbortSignal,
   ): Promise<GitHubProject>;
+  /** Resolve a single repository by its owner and name (`/{owner}/{name}`).
+   *  Throws `GitHubError({type:"notFound"})` when the owner or repo doesn't
+   *  exist or isn't visible. */
+  getRepo(owner: string, name: string, signal: AbortSignal): Promise<GitHubRepo>;
   readonly lastRateLimit: { remaining: number; resetAt: string } | undefined;
 }
