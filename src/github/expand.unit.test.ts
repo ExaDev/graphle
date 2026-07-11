@@ -56,6 +56,12 @@ function clientWithRepos(repos: Page<{
     listIssueSubIssues() {
       return Promise.reject(new Error("unexpected listIssueSubIssues call"));
     },
+    listIssueBlockedBy() {
+      return Promise.reject(new Error("unexpected listIssueBlockedBy call"));
+    },
+    listIssueBlocking() {
+      return Promise.reject(new Error("unexpected listIssueBlocking call"));
+    },
     getOrgProject() {
       return Promise.reject(new Error("unexpected getOrgProject call"));
     },
@@ -141,7 +147,7 @@ describe("expansionsForType - org-repos", () => {
 });
 
 describe("expansionsForType - dispatch table", () => {
-  it("offers repos and projects for org/repo, items for project, sub-issues for issue, nothing for freeform/unknown", () => {
+  it("offers repos and projects for org/repo, items for project, sub-issues/blocking for issue, nothing for freeform/unknown", () => {
     expect(expansionsForType("org").map((e) => e.id)).toEqual(["org-repos", "org-projects"]);
     expect(expansionsForType("repo").map((e) => e.id)).toEqual([
       "repo-issues",
@@ -149,7 +155,11 @@ describe("expansionsForType - dispatch table", () => {
       "repo-projects",
     ]);
     expect(expansionsForType("project").map((e) => e.id)).toEqual(["project-items"]);
-    expect(expansionsForType("issue").map((e) => e.id)).toEqual(["issue-sub-issues"]);
+    expect(expansionsForType("issue").map((e) => e.id)).toEqual([
+      "issue-sub-issues",
+      "issue-blocked-by",
+      "issue-blocking",
+    ]);
     expect(expansionsForType("freeform")).toEqual([]);
     expect(expansionsForType("custom-thing")).toEqual([]);
   });
@@ -201,6 +211,12 @@ describe("expansionsForType - project-items", () => {
       },
       listIssueSubIssues() {
         return Promise.reject(new Error("unexpected listIssueSubIssues call"));
+      },
+      listIssueBlockedBy() {
+        return Promise.reject(new Error("unexpected listIssueBlockedBy call"));
+      },
+      listIssueBlocking() {
+        return Promise.reject(new Error("unexpected listIssueBlocking call"));
       },
       getOrgProject() {
         return Promise.reject(new Error("unexpected getOrgProject call"));
@@ -329,6 +345,124 @@ function clientWithSubIssues(page: Page<{ number: number; title: string; state: 
     listIssueSubIssues() {
       return Promise.resolve(page);
     },
+    listIssueBlockedBy() {
+      return Promise.reject(new Error("unexpected listIssueBlockedBy call"));
+    },
+    listIssueBlocking() {
+      return Promise.reject(new Error("unexpected listIssueBlocking call"));
+    },
+    getOrgProject() {
+      return Promise.reject(new Error("unexpected getOrgProject call"));
+    },
+    getUserProject() {
+      return Promise.reject(new Error("unexpected getUserProject call"));
+    },
+    getRepo() {
+      return Promise.reject(new Error("unexpected getRepo call"));
+    },
+    get lastRateLimit() {
+      return undefined;
+    },
+  };
+}
+
+type IssueWithRepoFixture = {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  url: string;
+  repository: { name: string; owner: { login: string } };
+};
+
+/** A client whose listIssueBlockedBy returns a fixed canned page; every other
+ *  method throws so a test fails loudly on an unexpected call. */
+function clientWithBlockedBy(page: Page<IssueWithRepoFixture>): GitHubClient {
+  return {
+    viewer() {
+      return Promise.reject(new Error("unexpected viewer call"));
+    },
+    listViewerOrgs() {
+      return Promise.reject(new Error("unexpected listViewerOrgs call"));
+    },
+    listOrgRepos() {
+      return Promise.reject(new Error("unexpected listOrgRepos call"));
+    },
+    listRepoIssues() {
+      return Promise.reject(new Error("unexpected listRepoIssues call"));
+    },
+    listRepoPullRequests() {
+      return Promise.reject(new Error("unexpected listRepoPullRequests call"));
+    },
+    listOrgProjects() {
+      return Promise.reject(new Error("unexpected listOrgProjects call"));
+    },
+    listRepoProjects() {
+      return Promise.reject(new Error("unexpected listRepoProjects call"));
+    },
+    listProjectItems() {
+      return Promise.reject(new Error("unexpected listProjectItems call"));
+    },
+    listIssueSubIssues() {
+      return Promise.reject(new Error("unexpected listIssueSubIssues call"));
+    },
+    listIssueBlockedBy() {
+      return Promise.resolve(page);
+    },
+    listIssueBlocking() {
+      return Promise.reject(new Error("unexpected listIssueBlocking call"));
+    },
+    getOrgProject() {
+      return Promise.reject(new Error("unexpected getOrgProject call"));
+    },
+    getUserProject() {
+      return Promise.reject(new Error("unexpected getUserProject call"));
+    },
+    getRepo() {
+      return Promise.reject(new Error("unexpected getRepo call"));
+    },
+    get lastRateLimit() {
+      return undefined;
+    },
+  };
+}
+
+/** A client whose listIssueBlocking returns a fixed canned page; every other
+ *  method throws so a test fails loudly on an unexpected call. */
+function clientWithBlocking(page: Page<IssueWithRepoFixture>): GitHubClient {
+  return {
+    viewer() {
+      return Promise.reject(new Error("unexpected viewer call"));
+    },
+    listViewerOrgs() {
+      return Promise.reject(new Error("unexpected listViewerOrgs call"));
+    },
+    listOrgRepos() {
+      return Promise.reject(new Error("unexpected listOrgRepos call"));
+    },
+    listRepoIssues() {
+      return Promise.reject(new Error("unexpected listRepoIssues call"));
+    },
+    listRepoPullRequests() {
+      return Promise.reject(new Error("unexpected listRepoPullRequests call"));
+    },
+    listOrgProjects() {
+      return Promise.reject(new Error("unexpected listOrgProjects call"));
+    },
+    listRepoProjects() {
+      return Promise.reject(new Error("unexpected listRepoProjects call"));
+    },
+    listProjectItems() {
+      return Promise.reject(new Error("unexpected listProjectItems call"));
+    },
+    listIssueSubIssues() {
+      return Promise.reject(new Error("unexpected listIssueSubIssues call"));
+    },
+    listIssueBlockedBy() {
+      return Promise.reject(new Error("unexpected listIssueBlockedBy call"));
+    },
+    listIssueBlocking() {
+      return Promise.resolve(page);
+    },
     getOrgProject() {
       return Promise.reject(new Error("unexpected getOrgProject call"));
     },
@@ -388,5 +522,106 @@ describe("expansionsForType - issue-sub-issues", () => {
     await expect(
       expansion.run(source, client, undefined, new AbortController().signal),
     ).rejects.toThrow("issue-sub-issues expansion requires an issue source node");
+  });
+});
+
+describe("expansionsForType - issue-blocked-by", () => {
+  it("builds issue nodes (each with its own repo) and blocks edges pointing at the source issue", async () => {
+    const source = issueSource();
+    const client = clientWithBlockedBy({
+      items: [
+        {
+          number: 3,
+          title: "Blocking issue",
+          state: "open",
+          url: "https://github.com/exadev/other-repo/issues/3",
+          repository: { name: "other-repo", owner: { login: "exadev" } },
+        },
+      ],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const expansion = expansionsForType("issue").find((e) => e.id === "issue-blocked-by");
+    if (expansion === undefined) throw new Error("issue-blocked-by expansion missing");
+
+    const { delta, hasNextPage } = await expansion.run(
+      source,
+      client,
+      undefined,
+      new AbortController().signal,
+    );
+
+    expect(hasNextPage).toBe(false);
+    expect(delta.nodes).toHaveLength(1);
+    expect(delta.nodes[0]?.data.repo).toBe("other-repo");
+    // Blocking is not ownership — no subgraph nesting.
+    expect(delta.nodes[0]?.parentId).toBeUndefined();
+    expect(delta.edges).toHaveLength(1);
+    // Edge points from the blocker to the source issue it blocks.
+    expect(delta.edges[0]?.source).toBe(delta.nodes[0]?.id);
+    expect(delta.edges[0]?.target).toBe(source.id);
+    expect(delta.edges[0]?.type).toBe("blocks");
+  });
+
+  it("throws when the source node is not an issue", async () => {
+    const source = orgSource();
+    const client = clientWithBlockedBy({ items: [], endCursor: undefined, hasNextPage: false });
+    const expansion = expansionsForType("issue").find((e) => e.id === "issue-blocked-by");
+    if (expansion === undefined) throw new Error("issue-blocked-by expansion missing");
+
+    await expect(
+      expansion.run(source, client, undefined, new AbortController().signal),
+    ).rejects.toThrow("issue-blocked-by expansion requires an issue source node");
+  });
+});
+
+describe("expansionsForType - issue-blocking", () => {
+  it("builds issue nodes (each with its own repo) and blocks edges pointing from the source issue", async () => {
+    const source = issueSource();
+    const client = clientWithBlocking({
+      items: [
+        {
+          number: 4,
+          title: "Blocked issue",
+          state: "closed",
+          url: "https://github.com/exadev/graphle/issues/4",
+          repository: { name: "graphle", owner: { login: "exadev" } },
+        },
+      ],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const expansion = expansionsForType("issue").find((e) => e.id === "issue-blocking");
+    if (expansion === undefined) throw new Error("issue-blocking expansion missing");
+
+    const { delta, hasNextPage } = await expansion.run(
+      source,
+      client,
+      undefined,
+      new AbortController().signal,
+    );
+
+    expect(hasNextPage).toBe(false);
+    expect(delta.nodes).toHaveLength(1);
+    // Blocking is not ownership — no subgraph nesting.
+    expect(delta.nodes[0]?.parentId).toBeUndefined();
+    expect(delta.edges).toHaveLength(1);
+    // Edge points from the source issue to the issue it blocks.
+    expect(delta.edges[0]?.source).toBe(source.id);
+    expect(delta.edges[0]?.target).toBe(delta.nodes[0]?.id);
+    expect(delta.edges[0]?.type).toBe("blocks");
+  });
+
+  it("throws when the source node is not an issue", async () => {
+    const source = orgSource();
+    const client = clientWithBlocking({ items: [], endCursor: undefined, hasNextPage: false });
+    const expansion = expansionsForType("issue").find((e) => e.id === "issue-blocking");
+    if (expansion === undefined) throw new Error("issue-blocking expansion missing");
+
+    await expect(
+      expansion.run(source, client, undefined, new AbortController().signal),
+    ).rejects.toThrow("issue-blocking expansion requires an issue source node");
   });
 });

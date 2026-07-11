@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BUILT_IN_EDGE_TYPES, BUILT_IN_EDGE_TYPES_BY_NAME } from "./built-in-edge-types";
 
-const EXPECTED_NAMES = ["owns", "contains", "tracks", "references", "custom"] as const;
+const EXPECTED_NAMES = ["owns", "contains", "tracks", "references", "custom", "blocks"] as const;
 
 /** Expected colour + strokeStyle pairing per built-in edge type, per the plan. */
 const EXPECTED_PRESENTATION: Record<
@@ -14,10 +14,11 @@ const EXPECTED_PRESENTATION: Record<
   tracks: { color: "orange", strokeStyle: "dashed" },
   references: { color: "gray", strokeStyle: "dotted" },
   custom: { color: "gray", strokeStyle: "solid" },
+  blocks: { color: "red", strokeStyle: "dashed" },
 };
 
 describe("BUILT_IN_EDGE_TYPES", () => {
-  it("registers exactly the five expected types in the original EdgeRelation enum order", () => {
+  it("registers the original five EdgeRelation types plus later additions, in registration order", () => {
     expect(BUILT_IN_EDGE_TYPES.map((t) => t.name)).toEqual([...EXPECTED_NAMES]);
   });
 

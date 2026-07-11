@@ -1,6 +1,7 @@
 import type { RepoIssuesFilters, RepoPullRequestsFilters } from "./filters";
 import type {
   GitHubIssue,
+  GitHubIssueWithRepo,
   GitHubOrg,
   GitHubProject,
   GitHubProjectItem,
@@ -81,6 +82,27 @@ export interface GitHubClient {
     cursor: string | undefined,
     signal: AbortSignal,
   ): Promise<Page<GitHubIssue>>;
+  /** List the issues blocking an issue (GitHub's `Issue.blockedBy` connection).
+   *  No filter arguments, same as `listIssueSubIssues`. Unlike sub-issues, a
+   *  blocking relationship can cross repositories, so each returned issue
+   *  carries its own owner/repo. Throws `GitHubError({type:"notFound"})` when
+   *  the owner/name/issueNumber doesn't resolve. */
+  listIssueBlockedBy(
+    owner: string,
+    name: string,
+    issueNumber: number,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubIssueWithRepo>>;
+  /** List the issues an issue is blocking (GitHub's `Issue.blocking`
+   *  connection). Mirrors {@link listIssueBlockedBy} in every other respect. */
+  listIssueBlocking(
+    owner: string,
+    name: string,
+    issueNumber: number,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubIssueWithRepo>>;
   /** Resolve an org-owned project by its number (as shown in its URL, e.g.
    *  `/orgs/{login}/projects/{number}`). Throws `GitHubError({type:"notFound"})`
    *  when the org or the project number doesn't exist or isn't visible. */

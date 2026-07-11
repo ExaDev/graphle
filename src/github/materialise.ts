@@ -5,6 +5,7 @@ import type {
 } from "../schema";
 import type {
   GitHubIssue,
+  GitHubIssueWithRepo,
   GitHubOrg,
   GitHubProject,
   GitHubProjectItem,
@@ -68,6 +69,32 @@ export function issueToNode(
     data: {
       owner: repoOwner,
       repo: repoName,
+      number: issue.number,
+      title: issue.title,
+      state: issue.state,
+      url: issue.url,
+    },
+  };
+}
+
+/**
+ * Materialises an issue reached via a blocking relationship, where owner/repo
+ * come from the issue's own `repository` rather than a caller-supplied pair —
+ * unlike {@link issueToNode}, a blocking relationship can cross repositories,
+ * so the source issue's owner/repo can't be assumed. Mirrors
+ * {@link projectIssueItemToNode}'s same reasoning for project items.
+ */
+export function issueWithRepoToNode(
+  issue: GitHubIssueWithRepo,
+  position: Position,
+): GraphNode {
+  return {
+    id: crypto.randomUUID(),
+    type: "issue",
+    position,
+    data: {
+      owner: issue.repository.owner.login,
+      repo: issue.repository.name,
       number: issue.number,
       title: issue.title,
       state: issue.state,
@@ -168,6 +195,21 @@ export function tracksEdge(projectId: string, issueId: string): GraphEdge {
     source: projectId,
     target: issueId,
     type: "tracks",
+    data: {},
+  };
+}
+
+/**
+ * `source` is always the blocking issue and `target` the blocked one, so the
+ * arrow reads "blocker -> blocked" regardless of whether it was discovered
+ * via the source issue's `blockedBy` or `blocking` connection.
+ */
+export function blocksEdge(blockingIssueId: string, blockedIssueId: string): GraphEdge {
+  return {
+    id: crypto.randomUUID(),
+    source: blockingIssueId,
+    target: blockedIssueId,
+    type: "blocks",
     data: {},
   };
 }

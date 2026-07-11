@@ -3,9 +3,11 @@ import type { GraphEdge, GraphNode, Position } from "../schema";
 import type { GitHubClient } from "./contract";
 import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
 import {
+  blocksEdge,
   buildDelta,
   containsEdge,
   issueToNode,
+  issueWithRepoToNode,
   ownsEdge,
   projectIssueItemToNode,
   projectToNode,
@@ -39,9 +41,11 @@ export type ExpansionResult = {
  * then hides them again on demand. New children are never collapsed on
  * arrival — the point of expanding is to see what was just fetched.
  *
- * The one exception is `projectItems`: a project *tracks* issues, it
- * doesn't own them (the same issue can be tracked by several projects), so
- * that expansion never sets `parentId` — see its own comment.
+ * The exceptions are `projectItems` (a project *tracks* issues, it doesn't
+ * own them — the same issue can be tracked by several projects) and
+ * `issueBlockedBy`/`issueBlocking` (blocking is a many-to-many dependency
+ * between issues, not ownership). None of these three set `parentId` — see
+ * each expansion's own comment.
  */
 export type Expansion = {
   id: string;
@@ -281,12 +285,63 @@ const issueSubIssues: Expansion = {
 };
 
 /**
+ * Blocking is a many-to-many dependency between issues, not ownership — an
+ * issue that blocks or is blocked by another isn't its "child". Neither of
+ * these two expansions sets `parentId`, unlike `issueSubIssues` above (see
+ * `Expansion`'s doc comment, and `projectItems`' matching reasoning).
+ */
+const issueBlockedBy: Expansion = {
+  id: "issue-blocked-by",
+  label: "Blocked by",
+  async run(source, client, cursor, signal) {
+    if (source.type !== "issue") {
+      throw new Error("issue-blocked-by expansion requires an issue source node");
+    }
+    const owner = requireString(source, "owner");
+    const repo = requireString(source, "repo");
+    const number = requireNumber(source, "number");
+    const page = await client.listIssueBlockedBy(owner, repo, number, cursor, signal);
+    const positions = placeAround(source.position, page.items.length);
+    const nodes = page.items.map((issue, i) => issueWithRepoToNode(issue, positionAt(positions, i)));
+    const edges = nodes.map((node) => blocksEdge(node.id, source.id));
+    return {
+      delta: buildDelta(nodes, edges),
+      endCursor: page.endCursor,
+      hasNextPage: page.hasNextPage,
+    };
+  },
+};
+
+const issueBlocking: Expansion = {
+  id: "issue-blocking",
+  label: "Blocking",
+  async run(source, client, cursor, signal) {
+    if (source.type !== "issue") {
+      throw new Error("issue-blocking expansion requires an issue source node");
+    }
+    const owner = requireString(source, "owner");
+    const repo = requireString(source, "repo");
+    const number = requireNumber(source, "number");
+    const page = await client.listIssueBlocking(owner, repo, number, cursor, signal);
+    const positions = placeAround(source.position, page.items.length);
+    const nodes = page.items.map((issue, i) => issueWithRepoToNode(issue, positionAt(positions, i)));
+    const edges = nodes.map((node) => blocksEdge(source.id, node.id));
+    return {
+      delta: buildDelta(nodes, edges),
+      endCursor: page.endCursor,
+      hasNextPage: page.hasNextPage,
+    };
+  },
+};
+
+/**
  * The expansions available for a node type. `org` nodes offer their owned
  * repos and projects; `repo` nodes offer their issues, pull requests, and
  * projects; `project` nodes offer their items; `issue` nodes offer their
- * sub-issues (GitHub's own "sub-issues" feature — `Issue.trackedIssues`);
- * every other type (including `pullRequest`, `freeform`, and any custom
- * type) has nothing to expand into, so an empty list is returned.
+ * sub-issues (GitHub's own "sub-issues" feature — `Issue.trackedIssues`) and
+ * their blocking relationships (`Issue.blockedBy`/`Issue.blocking`); every
+ * other type (including `pullRequest`, `freeform`, and any custom type) has
+ * nothing to expand into, so an empty list is returned.
  */
 export function expansionsForType(typeName: string): Expansion[] {
   switch (typeName) {
@@ -297,7 +352,7 @@ export function expansionsForType(typeName: string): Expansion[] {
     case "project":
       return [projectItems];
     case "issue":
-      return [issueSubIssues];
+      return [issueSubIssues, issueBlockedBy, issueBlocking];
     default:
       return [];
   }

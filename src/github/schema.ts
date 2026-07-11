@@ -70,6 +70,18 @@ export const GitHubIssue = z.object({
 });
 export type GitHubIssue = z.infer<typeof GitHubIssue>;
 
+/**
+ * A GitHub issue plus its own owning repository. Blocking relationships
+ * (`Issue.blockedBy`/`Issue.blocking`) are explicitly cross-repo capable,
+ * unlike sub-issues, so — like {@link GitHubProjectItem}'s nested Issue
+ * content — the fetched issue's repository can't be assumed to be the same
+ * as the source issue's and must be selected and used directly.
+ */
+export const GitHubIssueWithRepo = GitHubIssue.extend({
+  repository: z.object({ name: z.string(), owner: z.object({ login: z.string() }) }),
+});
+export type GitHubIssueWithRepo = z.infer<typeof GitHubIssueWithRepo>;
+
 /** A GitHub pull request. State adds "merged" alongside an issue's open/closed. */
 export const GitHubPullRequest = z.object({
   number: z.number().int(),
@@ -219,6 +231,35 @@ export const IssueSubIssuesResponse = z.object({
   }),
 });
 export type IssueSubIssuesResponse = z.infer<typeof IssueSubIssuesResponse>;
+
+/**
+ * `blockedBy`/`blocking` mirror {@link IssueSubIssuesResponse}'s two-level
+ * nullability exactly, but wrap {@link GitHubIssueWithRepo} rather than
+ * {@link GitHubIssue} since a blocking relationship can cross repositories.
+ */
+export const IssueBlockedByResponse = z.object({
+  data: z.object({
+    repository: z
+      .object({
+        issue: z.object({ blockedBy: connection(GitHubIssueWithRepo) }).nullable(),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type IssueBlockedByResponse = z.infer<typeof IssueBlockedByResponse>;
+
+export const IssueBlockingResponse = z.object({
+  data: z.object({
+    repository: z
+      .object({
+        issue: z.object({ blocking: connection(GitHubIssueWithRepo) }).nullable(),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type IssueBlockingResponse = z.infer<typeof IssueBlockingResponse>;
 
 /** `repository` is nullable: GitHub returns `null` for an unknown name. */
 export const RepoPullRequestsResponse = z.object({

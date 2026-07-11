@@ -634,6 +634,160 @@ describe("createGitHubClient - listIssueSubIssues", () => {
   });
 });
 
+describe("createGitHubClient - listIssueBlockedBy", () => {
+  it("fetches a page of blocking issues, each with its own repository", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueBlockedBy: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                issue: {
+                  blockedBy: {
+                    nodes: [
+                      {
+                        number: 3,
+                        title: "Blocking issue",
+                        state: "OPEN",
+                        url: "u3",
+                        repository: { name: "other-repo", owner: { login: "exadev" } },
+                      },
+                    ],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+
+    const blockedBy = await client.listIssueBlockedBy(
+      "exadev",
+      "graphle",
+      7,
+      undefined,
+      new AbortController().signal,
+    );
+    expect(blockedBy.items).toHaveLength(1);
+    expect(blockedBy.items[0]?.number).toBe(3);
+    expect(blockedBy.items[0]?.repository).toEqual({ name: "other-repo", owner: { login: "exadev" } });
+    expect(blockedBy.hasNextPage).toBe(false);
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("throws notFound when the repository doesn't resolve", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueBlockedBy: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listIssueBlockedBy("exadev", "no-such-repo", 7, undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("throws notFound when the issue number doesn't resolve in a known repository", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueBlockedBy: () =>
+          jsonResponse({
+            data: { repository: { issue: null }, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to an Issue" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listIssueBlockedBy("exadev", "graphle", 9999, undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+});
+
+describe("createGitHubClient - listIssueBlocking", () => {
+  it("fetches a page of blocked issues, each with its own repository", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueBlocking: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                issue: {
+                  blocking: {
+                    nodes: [
+                      {
+                        number: 4,
+                        title: "Blocked issue",
+                        state: "CLOSED",
+                        url: "u4",
+                        repository: { name: "graphle", owner: { login: "exadev" } },
+                      },
+                    ],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+
+    const blocking = await client.listIssueBlocking(
+      "exadev",
+      "graphle",
+      7,
+      undefined,
+      new AbortController().signal,
+    );
+    expect(blocking.items).toHaveLength(1);
+    expect(blocking.items[0]?.number).toBe(4);
+    expect(blocking.items[0]?.state).toBe("closed");
+    expect(blocking.hasNextPage).toBe(false);
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("throws notFound when the repository doesn't resolve", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueBlocking: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listIssueBlocking("exadev", "no-such-repo", 7, undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("throws notFound when the issue number doesn't resolve in a known repository", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueBlocking: () =>
+          jsonResponse({
+            data: { repository: { issue: null }, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to an Issue" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listIssueBlocking("exadev", "graphle", 9999, undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+});
+
 describe("createGitHubClient - errors", () => {
   it("classifies a 401 as unauthorised", async () => {
     const client = createGitHubClient({

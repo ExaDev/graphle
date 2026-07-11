@@ -64,9 +64,10 @@ describe("migrateV1Document", () => {
     }
   });
 
-  it("injects the five built-in edge type definitions", () => {
+  it("injects the built-in edge type definitions", () => {
     const edgeTypes = migrate().edgeTypes;
     expect(edgeTypes.map((t) => t.name).sort()).toEqual([
+      "blocks",
       "contains",
       "custom",
       "owns",
@@ -148,9 +149,10 @@ describe("migrateV2Document", () => {
     });
   });
 
-  it("injects the five built-in edge type definitions", () => {
+  it("injects the built-in edge type definitions", () => {
     const migrated = GraphDocumentSchema.parse(migrateV2Document(v2Document));
     expect(migrated.edgeTypes.map((t) => t.name).sort()).toEqual([
+      "blocks",
       "contains",
       "custom",
       "owns",

@@ -8,6 +8,8 @@ import type {
   SortDirection,
 } from "./filters";
 import {
+  IssueBlockedByResponse,
+  IssueBlockingResponse,
   IssueSubIssuesResponse,
   OrgProjectResponse,
   OrgProjectsResponse,
@@ -53,6 +55,10 @@ const REPO_PROJECTS_QUERY = `query RepoProjects($owner:String!,$name:String!,$fi
 // orderBy argument, unlike `issues`/`pullRequests` — confirmed against the
 // GraphQL schema reference, not assumed.
 const ISSUE_SUB_ISSUES_QUERY = `query IssueSubIssues($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issue(number:$number){ trackedIssues(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } } rateLimit{remaining resetAt} }`;
+
+const ISSUE_BLOCKED_BY_QUERY = `query IssueBlockedBy($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issue(number:$number){ blockedBy(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ number title state url repository{name owner{login}} } } } } rateLimit{remaining resetAt} }`;
+
+const ISSUE_BLOCKING_QUERY = `query IssueBlocking($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issue(number:$number){ blocking(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ number title state url repository{name owner{login}} } } } } rateLimit{remaining resetAt} }`;
 
 const PROJECT_ITEMS_QUERY = `query ProjectItems($projectId:ID!,$first:Int!,$after:String){ node(id:$projectId){ ...on ProjectV2 { items(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ content{ __typename ...on Issue{ number title state url repository{name owner{login}} } ...on DraftIssue{ title } } } } } } rateLimit{remaining resetAt} }`;
 
@@ -384,6 +390,46 @@ export function createGitHubClient(parameters: {
       }
       const trackedIssues = issue.trackedIssues;
       return { items: trackedIssues.nodes, ...toPage(trackedIssues.pageInfo) };
+    },
+
+    async listIssueBlockedBy(owner, name, issueNumber, cursor, signal) {
+      const result = await graphql(
+        ISSUE_BLOCKED_BY_QUERY,
+        { owner, name, number: issueNumber, first: PAGE_SIZE, after: cursor },
+        IssueBlockedByResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const repo = result.data.repository;
+      if (repo === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const issue = repo.issue;
+      if (issue === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const blockedBy = issue.blockedBy;
+      return { items: blockedBy.nodes, ...toPage(blockedBy.pageInfo) };
+    },
+
+    async listIssueBlocking(owner, name, issueNumber, cursor, signal) {
+      const result = await graphql(
+        ISSUE_BLOCKING_QUERY,
+        { owner, name, number: issueNumber, first: PAGE_SIZE, after: cursor },
+        IssueBlockingResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const repo = result.data.repository;
+      if (repo === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const issue = repo.issue;
+      if (issue === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const blocking = issue.blocking;
+      return { items: blocking.nodes, ...toPage(blocking.pageInfo) };
     },
 
     async getOrgProject(login, number, signal) {
