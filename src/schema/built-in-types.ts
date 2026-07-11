@@ -33,13 +33,23 @@ const repoDataSchema = z.object({
   archived: z.boolean().optional(),
 });
 
-/** GitHub issue or pull request. */
+/** GitHub issue. */
 const issueDataSchema = z.object({
   owner: z.string().min(1),
   repo: z.string().min(1),
   number: z.number().int(),
   title: z.string().min(1),
   state: z.enum(["open", "closed"]).optional(),
+  url: z.string().optional(),
+});
+
+/** GitHub pull request. State adds "merged" alongside an issue's open/closed. */
+const pullRequestDataSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  number: z.number().int(),
+  title: z.string().min(1),
+  state: z.enum(["open", "closed", "merged"]).optional(),
   url: z.string().optional(),
 });
 
@@ -103,9 +113,9 @@ const decisionDataSchema = z.object({
 });
 
 /**
- * Every built-in node type, in a stable order. The five original GitHub
- * flavours come first (matching the pre-dynamic `NodeKind` order) followed by
- * the seven generic types.
+ * Every built-in node type, in a stable order. The six GitHub-flavoured types
+ * come first (the five original ones, matching the pre-dynamic `NodeKind`
+ * order, plus `pullRequest`) followed by the seven generic types.
  */
 export const BUILT_IN_TYPES: RuntimeNodeType[] = [
   defineBuiltInType({
@@ -143,6 +153,15 @@ export const BUILT_IN_TYPES: RuntimeNodeType[] = [
     labelField: "title",
     identityFields: ["owner", "repo", "number"],
     schema: issueDataSchema,
+  }),
+  defineBuiltInType({
+    name: "pullRequest",
+    label: "Pull request",
+    color: "green",
+    icon: "IconGitPullRequest",
+    labelField: "title",
+    identityFields: ["owner", "repo", "number"],
+    schema: pullRequestDataSchema,
   }),
   defineBuiltInType({
     name: "project",
