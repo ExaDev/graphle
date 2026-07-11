@@ -1,3 +1,13 @@
+# [1.14.0](https://github.com/ExaDev/graphle/compare/v1.13.0...v1.14.0) (2026-07-11)
+
+
+### Features
+
+* **domain:** add hierarchy traversal and subgraph operations ([e8e7564](https://github.com/ExaDev/graphle/commit/e8e75640400dad4c6e3d333dab89fc5eb53a1b2d))
+* **github:** fetch sub-issues and auto-nest every expansion's results ([8e2454b](https://github.com/ExaDev/graphle/commit/8e2454bc8df839e2b0323325025788cbbb85d333))
+* **schema:** add subgraph fields and group built-in node type ([a081b53](https://github.com/ExaDev/graphle/commit/a081b53cc90871d1c0dda791c7178e5ef31694a9))
+* **ui:** render collapsed subgraphs with group/collapse/ungroup actions ([195e069](https://github.com/ExaDev/graphle/commit/195e069a6b3c8636c4e1de9517ad57acae2431dd))
+
 # [1.13.0](https://github.com/ExaDev/graphle/compare/v1.12.1...v1.13.0) (2026-07-11)
 
 
