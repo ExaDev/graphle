@@ -80,13 +80,19 @@ jobs:
     # suite. Still runs and reports on every push, just doesn't block release.
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Both secrets are optional and independent — the tests run once per
-    # secret that's actually configured, and skip cleanly for the other.
+    # All four secrets are optional and independent — the tests run once per
+    # secret that's actually configured, and skip cleanly for the others.
     # Named GH_ rather than GITHUB_: Actions rejects any secret name starting
-    # with GITHUB_ (reserved for its own built-ins).
+    # with GITHUB_ (reserved for its own built-ins). The _PRIVATE pair are
+    # separate, more-privileged tokens dedicated to reading two otherwise-
+    # unused fixture repos (Mearman/graphle-test-private,
+    # ExaDev/graphle-test-private) — kept apart from the public-only pair so
+    # those stay minimally scoped.
     env:
       GH_TEST_PAT_CLASSIC: ${{ secrets.GH_TEST_PAT_CLASSIC }}
       GH_TEST_PAT_FINE_GRAINED: ${{ secrets.GH_TEST_PAT_FINE_GRAINED }}
+      GH_TEST_PAT_CLASSIC_PRIVATE: ${{ secrets.GH_TEST_PAT_CLASSIC_PRIVATE }}
+      GH_TEST_PAT_FINE_GRAINED_PRIVATE: ${{ secrets.GH_TEST_PAT_FINE_GRAINED_PRIVATE }}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-and-run

@@ -50,3 +50,48 @@ describe.skipIf(TOKEN_TYPES.length === 0)("GitHub API integration", () => {
     });
   });
 });
+
+/**
+ * Private-repo access, using SEPARATE tokens from `TOKEN_TYPES` above
+ * (`GH_TEST_PAT_CLASSIC_PRIVATE`/`GH_TEST_PAT_FINE_GRAINED_PRIVATE`) rather
+ * than widening those — the public-access tokens stay minimally scoped, and
+ * these more-privileged ones are dedicated to reading two otherwise-unused
+ * fixture repos created solely for this purpose
+ * (`Mearman/graphle-test-private`, `ExaDev/graphle-test-private`).
+ *
+ * Coverage is asymmetric by design, not oversight: a fine-grained token can
+ * only target one resource owner, so `GH_TEST_PAT_FINE_GRAINED_PRIVATE` is
+ * scoped to the ExaDev org only (the more product-relevant case — see
+ * `GitHubPanel.tsx`'s note that fine-grained tokens can't read a personal
+ * account's own Projects boards). `GH_TEST_PAT_CLASSIC_PRIVATE`'s `repo`
+ * scope isn't owner-restricted, so it covers both fixture repos.
+ */
+const PRIVATE_TOKEN_TYPES = [
+  {
+    label: "classic",
+    token: process.env.GH_TEST_PAT_CLASSIC_PRIVATE,
+    repos: [
+      { owner: "Mearman", name: "graphle-test-private" },
+      { owner: "ExaDev", name: "graphle-test-private" },
+    ],
+  },
+  {
+    label: "fine-grained",
+    token: process.env.GH_TEST_PAT_FINE_GRAINED_PRIVATE,
+    repos: [{ owner: "ExaDev", name: "graphle-test-private" }],
+  },
+].filter(
+  (entry): entry is { label: string; token: string; repos: { owner: string; name: string }[] } =>
+    entry.token !== undefined && entry.token !== "",
+);
+
+describe.skipIf(PRIVATE_TOKEN_TYPES.length === 0)("GitHub API integration - private access", () => {
+  describe.each(PRIVATE_TOKEN_TYPES)("with a $label token", ({ token, repos }) => {
+    it.each(repos)("resolves the private repository $owner/$name", async ({ owner, name }) => {
+      const client = createGitHubClient({ token });
+      const repo = await client.getRepo(owner, name, new AbortController().signal);
+      expect(repo.name).toBe(name);
+      expect(repo.owner.login).toBe(owner);
+    });
+  });
+});
