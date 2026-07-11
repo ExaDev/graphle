@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/ExaDev/graphle/compare/v1.17.1...v1.17.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* **github:** query subIssues, not trackedIssues, for sub-issues ([72188e7](https://github.com/ExaDev/graphle/commit/72188e72fee5b9cb1ff0eebcc3d8d99dd7fbcca3))
+
 ## [1.17.1](https://github.com/ExaDev/graphle/compare/v1.17.0...v1.17.1) (2026-07-11)
 
 
