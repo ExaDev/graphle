@@ -8,6 +8,7 @@ import type {
   SortDirection,
 } from "./filters";
 import {
+  IssueSubIssuesResponse,
   OrgProjectResponse,
   OrgProjectsResponse,
   OrgReposResponse,
@@ -47,6 +48,11 @@ const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:St
 const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:String){ organization(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
 const REPO_PROJECTS_QUERY = `query RepoProjects($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
+
+// GitHub's `trackedIssues` connection (sub-issues) has no states/labels/
+// orderBy argument, unlike `issues`/`pullRequests` — confirmed against the
+// GraphQL schema reference, not assumed.
+const ISSUE_SUB_ISSUES_QUERY = `query IssueSubIssues($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issue(number:$number){ trackedIssues(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } } rateLimit{remaining resetAt} }`;
 
 const PROJECT_ITEMS_QUERY = `query ProjectItems($projectId:ID!,$first:Int!,$after:String){ node(id:$projectId){ ...on ProjectV2 { items(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ content{ __typename ...on Issue{ number title state url repository{name owner{login}} } ...on DraftIssue{ title } } } } } } rateLimit{remaining resetAt} }`;
 
@@ -358,6 +364,26 @@ export function createGitHubClient(parameters: {
             content.__typename === "Issue" || content.__typename === "DraftIssue",
         );
       return { items, ...toPage(rawItems.pageInfo) };
+    },
+
+    async listIssueSubIssues(owner, name, issueNumber, cursor, signal) {
+      const result = await graphql(
+        ISSUE_SUB_ISSUES_QUERY,
+        { owner, name, number: issueNumber, first: PAGE_SIZE, after: cursor },
+        IssueSubIssuesResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const repo = result.data.repository;
+      if (repo === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const issue = repo.issue;
+      if (issue === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const trackedIssues = issue.trackedIssues;
+      return { items: trackedIssues.nodes, ...toPage(trackedIssues.pageInfo) };
     },
 
     async getOrgProject(login, number, signal) {

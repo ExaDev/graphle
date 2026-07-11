@@ -68,6 +68,19 @@ export interface GitHubClient {
     cursor: string | undefined,
     signal: AbortSignal,
   ): Promise<Page<GitHubProjectItem>>;
+  /** List an issue's sub-issues (GitHub's `Issue.trackedIssues` connection).
+   *  Unlike `listRepoIssues`, this connection has no `states`/`labels`/
+   *  `orderBy` arguments in GitHub's schema — every sub-issue is returned,
+   *  unfiltered and in GitHub's own order. Throws
+   *  `GitHubError({type:"notFound"})` when the owner/name/issueNumber
+   *  doesn't resolve. */
+  listIssueSubIssues(
+    owner: string,
+    name: string,
+    issueNumber: number,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubIssue>>;
   /** Resolve an org-owned project by its number (as shown in its URL, e.g.
    *  `/orgs/{login}/projects/{number}`). Throws `GitHubError({type:"notFound"})`
    *  when the org or the project number doesn't exist or isn't visible. */

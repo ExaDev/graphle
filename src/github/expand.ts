@@ -29,6 +29,15 @@ export type ExpansionResult = {
  * materialises them into a graph delta. `id`/`label` drive the UI affordance
  * (e.g. a "Repositories" button on an org node); `run` does the work and is
  * given the cursor so the same expansion can be re-invoked for the next page.
+ *
+ * Every expansion also stamps `parentId: source.id` onto each node it
+ * materialises — this is the org→repo→issue→sub-issue subgraph nesting
+ * (`GraphNode.parentId`/`collapsed`, `src/schema/node.ts`) the source node
+ * expanded into is a natural parent of its own fetched children, no
+ * synthetic `"group"` wrapper needed; the expanded node's collapse toggle
+ * (see `GenericNode`) then hides them again on demand. New children are
+ * never collapsed on arrival — the point of expanding is to see what was
+ * just fetched.
  */
 export type Expansion = {
   id: string;
@@ -72,6 +81,17 @@ function requireString(node: GraphNode, field: string): string {
   return value;
 }
 
+/** Mirrors {@link requireString} for a required numeric field. */
+function requireNumber(node: GraphNode, field: string): number {
+  const value = node.data[field];
+  if (typeof value !== "number") {
+    throw new Error(
+      `expected number field "${field}" on "${node.type}" node ${node.id}`,
+    );
+  }
+  return value;
+}
+
 const orgRepos: Expansion = {
   id: "org-repos",
   label: "Repositories",
@@ -82,9 +102,10 @@ const orgRepos: Expansion = {
     const login = requireString(source, "login");
     const page = await client.listOrgRepos(login, cursor, signal);
     const positions = placeAround(source.position, page.items.length);
-    const nodes = page.items.map((repo, i) =>
-      repoToNode(repo, positionAt(positions, i)),
-    );
+    const nodes = page.items.map((repo, i) => ({
+      ...repoToNode(repo, positionAt(positions, i)),
+      parentId: source.id,
+    }));
     const edges = nodes.map((node) => ownsEdge(source.id, node.id));
     return {
       delta: buildDelta(nodes, edges),
@@ -104,9 +125,10 @@ const orgProjects: Expansion = {
     const login = requireString(source, "login");
     const page = await client.listOrgProjects(login, cursor, signal);
     const positions = placeAround(source.position, page.items.length);
-    const nodes = page.items.map((project, i) =>
-      projectToNode(login, project, positionAt(positions, i)),
-    );
+    const nodes = page.items.map((project, i) => ({
+      ...projectToNode(login, project, positionAt(positions, i)),
+      parentId: source.id,
+    }));
     const edges = nodes.map((node) => ownsEdge(source.id, node.id));
     return {
       delta: buildDelta(nodes, edges),
@@ -127,9 +149,10 @@ const repoIssues: Expansion = {
     const name = requireString(source, "name");
     const page = await client.listRepoIssues(owner, name, cursor, DEFAULT_REPO_ISSUES_FILTERS, signal);
     const positions = placeAround(source.position, page.items.length);
-    const nodes = page.items.map((issue, i) =>
-      issueToNode(owner, name, issue, positionAt(positions, i)),
-    );
+    const nodes = page.items.map((issue, i) => ({
+      ...issueToNode(owner, name, issue, positionAt(positions, i)),
+      parentId: source.id,
+    }));
     const edges = nodes.map((node) => containsEdge(source.id, node.id));
     return {
       delta: buildDelta(nodes, edges),
@@ -156,9 +179,10 @@ const repoPullRequests: Expansion = {
       signal,
     );
     const positions = placeAround(source.position, page.items.length);
-    const nodes = page.items.map((pullRequest, i) =>
-      pullRequestToNode(owner, name, pullRequest, positionAt(positions, i)),
-    );
+    const nodes = page.items.map((pullRequest, i) => ({
+      ...pullRequestToNode(owner, name, pullRequest, positionAt(positions, i)),
+      parentId: source.id,
+    }));
     const edges = nodes.map((node) => containsEdge(source.id, node.id));
     return {
       delta: buildDelta(nodes, edges),
@@ -179,9 +203,10 @@ const repoProjects: Expansion = {
     const name = requireString(source, "name");
     const page = await client.listRepoProjects(owner, name, cursor, signal);
     const positions = placeAround(source.position, page.items.length);
-    const nodes = page.items.map((project, i) =>
-      projectToNode(owner, project, positionAt(positions, i)),
-    );
+    const nodes = page.items.map((project, i) => ({
+      ...projectToNode(owner, project, positionAt(positions, i)),
+      parentId: source.id,
+    }));
     const edges = nodes.map((node) => ownsEdge(source.id, node.id));
     return {
       delta: buildDelta(nodes, edges),
@@ -210,7 +235,7 @@ const projectItems: Expansion = {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
     issues.forEach((item, i) => {
-      const node = projectIssueItemToNode(item, positionAt(positions, i));
+      const node = { ...projectIssueItemToNode(item, positionAt(positions, i)), parentId: source.id };
       nodes.push(node);
       edges.push(tracksEdge(source.id, node.id));
     });
@@ -222,12 +247,38 @@ const projectItems: Expansion = {
   },
 };
 
+const issueSubIssues: Expansion = {
+  id: "issue-sub-issues",
+  label: "Sub-issues",
+  async run(source, client, cursor, signal) {
+    if (source.type !== "issue") {
+      throw new Error("issue-sub-issues expansion requires an issue source node");
+    }
+    const owner = requireString(source, "owner");
+    const repo = requireString(source, "repo");
+    const number = requireNumber(source, "number");
+    const page = await client.listIssueSubIssues(owner, repo, number, cursor, signal);
+    const positions = placeAround(source.position, page.items.length);
+    const nodes = page.items.map((issue, i) => ({
+      ...issueToNode(owner, repo, issue, positionAt(positions, i)),
+      parentId: source.id,
+    }));
+    const edges = nodes.map((node) => containsEdge(source.id, node.id));
+    return {
+      delta: buildDelta(nodes, edges),
+      endCursor: page.endCursor,
+      hasNextPage: page.hasNextPage,
+    };
+  },
+};
+
 /**
  * The expansions available for a node type. `org` nodes offer their owned
  * repos and projects; `repo` nodes offer their issues, pull requests, and
- * projects; `project` nodes offer their items; every other type (including
- * `issue`, `pullRequest`, `freeform`, and any custom type) has nothing to
- * expand into, so an empty list is returned.
+ * projects; `project` nodes offer their items; `issue` nodes offer their
+ * sub-issues (GitHub's own "sub-issues" feature — `Issue.trackedIssues`);
+ * every other type (including `pullRequest`, `freeform`, and any custom
+ * type) has nothing to expand into, so an empty list is returned.
  */
 export function expansionsForType(typeName: string): Expansion[] {
   switch (typeName) {
@@ -237,6 +288,8 @@ export function expansionsForType(typeName: string): Expansion[] {
       return [repoIssues, repoPullRequests, repoProjects];
     case "project":
       return [projectItems];
+    case "issue":
+      return [issueSubIssues];
     default:
       return [];
   }

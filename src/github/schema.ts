@@ -201,6 +201,25 @@ export const RepoIssuesResponse = z.object({
 });
 export type RepoIssuesResponse = z.infer<typeof RepoIssuesResponse>;
 
+/**
+ * `repository` is nullable (unknown owner/name); its nested `issue` is
+ * independently nullable (unknown issue number in a known repo) — mirrors
+ * {@link OrgProjectResponse}'s two-level nullability for the same reason.
+ * `trackedIssues` (GitHub's "sub-issues") is structurally `Issue`, so no new
+ * entity schema is needed beyond this envelope.
+ */
+export const IssueSubIssuesResponse = z.object({
+  data: z.object({
+    repository: z
+      .object({
+        issue: z.object({ trackedIssues: connection(GitHubIssue) }).nullable(),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type IssueSubIssuesResponse = z.infer<typeof IssueSubIssuesResponse>;
+
 /** `repository` is nullable: GitHub returns `null` for an unknown name. */
 export const RepoPullRequestsResponse = z.object({
   data: z.object({

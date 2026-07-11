@@ -565,6 +565,75 @@ describe("createGitHubClient - getRepo", () => {
   });
 });
 
+describe("createGitHubClient - listIssueSubIssues", () => {
+  it("fetches a page of sub-issues", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueSubIssues: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                issue: {
+                  trackedIssues: {
+                    nodes: [{ number: 8, title: "Sub-issue", state: "OPEN", url: "u8" }],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+
+    const subIssues = await client.listIssueSubIssues(
+      "exadev",
+      "graphle",
+      7,
+      undefined,
+      new AbortController().signal,
+    );
+    expect(subIssues.items).toHaveLength(1);
+    expect(subIssues.items[0]?.number).toBe(8);
+    expect(subIssues.items[0]?.state).toBe("open");
+    expect(subIssues.hasNextPage).toBe(false);
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("throws notFound when the repository doesn't resolve", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueSubIssues: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listIssueSubIssues("exadev", "no-such-repo", 7, undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("throws notFound when the issue number doesn't resolve in a known repository", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        IssueSubIssues: () =>
+          jsonResponse({
+            data: { repository: { issue: null }, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to an Issue" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listIssueSubIssues("exadev", "graphle", 9999, undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+});
+
 describe("createGitHubClient - errors", () => {
   it("classifies a 401 as unauthorised", async () => {
     const client = createGitHubClient({

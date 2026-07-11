@@ -35,6 +35,7 @@ function unreachableClient(): GitHubClient {
     listOrgProjects: unexpected("listOrgProjects"),
     listRepoProjects: unexpected("listRepoProjects"),
     listProjectItems: unexpected("listProjectItems"),
+    listIssueSubIssues: unexpected("listIssueSubIssues"),
     getOrgProject: unexpected("getOrgProject"),
     getUserProject: unexpected("getUserProject"),
     getRepo: unexpected("getRepo"),
