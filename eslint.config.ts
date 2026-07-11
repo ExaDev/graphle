@@ -65,7 +65,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ["vite.config.ts", "eslint.config.ts"],
+    files: [
+      "vite.config.ts",
+      "eslint.config.ts",
+      "playwright.config.ts",
+      "e2e/**/*.ts",
+      "src/test/load-env.ts",
+    ],
     languageOptions: {
       globals: { ...globals.node },
     },

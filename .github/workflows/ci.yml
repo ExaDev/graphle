@@ -70,6 +70,28 @@ jobs:
           name: coverage-report
           path: coverage/
 
+  integration-e2e:
+    name: Integration & E2E
+    # Independent of lint/typecheck/test and NOT in release/build-and-deploy's
+    # needs: below — real-network, third-party-API-dependent tests are more
+    # flake-prone than the mocked unit suite, and gating deploys on a
+    # transient GitHub API hiccup would trade deploy reliability for coverage
+    # already exercised, deterministically, by the mocked *.unit.test.ts
+    # suite. Still runs and reports on every push, just doesn't block release.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GITHUB_TEST_PAT: ${{ secrets.GITHUB_TEST_PAT }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-and-run
+        with:
+          task: integration-e2e
+          command: >-
+            pnpm test:integration &&
+            pnpm exec playwright install --with-deps chromium &&
+            pnpm test:e2e
+
   release:
     name: Release
     needs: [lint, typecheck, test]

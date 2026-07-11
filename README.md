@@ -37,17 +37,25 @@ missing SSO authorisation both surface identically as "not found."
 ## Build, test, and lint
 
 ```sh
-pnpm build         # tsc --noEmit && vite build (the CI gate)
-pnpm typecheck     # tsc --noEmit
-pnpm lint          # eslint . --max-warnings 0
-pnpm test          # vitest run (full suite)
+pnpm build            # tsc --noEmit && vite build (the CI gate)
+pnpm typecheck        # tsc --noEmit
+pnpm lint             # eslint . --max-warnings 0
+pnpm test             # vitest run (full suite)
 pnpm test:watch
+pnpm test:integration # *.integration.test.ts against the real GitHub API
+pnpm test:e2e         # Playwright, drives the real UI in a browser
 ```
 
 - **Single test:** `pnpm exec vitest run <path>` (e.g. `src/domain`) or by name
   `pnpm exec vitest run -t "merge"`. Vitest runs two projects — a `node` project
   for pure logic and a `jsdom` project for `src/ui` and `*.smoke.test.ts`; both
   are picked up automatically by path.
+- **Integration/e2e tests** need a real GitHub token: copy `.env.example` to
+  `.env` and fill in `GITHUB_TEST_PAT` (a minimally-scoped, read-only,
+  public-repo token is enough — see `.env.example`). Both skip cleanly, not
+  fail, when `.env` is absent, so `pnpm test`/CI's main `test` job are
+  unaffected either way. `pnpm test:e2e` needs Playwright's browser installed
+  once: `pnpm exec playwright install chromium`.
 - **Format:** no Prettier/Biome. `eslint --fix` is the formatter and runs on
   staged `*.{ts,tsx}` via lint-staged at commit time.
 - **Husky hooks:** pre-commit → lint-staged; commit-msg → commitlint

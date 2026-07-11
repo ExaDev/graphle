@@ -12,3 +12,5 @@ coverage
 .cache
 .eslintcache
 .playwright-mcp
+playwright-report
+test-results

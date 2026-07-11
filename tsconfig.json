@@ -27,10 +27,12 @@
   },
   "include": [
     "src",
+    "e2e",
     "vite.config.ts",
     "eslint.config.ts",
     "commitlint.config.ts",
     "release.config.ts",
-    "lint-staged.config.ts"
+    "lint-staged.config.ts",
+    "playwright.config.ts"
   ]
 }
