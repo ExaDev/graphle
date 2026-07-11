@@ -19,8 +19,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMantineColorScheme } from "@mantine/core";
+import { IconArrowAutofitDown, IconArrowAutofitRight } from "@tabler/icons-react";
 import {
   Background,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
@@ -36,9 +38,17 @@ import {
 import { descendantIds } from "@/domain";
 import { useGraphStore } from "@/ui/store/graph-store";
 
+import { computeAutoLayout, type NodeSize } from "./auto-layout";
 import { type ContextMenuState } from "./ContextMenu";
 import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
 import { nodeTypes } from "./type-presentation";
+
+// Fallback footprint for a node React Flow hasn't measured yet (the brief
+// window right after it's added, before first paint) — layout still needs
+// some size to rank and space it, and this is close to GenericNode's typical
+// rendered size.
+const DEFAULT_NODE_WIDTH = 220;
+const DEFAULT_NODE_HEIGHT = 80;
 
 export interface GraphCanvasProps {
   /**
@@ -217,6 +227,50 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
     [apply, graphDocument],
   );
 
+  // Runs dagre's deterministic layout over the currently VISIBLE nodes/edges
+  // (`nodes`/`edges` are already `documentToFlow`'s hidden-filtered,
+  // boundary-rerouted projection), then folds the result into one
+  // `moveNodes` call — a single undo step. A collapsed node's hidden
+  // descendants aren't in `nodes` (dagre never sees or sizes them), so they
+  // are translated by the same delta as their visible parent, exactly
+  // mirroring `handleNodeDragStop`'s treatment of a dragged collapsed node,
+  // so they aren't left stale relative to it.
+  const handleAutoLayout = useCallback(
+    (direction: "TB" | "LR") => {
+      const sizes = new Map<string, NodeSize>(
+        nodes.map((node) => [
+          node.id,
+          {
+            width: node.measured?.width ?? DEFAULT_NODE_WIDTH,
+            height: node.measured?.height ?? DEFAULT_NODE_HEIGHT,
+          },
+        ]),
+      );
+      const layout = computeAutoLayout(nodes, edges, sizes, direction);
+
+      const moves: Array<{ id: string; position: { x: number; y: number } }> = [];
+      for (const node of nodes) {
+        const position = layout.get(node.id);
+        if (position === undefined) continue;
+        moves.push({ id: node.id, position });
+
+        const original = graphDocument.nodes.find((docNode) => docNode.id === node.id);
+        if (original === undefined || original.collapsed !== true) continue;
+        const delta = { x: position.x - original.position.x, y: position.y - original.position.y };
+        for (const descendantId of descendantIds(node.id, graphDocument.nodes)) {
+          const descendant = graphDocument.nodes.find((docNode) => docNode.id === descendantId);
+          if (descendant === undefined) continue;
+          moves.push({
+            id: descendantId,
+            position: { x: descendant.position.x + delta.x, y: descendant.position.y + delta.y },
+          });
+        }
+      }
+      apply({ type: "moveNodes", moves });
+    },
+    [apply, graphDocument, nodes, edges],
+  );
+
   // Mirror React Flow's selection into the store's EPHEMERAL selection. Never
   // written into the document. `selectedNodeIds` carries the full multi
   // -select list (for bulk actions like "Group"); `selection` stays
@@ -283,7 +337,14 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
         fitView
       >
         <Background />
-        <Controls />
+        <Controls>
+          <ControlButton title="Layout top-to-bottom" onClick={() => handleAutoLayout("TB")}>
+            <IconArrowAutofitDown />
+          </ControlButton>
+          <ControlButton title="Layout left-to-right" onClick={() => handleAutoLayout("LR")}>
+            <IconArrowAutofitRight />
+          </ControlButton>
+        </Controls>
         <MiniMap />
       </ReactFlow>
     </div>

@@ -171,7 +171,7 @@ export default defineConfig({
           ) {
             return "vendor-data";
           }
-          if (id.includes("@xyflow")) return "vendor-flow";
+          if (id.includes("@xyflow") || id.includes("@dagrejs")) return "vendor-flow";
           return undefined;
         },
       },
