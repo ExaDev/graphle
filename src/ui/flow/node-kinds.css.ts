@@ -37,3 +37,18 @@ export const nodeLabel = style({
   overflow: "hidden",
   textOverflow: "ellipsis",
 });
+
+/** Collapse/expand toggle, shown only on a node with at least one child
+ *  (`data.childCount > 0` — see `to-flow.ts`). */
+export const collapseToggle = style({
+  display: "flex",
+  alignItems: "center",
+  gap: vars.spacing.xs,
+  alignSelf: "flex-start",
+  cursor: "pointer",
+  border: "none",
+  background: "none",
+  padding: 0,
+  color: "var(--mantine-color-dimmed)",
+  fontSize: vars.fontSizes.xs,
+});

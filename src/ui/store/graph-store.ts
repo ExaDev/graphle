@@ -87,6 +87,17 @@ interface GraphState {
   /** Ephemeral canvas selection — never persisted. */
   selection: GraphSelection;
   /**
+   * Every currently multi-selected node id (React Flow's own marquee/shift
+   * -click selection, which already worked before this field existed —
+   * `GraphCanvas`'s `onSelectionChange` previously read only the first
+   * selected node into `selection.nodeId` and discarded the rest). Distinct
+   * from `selection`, which the inspector uses for single-item editing:
+   * `selectedNodeIds` exists for bulk actions (`ContextMenu`'s "Group N
+   * nodes"), and can hold 0, 1, or many ids independently of `selection`.
+   * Ephemeral — never persisted.
+   */
+  selectedNodeIds: string[];
+  /**
    * Undo history: document snapshots taken immediately before each
    * document-mutating action, oldest first, capped by `pushHistory` (see
    * `MAX_UNDO_DEPTH` in `@/domain`). Session-only — never persisted to
@@ -172,6 +183,8 @@ interface GraphState {
   ) => void;
   /** Update the ephemeral canvas selection. */
   setSelection: (selection: GraphSelection) => void;
+  /** Replace the full multi-selected node id list — see {@link selectedNodeIds}. */
+  setSelectedNodeIds: (ids: string[]) => void;
   /** Set the storage id backing the current document. */
   setGraphId: (id: string | undefined) => void;
   /**
@@ -262,6 +275,7 @@ export const useGraphStore = create<GraphState>()(
       graphId: undefined,
       dirty: false,
       selection: { nodeId: undefined, edgeId: undefined },
+      selectedNodeIds: [],
       undoStack: [],
       redoStack: [],
       savedDocument: undefined,
@@ -345,6 +359,7 @@ export const useGraphStore = create<GraphState>()(
         );
       },
       setSelection: (selection) => set({ selection }),
+      setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
       setGraphId: (graphId) => set({ graphId }),
       markSaved: () =>
         set((state) => ({ dirty: false, savedDocument: state.document })),

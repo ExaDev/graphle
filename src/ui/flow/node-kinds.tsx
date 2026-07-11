@@ -6,16 +6,22 @@
  * from the live document's `types` (falling back to the built-in registry), so
  * user-defined and built-in types render identically.
  *
+ * A node with children (`data.childCount > 0`, precomputed by
+ * `to-flow.ts#documentToFlow`) also shows a collapse/expand toggle, dispatching
+ * `setCollapsed` — see `GraphNode.parentId`/`collapsed`'s doc comment in
+ * `src/schema/node.ts` for the subgraph model this is part of.
+ *
  * This file exports ONLY the component, so react-refresh fast refresh stays
  * happy; the `nodeTypes` wiring lives in {@link ./type-presentation.ts}.
  */
 import { Badge } from "@mantine/core";
+import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
 import { resolveType, type GraphNode, type NodeTypeDefinition } from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
 
-import { nodeCard, nodeHeader, nodeLabel } from "./node-kinds.css";
+import { collapseToggle, nodeCard, nodeHeader, nodeLabel } from "./node-kinds.css";
 import {
   DEFAULT_TYPE_PRESENTATION,
   getTypePresentation,
@@ -46,11 +52,13 @@ function extractLabel(
  */
 export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
   const types = useGraphStore((state) => state.document.types);
+  const apply = useGraphStore((state) => state.apply);
   const typeDef = resolveType(types, data.type);
   const presentation =
     typeDef !== undefined ? getTypePresentation(typeDef) : DEFAULT_TYPE_PRESENTATION;
   const Icon = presentation.Icon;
   const label = typeDef !== undefined ? extractLabel(data, typeDef, presentation) : data.type;
+  const collapsed = data.collapsed === true;
 
   return (
     <div className={nodeCard} style={{ borderColor: presentation.colorVar }}>
@@ -66,6 +74,19 @@ export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
       >
         {presentation.label}
       </Badge>
+      {data.childCount > 0 && (
+        <button
+          type="button"
+          className={collapseToggle}
+          onClick={(event) => {
+            event.stopPropagation();
+            apply({ type: "setCollapsed", id: data.id, collapsed: !collapsed });
+          }}
+        >
+          {collapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
+          {collapsed ? `${String(data.childCount)} hidden` : `${String(data.childCount)} children`}
+        </button>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );

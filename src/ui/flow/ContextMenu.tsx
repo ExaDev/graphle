@@ -1,7 +1,12 @@
 /**
  * Right-click context menu for the React Flow canvas, offering per-target
  * actions (duplicate/select/delete for nodes, select/delete for edges, and
- * "Add node here" for the pane).
+ * "Add node here" for the pane) — plus subgraph actions: right-clicking a
+ * node that's part of a 2+ multi-selection (`selectedNodeIds`) shows "Group
+ * N nodes" instead of the normal single-node menu; a node with children
+ * (`state.nodeChildCount > 0` — see `GraphNode.parentId`/`collapsed` in
+ * `src/schema/node.ts`) gets a Collapse/Expand entry; a `"group"`-typed node
+ * additionally gets "Ungroup".
  *
  * The menu is CONTROLLED: {@link AppShell} owns the {@link ContextMenuState}
  * and renders this component with `state` set when a context-menu event fires.
@@ -17,9 +22,13 @@
  */
 import { Divider, Menu } from "@mantine/core";
 import {
+  IconChevronDown,
+  IconChevronRight,
   IconCopy,
+  IconFolderOpen,
   IconPencil,
   IconPlus,
+  IconStack2,
   IconTrash,
 } from "@tabler/icons-react";
 import type { CSSProperties } from "react";
@@ -54,6 +63,15 @@ export interface ContextMenuState {
   edgeId?: string;
   /** Present only when `kind === "pane"`; the flow-space click position. */
   flowPosition?: Position;
+  /** Present only when `kind === "node"`: how many children it has (0 for
+   *  none) — see `GraphFlowNode.data.childCount` in `to-flow.ts`. */
+  nodeChildCount?: number;
+  /** Present only when `kind === "node"` and it has children: whether
+   *  they're currently hidden. */
+  nodeCollapsed?: boolean;
+  /** Present only when `kind === "node"`: its graphle type name, so a
+   *  `"group"` node can additionally offer "Ungroup". */
+  nodeType?: string;
 }
 
 export interface ContextMenuProps {
@@ -68,6 +86,16 @@ export interface ContextMenuProps {
   onSelectEdge: (edgeId: string) => void;
   /** Open the add-node modal seeded with the pane click's flow position. */
   onAddHere: () => void;
+  /** The canvas's current multi-selected node ids — read-only here, used
+   *  only to decide whether right-clicking shows "Group N nodes". */
+  selectedNodeIds: string[];
+  /** Group every id in `nodeIds` under a new `"group"` node. */
+  onGroupSelection: (nodeIds: string[]) => void;
+  /** Toggle a node's `collapsed` state. */
+  onToggleCollapse: (nodeId: string) => void;
+  /** Remove a `"group"`-typed node, promoting its children back to
+   *  top-level rather than deleting them. */
+  onUngroup: (nodeId: string) => void;
 }
 
 export function ContextMenu({
@@ -79,6 +107,10 @@ export function ContextMenu({
   onSelectNode,
   onSelectEdge,
   onAddHere,
+  selectedNodeIds,
+  onGroupSelection,
+  onToggleCollapse,
+  onUngroup,
 }: ContextMenuProps) {
   // The anchor is only positioned when the menu is open; when closed, no
   // inline coordinates are applied (the 1px box is invisible and pointer-none,
@@ -100,36 +132,75 @@ export function ContextMenu({
         <div className={invisibleTarget} style={anchorStyle} />
       </Menu.Target>
       <Menu.Dropdown>
-        {state?.kind === "node" && (
-          <>
+        {state?.kind === "node" &&
+          state.nodeId !== undefined &&
+          selectedNodeIds.length >= 2 &&
+          selectedNodeIds.includes(state.nodeId) && (
             <Menu.Item
-              leftSection={<IconCopy size={14} />}
-              onClick={() => {
-                if (state.nodeId !== undefined) onDuplicate(state.nodeId);
-              }}
+              leftSection={<IconStack2 size={14} />}
+              onClick={() => onGroupSelection(selectedNodeIds)}
             >
-              Duplicate
+              Group {selectedNodeIds.length} nodes
             </Menu.Item>
-            <Menu.Item
-              leftSection={<IconPencil size={14} />}
-              onClick={() => {
-                if (state.nodeId !== undefined) onSelectNode(state.nodeId);
-              }}
-            >
-              Select
-            </Menu.Item>
-            <Divider />
-            <Menu.Item
-              color="red"
-              leftSection={<IconTrash size={14} />}
-              onClick={() => {
-                if (state.nodeId !== undefined) onDeleteNode(state.nodeId);
-              }}
-            >
-              Delete
-            </Menu.Item>
-          </>
-        )}
+          )}
+        {state?.kind === "node" &&
+          state.nodeId !== undefined &&
+          (selectedNodeIds.length < 2 || !selectedNodeIds.includes(state.nodeId)) && (
+            <>
+              <Menu.Item
+                leftSection={<IconCopy size={14} />}
+                onClick={() => {
+                  if (state.nodeId !== undefined) onDuplicate(state.nodeId);
+                }}
+              >
+                Duplicate
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconPencil size={14} />}
+                onClick={() => {
+                  if (state.nodeId !== undefined) onSelectNode(state.nodeId);
+                }}
+              >
+                Select
+              </Menu.Item>
+              {state.nodeChildCount !== undefined && state.nodeChildCount > 0 && (
+                <Menu.Item
+                  leftSection={
+                    state.nodeCollapsed === true ? (
+                      <IconChevronRight size={14} />
+                    ) : (
+                      <IconChevronDown size={14} />
+                    )
+                  }
+                  onClick={() => {
+                    if (state.nodeId !== undefined) onToggleCollapse(state.nodeId);
+                  }}
+                >
+                  {state.nodeCollapsed === true ? "Expand" : "Collapse"}
+                </Menu.Item>
+              )}
+              {state.nodeType === "group" && (
+                <Menu.Item
+                  leftSection={<IconFolderOpen size={14} />}
+                  onClick={() => {
+                    if (state.nodeId !== undefined) onUngroup(state.nodeId);
+                  }}
+                >
+                  Ungroup
+                </Menu.Item>
+              )}
+              <Divider />
+              <Menu.Item
+                color="red"
+                leftSection={<IconTrash size={14} />}
+                onClick={() => {
+                  if (state.nodeId !== undefined) onDeleteNode(state.nodeId);
+                }}
+              >
+                Delete
+              </Menu.Item>
+            </>
+          )}
         {state?.kind === "edge" && (
           <>
             <Menu.Item

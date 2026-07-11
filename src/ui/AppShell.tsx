@@ -82,6 +82,7 @@ export function AppShell() {
   const dirty = useGraphStore((state) => state.dirty);
   const apply = useGraphStore((state) => state.apply);
   const setSelection = useGraphStore((state) => state.setSelection);
+  const selectedNodeIds = useGraphStore((state) => state.selectedNodeIds);
   const undo = useGraphStore((state) => state.undo);
   const redo = useGraphStore((state) => state.redo);
   useHotkeys([
@@ -144,6 +145,35 @@ export function AppShell() {
   function handleDeleteEdge(edgeId: string): void {
     apply({ type: "removeEdge", id: edgeId });
     setSelection({ nodeId: undefined, edgeId: undefined });
+  }
+
+  function handleToggleCollapse(nodeId: string): void {
+    const node = document.nodes.find((n) => n.id === nodeId);
+    if (node === undefined) return;
+    apply({ type: "setCollapsed", id: nodeId, collapsed: node.collapsed !== true });
+  }
+
+  /** Removing a `"group"` node clears its children's `parentId` (see
+   *  `removeNode` in `operations.ts`) rather than deleting them — this *is*
+   *  ungrouping, no separate operation needed. */
+  function handleUngroup(nodeId: string): void {
+    apply({ type: "removeNode", id: nodeId });
+  }
+
+  function handleGroupSelection(nodeIds: string[]): void {
+    if (nodeIds.length === 0) return;
+    const selected = document.nodes.filter((n) => nodeIds.includes(n.id));
+    const centroid = selected.reduce(
+      (sum, n) => ({ x: sum.x + n.position.x, y: sum.y + n.position.y }),
+      { x: 0, y: 0 },
+    );
+    apply({
+      type: "groupNodes",
+      groupId: crypto.randomUUID(),
+      label: "Group",
+      childIds: nodeIds,
+      position: { x: centroid.x / selected.length, y: centroid.y / selected.length },
+    });
   }
 
   function handleAddHere(): void {
@@ -335,6 +365,10 @@ export function AppShell() {
           setSelection({ nodeId: undefined, edgeId })
         }
         onAddHere={handleAddHere}
+        selectedNodeIds={selectedNodeIds}
+        onGroupSelection={handleGroupSelection}
+        onToggleCollapse={handleToggleCollapse}
+        onUngroup={handleUngroup}
       />
     </MantineAppShell>
   );

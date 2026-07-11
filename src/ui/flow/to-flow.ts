@@ -10,9 +10,20 @@
  * and is resolved by the component. Each domain {@link GraphEdge} becomes a
  * React Flow edge with its label and line style (colour, dash pattern) derived
  * from its resolved edge type, and the whole domain edge stashed on `data`.
+ *
+ * Subgraphs (`GraphNode.parentId`/`collapsed`, see `src/schema/node.ts`) are
+ * resolved here too, in {@link documentToFlow}: a node hidden by a collapsed
+ * ancestor is dropped from the projected array entirely (not merely styled
+ * `hidden`), and an edge with exactly one hidden endpoint is rerouted to that
+ * endpoint's nearest visible ancestor — "reroute to the group node" — rather
+ * than hidden outright. `nodeToFlow` itself stays a pure per-node projection
+ * with no document-wide knowledge, so `documentToFlow` supplies the one piece
+ * of whole-document context a node's presentation needs: how many children it
+ * has, via `childCount` on `data`.
  */
 import type { Edge, Node } from "@xyflow/react";
 
+import { childCount as countChildren, indexNodesById, isHidden, visibleAncestor } from "@/domain";
 import { resolveEdgeType } from "@/schema";
 import type { EdgeTypeDefinition, GraphDocument, GraphEdge, GraphNode } from "@/schema";
 
@@ -23,22 +34,28 @@ import type { EdgeTypeDefinition, GraphDocument, GraphEdge, GraphNode } from "@/
  */
 export const FLOW_NODE_TYPE = "default";
 
-/** React Flow node carrying the full domain node as its data. */
-export type GraphFlowNode = Node<GraphNode, typeof FLOW_NODE_TYPE>;
+/** A domain node plus the one piece of whole-document context its
+ *  presentation needs — see the module doc. */
+export type GraphFlowNodeData = GraphNode & { childCount: number };
+
+/** React Flow node carrying the domain node (plus `childCount`) as its data. */
+export type GraphFlowNode = Node<GraphFlowNodeData, typeof FLOW_NODE_TYPE>;
 /** React Flow edge carrying the full domain edge as its data. */
 export type GraphFlowEdge = Edge<GraphEdge>;
 
 /**
  * Project a single domain node to a React Flow node. The constant
  * {@link FLOW_NODE_TYPE} selects the generic component; `data` is the whole
- * domain node so the component has the id, type, position, and data bag.
+ * domain node (plus `childCount`, supplied by the caller — a per-node
+ * function has no document-wide view of who else's `parentId` points at it)
+ * so the component has the id, type, position, data bag, and child count.
  */
-export function nodeToFlow(node: GraphNode): GraphFlowNode {
+export function nodeToFlow(node: GraphNode, childCount: number): GraphFlowNode {
   return {
     id: node.id,
     type: FLOW_NODE_TYPE,
     position: node.position,
-    data: node,
+    data: { ...node, childCount },
   };
 }
 
@@ -110,13 +127,33 @@ export function edgeToFlow(edge: GraphEdge, edgeTypes: EdgeTypeDefinition[]): Gr
  * Project a whole document into the `{ nodes, edges }` shape React Flow
  * consumes. Memoise the result at the call site, not here: this is a plain
  * function and recomputes a fresh array each call.
+ *
+ * Nodes hidden by a collapsed ancestor (`isHidden`) are dropped entirely.
+ * Edges follow both endpoints to their nearest visible ancestor
+ * (`visibleAncestor` — a no-op for a node that isn't hidden): if both
+ * resolve to the same node the edge is internal to one collapsed subtree
+ * and is dropped (nothing meaningful to draw); if they differ, the edge is
+ * rerouted to draw between the resolved endpoints — "reroute to the group
+ * node" — with its `data` (label/style source) otherwise untouched.
  */
 export function documentToFlow(document: GraphDocument): {
   nodes: GraphFlowNode[];
   edges: GraphFlowEdge[];
 } {
-  return {
-    nodes: document.nodes.map(nodeToFlow),
-    edges: document.edges.map((edge) => edgeToFlow(edge, document.edgeTypes)),
-  };
+  const nodesById = indexNodesById(document.nodes);
+
+  const nodes = document.nodes
+    .filter((node) => !isHidden(node.id, nodesById))
+    .map((node) => nodeToFlow(node, countChildren(node.id, document.nodes)));
+
+  const edges: GraphFlowEdge[] = [];
+  for (const edge of document.edges) {
+    const source = visibleAncestor(edge.source, nodesById);
+    const target = visibleAncestor(edge.target, nodesById);
+    if (source === target) continue;
+    const rerouted = source === edge.source && target === edge.target ? edge : { ...edge, source, target };
+    edges.push(edgeToFlow(rerouted, document.edgeTypes));
+  }
+
+  return { nodes, edges };
 }

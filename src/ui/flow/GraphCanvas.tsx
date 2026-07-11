@@ -33,6 +33,7 @@ import {
   type OnSelectionChangeParams,
 } from "@xyflow/react";
 
+import { descendantIds } from "@/domain";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 import { type ContextMenuState } from "./ContextMenu";
@@ -55,6 +56,7 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
   const graphId = useGraphStore((s) => s.graphId);
   const apply = useGraphStore((s) => s.apply);
   const setSelection = useGraphStore((s) => s.setSelection);
+  const setSelectedNodeIds = useGraphStore((s) => s.setSelectedNodeIds);
   const { fitView, screenToFlowPosition } = useReactFlow();
   // Drive React Flow's colour mode from the Mantine scheme so the controls and
   // minimap follow light/dark/system (React Flow otherwise defaults to light).
@@ -70,11 +72,13 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
   );
 
   // Re-sync React Flow from the store when the STRUCTURE or the node/edge DATA
-  // changes — an add, remove, inspector data edit, or external document load —
+  // changes — an add, remove, inspector data edit, external document load, or
+  // a subgraph change (setParent/setCollapsed/groupNodes, see hierarchy.ts) —
   // but never on position-only commits, so a drag-stop does not blow away
   // React Flow's live state. Positions are deliberately excluded from the
-  // fingerprint; ids, types, data, relation and label are included, so edits
-  // made in the inspector reach the canvas without re-syncing mid-drag. The
+  // fingerprint; ids, types, data, parentId, collapsed, relation and label
+  // are included, so edits made in the inspector (or a collapse toggle)
+  // reach the canvas without re-syncing mid-drag. The
   // previous fingerprint is kept in a ref and compared inside the effect (refs
   // must not be mutated during render).
   const prevStructureRef = useRef("");
@@ -90,7 +94,7 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
   }, [graphId]);
   useEffect(() => {
     const nodeSignature = graphDocument.nodes
-      .map((n) => `${n.id}:${n.type}:${JSON.stringify(n.data)}`)
+      .map((n) => `${n.id}:${n.type}:${String(n.parentId)}:${String(n.collapsed)}:${JSON.stringify(n.data)}`)
       .join("\n");
     const edgeSignature = graphDocument.edges
       .map((e) => `${e.id}:${e.type}:${JSON.stringify(e.data)}`)
@@ -176,31 +180,56 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
     [apply],
   );
 
-  // Commit positions only when the drag ends, not on every drag tick.
+  // Commit positions only when the drag ends, not on every drag tick. A
+  // dragged node that is collapsed (has hidden descendants — see
+  // `to-flow.ts`) carries them along by the same delta, so they aren't left
+  // stale relative to it and don't reappear somewhere unexpected once
+  // expanded again. Hidden descendants are never in React Flow's own local
+  // node array (they're filtered out of `documentToFlow`'s projection), so
+  // this reads their pre-drag positions from the store's document, the only
+  // place they still exist while hidden.
   const handleNodeDragStop = useCallback(
     (
       _event: MouseEvent | TouchEvent,
       _node: GraphFlowNode,
       dragged: GraphFlowNode[],
     ) => {
-      apply({
-        type: "moveNodes",
-        moves: dragged.map((node) => ({ id: node.id, position: node.position })),
-      });
+      const moves: Array<{ id: string; position: { x: number; y: number } }> = [];
+      for (const draggedNode of dragged) {
+        moves.push({ id: draggedNode.id, position: draggedNode.position });
+        const original = graphDocument.nodes.find((node) => node.id === draggedNode.id);
+        if (original === undefined || original.collapsed !== true) continue;
+        const delta = {
+          x: draggedNode.position.x - original.position.x,
+          y: draggedNode.position.y - original.position.y,
+        };
+        for (const descendantId of descendantIds(draggedNode.id, graphDocument.nodes)) {
+          const descendant = graphDocument.nodes.find((node) => node.id === descendantId);
+          if (descendant === undefined) continue;
+          moves.push({
+            id: descendantId,
+            position: { x: descendant.position.x + delta.x, y: descendant.position.y + delta.y },
+          });
+        }
+      }
+      apply({ type: "moveNodes", moves });
     },
-    [apply],
+    [apply, graphDocument],
   );
 
   // Mirror React Flow's selection into the store's EPHEMERAL selection. Never
-  // written into the document.
+  // written into the document. `selectedNodeIds` carries the full multi
+  // -select list (for bulk actions like "Group"); `selection` stays
+  // single-item, for the inspector.
   const handleSelectionChange = useCallback(
     ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
       setSelection({
         nodeId: selectedNodes[0]?.id,
         edgeId: selectedEdges[0]?.id,
       });
+      setSelectedNodeIds(selectedNodes.map((node) => node.id));
     },
-    [setSelection],
+    [setSelection, setSelectedNodeIds],
   );
 
   return (
@@ -223,6 +252,9 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
             x: event.clientX,
             y: event.clientY,
             nodeId: node.id,
+            nodeChildCount: node.data.childCount,
+            nodeType: node.data.type,
+            ...(node.data.collapsed !== undefined ? { nodeCollapsed: node.data.collapsed } : {}),
           });
         }}
         onEdgeContextMenu={(event, edge) => {
