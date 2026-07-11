@@ -3,6 +3,7 @@ import type {
   GitHubOrg,
   GitHubProject,
   GitHubProjectItem,
+  GitHubPullRequest,
   GitHubRepo,
   GitHubViewer,
 } from "./schema";
@@ -42,6 +43,12 @@ export interface GitHubClient {
     cursor: string | undefined,
     signal: AbortSignal,
   ): Promise<Page<GitHubIssue>>;
+  listRepoPullRequests(
+    owner: string,
+    name: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubPullRequest>>;
   listOrgProjects(
     login: string,
     cursor: string | undefined,

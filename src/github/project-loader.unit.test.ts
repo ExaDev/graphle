@@ -31,11 +31,13 @@ function unreachableClient(): GitHubClient {
     listViewerOrgs: unexpected("listViewerOrgs"),
     listOrgRepos: unexpected("listOrgRepos"),
     listRepoIssues: unexpected("listRepoIssues"),
+    listRepoPullRequests: unexpected("listRepoPullRequests"),
     listOrgProjects: unexpected("listOrgProjects"),
     listRepoProjects: unexpected("listRepoProjects"),
     listProjectItems: unexpected("listProjectItems"),
     getOrgProject: unexpected("getOrgProject"),
     getUserProject: unexpected("getUserProject"),
+    getRepo: unexpected("getRepo"),
     get lastRateLimit() {
       return undefined;
     },

@@ -39,6 +39,15 @@ export const GitHubIssue = z.object({
 });
 export type GitHubIssue = z.infer<typeof GitHubIssue>;
 
+/** A GitHub pull request. State adds "merged" alongside an issue's open/closed. */
+export const GitHubPullRequest = z.object({
+  number: z.number().int(),
+  title: z.string(),
+  state: z.enum(["open", "closed", "merged"]),
+  url: z.string(),
+});
+export type GitHubPullRequest = z.infer<typeof GitHubPullRequest>;
+
 /** A GitHub Projects v2 project. `id` is the GraphQL node id used to fetch items. */
 export const GitHubProject = z.object({
   id: z.string(),
@@ -160,6 +169,19 @@ export const RepoIssuesResponse = z.object({
   }),
 });
 export type RepoIssuesResponse = z.infer<typeof RepoIssuesResponse>;
+
+/** `repository` is nullable: GitHub returns `null` for an unknown name. */
+export const RepoPullRequestsResponse = z.object({
+  data: z.object({
+    repository: z
+      .object({
+        pullRequests: connection(GitHubPullRequest),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type RepoPullRequestsResponse = z.infer<typeof RepoPullRequestsResponse>;
 
 /** `repository` is nullable: GitHub returns `null` for an unknown name. */
 export const RepoProjectsResponse = z.object({

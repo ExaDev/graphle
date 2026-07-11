@@ -7,6 +7,7 @@ import {
   ProjectItemsResponse,
   RepoIssuesResponse,
   RepoProjectsResponse,
+  RepoPullRequestsResponse,
   RepoResponse,
   UserProjectResponse,
   ViewerOrgsResponse,
@@ -33,6 +34,8 @@ const VIEWER_ORGS_QUERY = `query ViewerOrgs($first:Int!,$after:String){ viewer {
 const ORG_REPOS_QUERY = `query OrgRepos($login:String!,$first:Int!,$after:String){ organization(login:$login){ repositories(first:$first,after:$after,orderBy:{field:UPDATED_AT,direction:DESC}){ pageInfo{hasNextPage endCursor} nodes{ name owner{login} url description isArchived } } } rateLimit{remaining resetAt} }`;
 
 const REPO_ISSUES_QUERY = `query RepoIssues($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issues(first:$first,after:$after,states:[OPEN],orderBy:{field:UPDATED_AT,direction:DESC}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
+
+const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:[OPEN],orderBy:{field:UPDATED_AT,direction:DESC}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
 
 const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:String){ organization(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
@@ -199,6 +202,22 @@ export function createGitHubClient(parameters: {
       }
       const issues = repo.issues;
       return { items: issues.nodes, ...toPage(issues.pageInfo) };
+    },
+
+    async listRepoPullRequests(owner, name, cursor, signal) {
+      const result = await graphql(
+        REPO_PULL_REQUESTS_QUERY,
+        { owner, name, first: PAGE_SIZE, after: cursor },
+        RepoPullRequestsResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const repo = result.data.repository;
+      if (repo === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const pullRequests = repo.pullRequests;
+      return { items: pullRequests.nodes, ...toPage(pullRequests.pageInfo) };
     },
 
     async listOrgProjects(login, cursor, signal) {
