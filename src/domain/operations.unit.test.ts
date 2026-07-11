@@ -182,6 +182,148 @@ describe("applyOperation - removeNode", () => {
     expect(next.nodes).toEqual([a, c]);
     expect(next.edges).toEqual([]);
   });
+
+  it("clears parentId on children of the removed node, orphaning rather than cascade-removing them", () => {
+    const parent = makeFreeform("Parent");
+    const child = { ...makeFreeform("Child"), parentId: parent.id };
+    const doc = documentWith([parent, child]);
+    const next = applyOperation(doc, { type: "removeNode", id: parent.id });
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0]?.id).toBe(child.id);
+    expect(next.nodes[0]?.parentId).toBeUndefined();
+  });
+});
+
+describe("applyOperation - setParent", () => {
+  it("sets a node's parentId", () => {
+    const a = makeFreeform("A");
+    const b = makeFreeform("B");
+    const doc = documentWith([a, b]);
+    const next = applyOperation(doc, { type: "setParent", id: b.id, parentId: a.id });
+    expect(next.nodes.find((n) => n.id === b.id)?.parentId).toBe(a.id);
+  });
+
+  it("clears a node's parentId when given undefined", () => {
+    const a = makeFreeform("A");
+    const b = { ...makeFreeform("B"), parentId: a.id };
+    const doc = documentWith([a, b]);
+    const next = applyOperation(doc, { type: "setParent", id: b.id, parentId: undefined });
+    expect(next.nodes.find((n) => n.id === b.id)?.parentId).toBeUndefined();
+  });
+
+  it("throws GraphOperationError when the parent id does not exist", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    expect(() =>
+      applyOperation(doc, { type: "setParent", id: a.id, parentId: "missing" }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("throws GraphOperationError when the new parent would be its own descendant (a cycle)", () => {
+    const a = makeFreeform("A");
+    const b = { ...makeFreeform("B"), parentId: a.id };
+    const doc = documentWith([a, b]);
+    expect(() =>
+      applyOperation(doc, { type: "setParent", id: a.id, parentId: b.id }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("throws GraphOperationError when a node is set as its own parent", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    expect(() =>
+      applyOperation(doc, { type: "setParent", id: a.id, parentId: a.id }),
+    ).toThrow(GraphOperationError);
+  });
+});
+
+describe("applyOperation - setCollapsed", () => {
+  it("sets collapsed to true", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    const next = applyOperation(doc, { type: "setCollapsed", id: a.id, collapsed: true });
+    expect(next.nodes[0]?.collapsed).toBe(true);
+  });
+
+  it("sets collapsed back to false", () => {
+    const a = { ...makeFreeform("A"), collapsed: true };
+    const doc = documentWith([a]);
+    const next = applyOperation(doc, { type: "setCollapsed", id: a.id, collapsed: false });
+    expect(next.nodes[0]?.collapsed).toBe(false);
+  });
+
+  it("is a no-op when the id is not present", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    const next = applyOperation(doc, { type: "setCollapsed", id: "missing", collapsed: true });
+    expect(next.nodes).toEqual([a]);
+  });
+});
+
+describe("applyOperation - groupNodes", () => {
+  it("creates a group node and parents every childId onto it, in one operation", () => {
+    const a = makeFreeform("A");
+    const b = makeFreeform("B");
+    const doc = documentWith([a, b]);
+    const groupId = crypto.randomUUID();
+    const next = applyOperation(doc, {
+      type: "groupNodes",
+      groupId,
+      label: "My group",
+      childIds: [a.id, b.id],
+      position: { x: 5, y: 5 },
+    });
+    const group = next.nodes.find((n) => n.id === groupId);
+    expect(group?.type).toBe("group");
+    expect(group?.data).toEqual({ label: "My group" });
+    expect(next.nodes.find((n) => n.id === a.id)?.parentId).toBe(groupId);
+    expect(next.nodes.find((n) => n.id === b.id)?.parentId).toBe(groupId);
+  });
+
+  it("throws GraphOperationError when the groupId already exists", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    expect(() =>
+      applyOperation(doc, {
+        type: "groupNodes",
+        groupId: a.id,
+        label: "Group",
+        childIds: [],
+        position,
+      }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("throws GraphOperationError when a childId does not exist", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    expect(() =>
+      applyOperation(doc, {
+        type: "groupNodes",
+        groupId: crypto.randomUUID(),
+        label: "Group",
+        childIds: [a.id, "missing"],
+        position,
+      }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("removing the group node ungroups its children rather than deleting them", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    const groupId = crypto.randomUUID();
+    const grouped = applyOperation(doc, {
+      type: "groupNodes",
+      groupId,
+      label: "Group",
+      childIds: [a.id],
+      position,
+    });
+    const ungrouped = applyOperation(grouped, { type: "removeNode", id: groupId });
+    expect(ungrouped.nodes).toHaveLength(1);
+    expect(ungrouped.nodes[0]?.id).toBe(a.id);
+    expect(ungrouped.nodes[0]?.parentId).toBeUndefined();
+  });
 });
 
 describe("applyOperation - addEdge", () => {

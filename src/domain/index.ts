@@ -14,6 +14,14 @@ export {
 export { applyDelta, type GraphDelta } from "./merge";
 export { emptyDocument } from "./empty";
 export {
+  childCount,
+  descendantIds,
+  indexNodesById,
+  isHidden,
+  visibleAncestor,
+  wouldCreateCycle,
+} from "./hierarchy";
+export {
   GraphOperationError,
   applyOperation,
   type GraphOperation,

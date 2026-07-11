@@ -13,6 +13,8 @@ import {
   type Position,
 } from "../schema";
 
+import { indexNodesById, wouldCreateCycle } from "./hierarchy";
+
 /**
  * Thrown by {@link applyOperation} when an operation cannot be applied because
  * it would violate a graph invariant (a duplicate node id, an edge whose
@@ -36,6 +38,16 @@ export class GraphOperationError extends Error {
  * searching the document. `updateEdge` mirrors this: it carries `edgeType`
  * and replaces the edge's `data` wholesale, validated against that type's
  * schema.
+ *
+ * `setParent`/`setCollapsed`/`groupNodes` model subgraphs (see
+ * `GraphNode.parentId`/`collapsed` in `src/schema/node.ts`). `setParent` is
+ * the primitive — `undefined` clears a node's parent. `groupNodes` is a
+ * single atomic operation (one undo step) rather than an `addNode` +
+ * N×`setParent` composition: it creates a new `"group"`-typed node at
+ * `position` and parents every `childIds` entry onto it in one commit.
+ * There is no separate `ungroupNodes` — `removeNode` already clears
+ * `parentId` on any node that pointed at the removed id (see below), so
+ * removing a group node *is* ungrouping it.
  */
 export type GraphOperation =
   | { type: "addNode"; node: GraphNode }
@@ -46,7 +58,16 @@ export type GraphOperation =
   | { type: "updateEdge"; id: string; edgeType: string; data: EdgeData }
   | { type: "removeEdge"; id: string }
   | { type: "renameGraph"; name: string }
-  | { type: "replaceDocument"; document: GraphDocument };
+  | { type: "replaceDocument"; document: GraphDocument }
+  | { type: "setParent"; id: string; parentId: string | undefined }
+  | { type: "setCollapsed"; id: string; collapsed: boolean }
+  | {
+      type: "groupNodes";
+      groupId: string;
+      label: string;
+      childIds: string[];
+      position: Position;
+    };
 
 /**
  * Narrows `unknown` to a `Record<string, unknown>` without a cast. A Zod object
@@ -122,10 +143,17 @@ function replaceEdgeData(
  *   the resolved type's schema.
  * - `updateEdge` whose `edgeType` cannot be resolved, or whose `data` fails the
  *   resolved type's schema.
+ * - `setParent`/`groupNodes` whose `parentId`/`childIds` reference a missing
+ *   node id, or would make a node its own ancestor (see `hierarchy.ts`'s
+ *   `wouldCreateCycle`).
  *
  * `removeNode` also removes every edge whose `source` or `target` is the removed
- * id, so the document never holds a dangling edge. Operations that target an id
- * not present (`updateNodeData`, `moveNodes`, `updateEdge`) are no-ops.
+ * id, so the document never holds a dangling edge — and clears `parentId` on
+ * every node that pointed at the removed id, so removing a node (a `"group"`
+ * or otherwise) never leaves its children pointing at a node that no longer
+ * exists; they're promoted back to top-level rather than cascade-removed.
+ * Operations that target an id not present (`updateNodeData`, `moveNodes`,
+ * `updateEdge`, `setCollapsed`) are no-ops.
  */
 export function applyOperation(
   doc: GraphDocument,
@@ -170,7 +198,9 @@ export function applyOperation(
     }
 
     case "removeNode": {
-      const nodes = doc.nodes.filter((node) => node.id !== op.id);
+      const nodes = doc.nodes
+        .filter((node) => node.id !== op.id)
+        .map((node): GraphNode => (node.parentId === op.id ? { ...node, parentId: undefined } : node));
       const edges = doc.edges.filter(
         (edge) => edge.source !== op.id && edge.target !== op.id,
       );
@@ -211,6 +241,62 @@ export function applyOperation(
 
     case "replaceDocument": {
       return op.document;
+    }
+
+    case "setParent": {
+      if (op.parentId !== undefined) {
+        if (!doc.nodes.some((node) => node.id === op.parentId)) {
+          throw new GraphOperationError(
+            `Cannot set parent: no node with id "${op.parentId}"`,
+          );
+        }
+        if (wouldCreateCycle(indexNodesById(doc.nodes), op.id, op.parentId)) {
+          throw new GraphOperationError(
+            `Cannot set "${op.id}"'s parent to "${op.parentId}": would create a cycle`,
+          );
+        }
+      }
+      const nodes = doc.nodes.map((node): GraphNode =>
+        node.id === op.id ? { ...node, parentId: op.parentId } : node,
+      );
+      return { ...doc, nodes };
+    }
+
+    case "setCollapsed": {
+      const nodes = doc.nodes.map((node): GraphNode =>
+        node.id === op.id ? { ...node, collapsed: op.collapsed } : node,
+      );
+      return { ...doc, nodes };
+    }
+
+    case "groupNodes": {
+      if (doc.nodes.some((node) => node.id === op.groupId)) {
+        throw new GraphOperationError(
+          `A node with id "${op.groupId}" already exists`,
+        );
+      }
+      const knownIds = new Set(doc.nodes.map((node) => node.id));
+      for (const childId of op.childIds) {
+        if (!knownIds.has(childId)) {
+          throw new GraphOperationError(
+            `Cannot group: no node with id "${childId}"`,
+          );
+        }
+      }
+      const groupNode: GraphNode = {
+        id: op.groupId,
+        type: "group",
+        position: op.position,
+        data: { label: op.label },
+      };
+      const childIds = new Set(op.childIds);
+      const nodes = [
+        ...doc.nodes.map((node): GraphNode =>
+          childIds.has(node.id) ? { ...node, parentId: op.groupId } : node,
+        ),
+        groupNode,
+      ];
+      return { ...doc, nodes };
     }
   }
 }
