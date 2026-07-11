@@ -1,3 +1,10 @@
+## [1.17.3](https://github.com/ExaDev/graphle/compare/v1.17.2...v1.17.3) (2026-07-11)
+
+
+### Bug Fixes
+
+* **github:** use IssueOrderField for pull request ordering ([e729b36](https://github.com/ExaDev/graphle/commit/e729b368a3b297545758f64e2b4a8e26271e9727))
+
 ## [1.17.2](https://github.com/ExaDev/graphle/compare/v1.17.1...v1.17.2) (2026-07-11)
 
 
