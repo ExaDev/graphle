@@ -33,6 +33,11 @@ describe("parseProjectUrl", () => {
     expect(parseProjectUrl(url)).toEqual({ ownerType: "org", login: "TeamAcelo", number: 1 });
   });
 
+  it("discards a trailing query string using the filterQuery param name", () => {
+    const url = "https://github.com/orgs/TeamAcelo/projects/1/views/5?filterQuery=assignee%3A%40me";
+    expect(parseProjectUrl(url)).toEqual({ ownerType: "org", login: "TeamAcelo", number: 1 });
+  });
+
   it("discards a query string with no views segment", () => {
     expect(parseProjectUrl("https://github.com/orgs/TeamAcelo/projects/1?query=is%3Aopen")).toEqual({
       ownerType: "org",
