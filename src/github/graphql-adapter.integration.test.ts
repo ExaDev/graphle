@@ -65,6 +65,12 @@ describe.skipIf(TOKEN_TYPES.length === 0)("GitHub API integration", () => {
  * `GitHubPanel.tsx`'s note that fine-grained tokens can't read a personal
  * account's own Projects boards). `GH_TEST_PAT_CLASSIC_PRIVATE`'s `repo`
  * scope isn't owner-restricted, so it covers both fixture repos.
+ *
+ * Unlike the public tokens above, `GH_TEST_PAT_FINE_GRAINED_PRIVATE` needs
+ * an explicit "Contents: Read-only" repository permission — a private repo
+ * isn't readable on the auto-included Metadata-only default the way a
+ * public one unconditionally is (see `.env.example` for the full story of
+ * how that was confirmed).
  */
 const PRIVATE_TOKEN_TYPES = [
   {
