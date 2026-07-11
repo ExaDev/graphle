@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/ExaDev/graphle/compare/v1.12.0...v1.12.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **github:** normalise issue/PR state from GitHub's upper-case enums ([07bed6e](https://github.com/ExaDev/graphle/commit/07bed6edea9de9ba6e4c9dc6b2539dd0e36ed3d6))
+
 # [1.12.0](https://github.com/ExaDev/graphle/compare/v1.11.0...v1.12.0) (2026-07-11)
 
 
