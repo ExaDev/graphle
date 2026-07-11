@@ -6,8 +6,9 @@ import { defineBuiltInType, type RuntimeNodeType } from "./node-type";
  * The built-in node types shipped with the application. Each entry pairs a
  * data-validation Zod schema with presentation metadata (label, colour, icon)
  * and the identity/label field selectors used by the domain layer. Existing
- * GitHub-flavoured types preserve their original data shapes; the remaining
- * seven are generic types for modelling systems that have no GitHub analogue.
+ * GitHub-flavoured types preserve their original data shapes; the generic
+ * types model systems that have no GitHub analogue, plus `group`, a plain
+ * subgraph container (see its own doc comment below).
  */
 
 /** Free-form, user-authored note with no external source. */
@@ -110,6 +111,17 @@ const decisionDataSchema = z.object({
   title: z.string(),
   status: z.enum(["proposed", "accepted", "rejected"]).optional(),
   rationale: z.string().optional(),
+});
+
+/**
+ * A subgraph container. Used only for the manual "select unrelated nodes ->
+ * group them" case — a real GitHub-flavoured node (e.g. `repo`) collapsing
+ * its own fetched children (e.g. `issue`) doesn't need one, since it's
+ * already a natural parent via `GraphNode.parentId`. See `node.ts`'s
+ * `parentId`/`collapsed` doc comment.
+ */
+const groupDataSchema = z.object({
+  label: z.string().min(1),
 });
 
 /**
@@ -234,6 +246,15 @@ export const BUILT_IN_TYPES: RuntimeNodeType[] = [
     labelField: "title",
     identityFields: [],
     schema: decisionDataSchema,
+  }),
+  defineBuiltInType({
+    name: "group",
+    label: "Group",
+    color: "yellow",
+    icon: "IconFolder",
+    labelField: "label",
+    identityFields: [],
+    schema: groupDataSchema,
   }),
 ];
 

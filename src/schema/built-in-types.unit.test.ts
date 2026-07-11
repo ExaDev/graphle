@@ -16,10 +16,11 @@ const EXPECTED_NAMES = [
   "link",
   "database",
   "decision",
+  "group",
 ] as const;
 
 describe("BUILT_IN_TYPES", () => {
-  it("registers exactly the thirteen expected types in order", () => {
+  it("registers exactly the fourteen expected types in order", () => {
     expect(BUILT_IN_TYPES.map((t) => t.name)).toEqual([...EXPECTED_NAMES]);
   });
 

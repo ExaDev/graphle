@@ -26,6 +26,7 @@ import {
   IconDatabase,
   IconEye,
   IconFlag,
+  IconFolder,
   IconGitPullRequest,
   IconHeart,
   IconHexagon,
@@ -69,6 +70,7 @@ const ICON_REGISTRY: Record<string, IconComponent> = {
   IconLink,
   IconDatabase,
   IconChecklist,
+  IconFolder,
   // Starter glyphs available to user-defined types.
   IconHexagon,
   IconStar,
