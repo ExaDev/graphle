@@ -13,7 +13,11 @@
  *    on success the address bar is normalised to the project's canonical URL
  *    (stripped of any `/views/{N}` or `?query=` the user pasted — this
  *    codec never tracks a view's filter/sort, it always loads every item).
- * 2. A GitHub repo-file URL ({@link parseGithubFileUrl}) — either the
+ * 2. A GitHub repo issues or pull-requests list URL ({@link parseRepoIssuesUrl}/
+ *    {@link parseRepoPullRequestsUrl}) loads every open item via the
+ *    authenticated GraphQL client, mirroring the Projects branch above (same
+ *    stored-PAT-or-prompt flow, same canonical-URL normalisation on success).
+ * 3. A GitHub repo-file URL ({@link parseGithubFileUrl}) — either the
  *    human-facing `blob` page or a raw-host URL — loads via the Contents API
  *    ({@link fetchGithubFileRevision}), since the human-facing page is an
  *    HTML document `resolveRemoteUrl`'s plain fetch cannot parse as JSON. A
@@ -27,7 +31,7 @@
  *    the Projects branch above; a failure of any other kind (the file existed
  *    but wasn't valid JSON, say) is reported directly without escalating. On
  *    success the address bar is normalised to the file's canonical `blob` URL.
- * 3. Otherwise, {@link resolveRemoteUrl} — a plain remote fetch, or gist
+ * 4. Otherwise, {@link resolveRemoteUrl} — a plain remote fetch, or gist
  *    disambiguation when the URL names a gist as a whole rather than one
  *    file (opens `GistPickerModal` via `store.gistPicker` when more than one
  *    file in the gist looks like a graph).
@@ -55,9 +59,15 @@ import {
   GitHubError,
   githubErrorMessage,
   loadProjectDocument,
+  loadRepoIssuesDocument,
+  loadRepoPullRequestsDocument,
   parseProjectUrl,
+  parseRepoIssuesUrl,
+  parseRepoPullRequestsUrl,
   type GitHubClient,
   type ParsedProjectUrl,
+  type ParsedRepoListUrl,
+  type RepoListLoadResult,
 } from "@/github";
 import { ShareDecodeError } from "@/sharing/codec";
 import { resolveRemoteUrl } from "@/sharing/gist";
@@ -144,6 +154,37 @@ export function useUrlSync(): void {
         });
     }
 
+    /** Load a GitHub repo issues or pull-requests list URL with an
+     *  already-authenticated client, applying the result or reporting the
+     *  failure. Shared by the token-already-stored path and the
+     *  pending-action resumed after a fresh PAT validation, mirroring
+     *  `loadProjectWith`. */
+    function loadRepoListWith(
+      parsed: ParsedRepoListUrl,
+      loader: (
+        parsed: ParsedRepoListUrl,
+        client: GitHubClient,
+        signal: AbortSignal,
+      ) => Promise<RepoListLoadResult>,
+      client: GitHubClient,
+      onSuccess?: () => void,
+    ): void {
+      loader(parsed, client, controller.signal)
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          replaceDocument(result.document);
+          writeRemoteUrlToLocation(result.canonicalUrl);
+          onSuccess?.();
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          notifications.show({
+            color: "red",
+            message: `Could not load the GitHub repo: ${remoteLoadFailureMessage(error)}`,
+          });
+        });
+    }
+
     /** Whether a failure means "this repo needs auth we don't have yet"
      *  (worth prompting for a PAT and retrying) rather than a genuine failure
      *  (wrong content, network error, etc.) not worth escalating for. */
@@ -219,6 +260,37 @@ export function useUrlSync(): void {
                 } else {
                   openGitHubPanel((client) =>
                     loadProjectWith(parsedProject, client, closeGitHubPanel),
+                  );
+                }
+              })
+              .catch((error: unknown) => {
+                if (controller.signal.aborted) return;
+                notifications.show({
+                  color: "red",
+                  message: `Could not read the stored GitHub token: ${describe(error)}`,
+                });
+              });
+          } else if (
+            parseRepoIssuesUrl(remoteUrl) !== undefined ||
+            parseRepoPullRequestsUrl(remoteUrl) !== undefined
+          ) {
+            const parsedRepoIssues = parseRepoIssuesUrl(remoteUrl);
+            const parsedRepoList = parsedRepoIssues ?? parseRepoPullRequestsUrl(remoteUrl);
+            const loader =
+              parsedRepoIssues !== undefined ? loadRepoIssuesDocument : loadRepoPullRequestsDocument;
+            if (parsedRepoList === undefined) {
+              throw new Error("unreachable: one of parsedRepoIssues/parsedRepoPullRequests is set");
+            }
+            const secretStore = createSecretStore(db);
+            secretStore
+              .getGitHubToken(controller.signal)
+              .then((token) => {
+                if (controller.signal.aborted) return;
+                if (token !== undefined) {
+                  loadRepoListWith(parsedRepoList, loader, createGitHubClient({ token }));
+                } else {
+                  openGitHubPanel((client) =>
+                    loadRepoListWith(parsedRepoList, loader, client, closeGitHubPanel),
                   );
                 }
               })

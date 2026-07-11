@@ -22,10 +22,14 @@
  *
  * A GitHub Projects (v2) URL takes a different, authenticated path instead:
  * see `handleLoadFromUrl`'s branch on `parseProjectUrl`, which mirrors
- * `useUrlSync`'s identical branch for the `#url=` case. A GitHub repo-file
- * URL (a `blob` page or a raw-host URL, see `@/sharing/github-file-url`)
- * takes a third path, through the Contents API — see the branch on
- * `parseGithubFileUrl`, which mirrors `useUrlSync`'s identical branch.
+ * `useUrlSync`'s identical branch for the `#url=` case. A GitHub repo issues
+ * or pull-requests list URL (see `@/github/repo-list-url`) takes a similar
+ * authenticated path — the branch on `parseRepoIssuesUrl`/
+ * `parseRepoPullRequestsUrl`, mirroring `useUrlSync`'s identical branch. A
+ * GitHub repo-file URL (a `blob` page or a raw-host URL, see
+ * `@/sharing/github-file-url`) takes a fourth path, through the Contents API —
+ * see the branch on `parseGithubFileUrl`, which mirrors `useUrlSync`'s
+ * identical branch.
  *
  * "Remote sync" (shown only for a graph whose stored record carries a
  * `linkedRemote` with `syncMode !== "off"`) offers manual Push/Pull against
@@ -68,9 +72,15 @@ import {
   GitHubError,
   githubErrorMessage,
   loadProjectDocument,
+  loadRepoIssuesDocument,
+  loadRepoPullRequestsDocument,
   parseProjectUrl,
+  parseRepoIssuesUrl,
+  parseRepoPullRequestsUrl,
   type GitHubClient,
   type ParsedProjectUrl,
+  type ParsedRepoListUrl,
+  type RepoListLoadResult,
 } from "@/github";
 import { fetchGistRevision, listGistHistory, pushGistFile, resolveRemoteUrl } from "@/sharing/gist";
 import {
@@ -297,6 +307,41 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     }
   }
 
+  /**
+   * Load a GitHub repo issues or pull-requests list URL with an
+   * already-authenticated client, applying the result or reporting the
+   * failure itself — mirrors `loadGitHubProject`, including its use as a
+   * fire-and-forget `openGitHubPanel` pending action.
+   */
+  async function loadGitHubRepoList(
+    parsed: ParsedRepoListUrl,
+    loader: (
+      parsed: ParsedRepoListUrl,
+      client: GitHubClient,
+      signal: AbortSignal,
+    ) => Promise<RepoListLoadResult>,
+    client: GitHubClient,
+  ): Promise<void> {
+    try {
+      const result = await loader(parsed, client, new AbortController().signal);
+      replaceDocument(result.document);
+      setGraphId(undefined);
+      writeRemoteUrlToLocation(result.canonicalUrl);
+      notifications.show({ color: "green", message: "GitHub repo loaded" });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `Could not load the GitHub repo: ${
+          error instanceof GitHubError
+            ? githubErrorMessage(error)
+            : error instanceof Error
+              ? error.message
+              : String(error)
+        }`,
+      });
+    }
+  }
+
   /** Load a GitHub repo-file URL, using a stored PAT if there is one but
    *  never prompting for one — a repo-file read works unauthenticated for a
    *  public repo, mirroring `useUrlSync`'s identical branch. */
@@ -367,6 +412,22 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
         } else {
           openGitHubPanel((client) => {
             void loadGitHubProject(parsedProject, client).then(closeGitHubPanel);
+          });
+        }
+        return;
+      }
+
+      const parsedRepoIssues = parseRepoIssuesUrl(trimmed);
+      const parsedRepoList = parsedRepoIssues ?? parseRepoPullRequestsUrl(trimmed);
+      if (parsedRepoList !== undefined) {
+        const loader = parsedRepoIssues !== undefined ? loadRepoIssuesDocument : loadRepoPullRequestsDocument;
+        const secretStore = createSecretStore(db);
+        const token = await secretStore.getGitHubToken(new AbortController().signal);
+        if (token !== undefined) {
+          await loadGitHubRepoList(parsedRepoList, loader, createGitHubClient({ token }));
+        } else {
+          openGitHubPanel((client) => {
+            void loadGitHubRepoList(parsedRepoList, loader, client).then(closeGitHubPanel);
           });
         }
         return;
