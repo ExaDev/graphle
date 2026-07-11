@@ -249,6 +249,11 @@ export function useUrlSync(): void {
         const remoteUrl = readRemoteUrlFromLocation();
         if (remoteUrl !== undefined) {
           const parsedProject = parseProjectUrl(remoteUrl);
+          // Only one of these can match a given URL, but parseRepoIssuesUrl
+          // is tried first so parseRepoPullRequestsUrl is never called on a
+          // URL that already matched as an issues list.
+          const parsedRepoIssues = parseRepoIssuesUrl(remoteUrl);
+          const parsedRepoList = parsedRepoIssues ?? parseRepoPullRequestsUrl(remoteUrl);
           if (parsedProject !== undefined) {
             const secretStore = createSecretStore(db);
             secretStore
@@ -270,17 +275,9 @@ export function useUrlSync(): void {
                   message: `Could not read the stored GitHub token: ${describe(error)}`,
                 });
               });
-          } else if (
-            parseRepoIssuesUrl(remoteUrl) !== undefined ||
-            parseRepoPullRequestsUrl(remoteUrl) !== undefined
-          ) {
-            const parsedRepoIssues = parseRepoIssuesUrl(remoteUrl);
-            const parsedRepoList = parsedRepoIssues ?? parseRepoPullRequestsUrl(remoteUrl);
+          } else if (parsedRepoList !== undefined) {
             const loader =
               parsedRepoIssues !== undefined ? loadRepoIssuesDocument : loadRepoPullRequestsDocument;
-            if (parsedRepoList === undefined) {
-              throw new Error("unreachable: one of parsedRepoIssues/parsedRepoPullRequests is set");
-            }
             const secretStore = createSecretStore(db);
             secretStore
               .getGitHubToken(controller.signal)
