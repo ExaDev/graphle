@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/ExaDev/graphle/compare/v1.12.1...v1.13.0) (2026-07-11)
+
+
+### Features
+
+* **github:** editable state/sort/label filters for issues and PRs ([0f84808](https://github.com/ExaDev/graphle/commit/0f848083fb9b9ac1bf8918b9c52a7bece58377cf))
+
 ## [1.12.1](https://github.com/ExaDev/graphle/compare/v1.12.0...v1.12.1) (2026-07-11)
 
 
