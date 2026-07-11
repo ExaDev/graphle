@@ -41,6 +41,9 @@ function clientWithRepos(repos: Page<{
     listRepoIssues() {
       return Promise.reject(new Error("unexpected listRepoIssues call"));
     },
+    listRepoPullRequests() {
+      return Promise.reject(new Error("unexpected listRepoPullRequests call"));
+    },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
     },
@@ -55,6 +58,9 @@ function clientWithRepos(repos: Page<{
     },
     getUserProject() {
       return Promise.reject(new Error("unexpected getUserProject call"));
+    },
+    getRepo() {
+      return Promise.reject(new Error("unexpected getRepo call"));
     },
     get lastRateLimit() {
       return undefined;
@@ -131,7 +137,11 @@ describe("expansionsForType - org-repos", () => {
 describe("expansionsForType - dispatch table", () => {
   it("offers repos and projects for org/repo, items for project, nothing for issue/freeform/unknown", () => {
     expect(expansionsForType("org").map((e) => e.id)).toEqual(["org-repos", "org-projects"]);
-    expect(expansionsForType("repo").map((e) => e.id)).toEqual(["repo-issues", "repo-projects"]);
+    expect(expansionsForType("repo").map((e) => e.id)).toEqual([
+      "repo-issues",
+      "repo-pull-requests",
+      "repo-projects",
+    ]);
     expect(expansionsForType("project").map((e) => e.id)).toEqual(["project-items"]);
     expect(expansionsForType("issue")).toEqual([]);
     expect(expansionsForType("freeform")).toEqual([]);
@@ -171,6 +181,9 @@ describe("expansionsForType - project-items", () => {
       listRepoIssues() {
         return Promise.reject(new Error("unexpected listRepoIssues call"));
       },
+      listRepoPullRequests() {
+        return Promise.reject(new Error("unexpected listRepoPullRequests call"));
+      },
       listOrgProjects() {
         return Promise.reject(new Error("unexpected listOrgProjects call"));
       },
@@ -185,6 +198,9 @@ describe("expansionsForType - project-items", () => {
       },
       getUserProject() {
         return Promise.reject(new Error("unexpected getUserProject call"));
+      },
+      getRepo() {
+        return Promise.reject(new Error("unexpected getRepo call"));
       },
       get lastRateLimit() {
         return undefined;

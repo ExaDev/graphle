@@ -8,6 +8,7 @@ import {
   ownsEdge,
   projectIssueItemToNode,
   projectToNode,
+  pullRequestToNode,
   repoToNode,
   tracksEdge,
 } from "./materialise";
@@ -137,6 +138,29 @@ const repoIssues: Expansion = {
   },
 };
 
+const repoPullRequests: Expansion = {
+  id: "repo-pull-requests",
+  label: "Pull requests",
+  async run(source, client, cursor, signal) {
+    if (source.type !== "repo") {
+      throw new Error("repo-pull-requests expansion requires a repo source node");
+    }
+    const owner = requireString(source, "owner");
+    const name = requireString(source, "name");
+    const page = await client.listRepoPullRequests(owner, name, cursor, signal);
+    const positions = placeAround(source.position, page.items.length);
+    const nodes = page.items.map((pullRequest, i) =>
+      pullRequestToNode(owner, name, pullRequest, positionAt(positions, i)),
+    );
+    const edges = nodes.map((node) => containsEdge(source.id, node.id));
+    return {
+      delta: buildDelta(nodes, edges),
+      endCursor: page.endCursor,
+      hasNextPage: page.hasNextPage,
+    };
+  },
+};
+
 const repoProjects: Expansion = {
   id: "repo-projects",
   label: "Projects",
@@ -192,17 +216,18 @@ const projectItems: Expansion = {
 };
 
 /**
- * The expansions available for a node type. `org` and `repo` nodes offer both
- * their owned children (repos / issues) and their projects; `project` nodes
- * offer their items; every other type (including `issue`, `freeform`, and any
- * custom type) has nothing to expand into, so an empty list is returned.
+ * The expansions available for a node type. `org` nodes offer their owned
+ * repos and projects; `repo` nodes offer their issues, pull requests, and
+ * projects; `project` nodes offer their items; every other type (including
+ * `issue`, `pullRequest`, `freeform`, and any custom type) has nothing to
+ * expand into, so an empty list is returned.
  */
 export function expansionsForType(typeName: string): Expansion[] {
   switch (typeName) {
     case "org":
       return [orgRepos, orgProjects];
     case "repo":
-      return [repoIssues, repoProjects];
+      return [repoIssues, repoPullRequests, repoProjects];
     case "project":
       return [projectItems];
     default:

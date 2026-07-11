@@ -8,6 +8,7 @@ import type {
   GitHubOrg,
   GitHubProject,
   GitHubProjectItem,
+  GitHubPullRequest,
   GitHubRepo,
 } from "./schema";
 
@@ -71,6 +72,27 @@ export function issueToNode(
       title: issue.title,
       state: issue.state,
       url: issue.url,
+    },
+  };
+}
+
+export function pullRequestToNode(
+  repoOwner: string,
+  repoName: string,
+  pullRequest: GitHubPullRequest,
+  position: Position,
+): GraphNode {
+  return {
+    id: crypto.randomUUID(),
+    type: "pullRequest",
+    position,
+    data: {
+      owner: repoOwner,
+      repo: repoName,
+      number: pullRequest.number,
+      title: pullRequest.title,
+      state: pullRequest.state,
+      url: pullRequest.url,
     },
   };
 }
