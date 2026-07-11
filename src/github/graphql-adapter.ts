@@ -45,7 +45,12 @@ const ORG_REPOS_QUERY = `query OrgRepos($login:String!,$first:Int!,$after:String
 
 const REPO_ISSUES_QUERY = `query RepoIssues($owner:String!,$name:String!,$first:Int!,$after:String,$states:[IssueState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ issues(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
 
-const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:PullRequestOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
+// GitHub's schema has no `PullRequestOrder` input type: `Repository.pullRequests`
+// reuses `IssueOrder`/`IssueOrderField` for ordering, same as `Repository.issues`
+// (confirmed via schema introspection), even though a distinct
+// `PullRequestOrderField` enum exists elsewhere in the schema and is not what
+// this argument accepts.
+const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
 
 const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:String){ organization(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
@@ -108,8 +113,10 @@ function issueSortFieldToGraphQL(field: IssueSortField): "CREATED_AT" | "UPDATED
   }
 }
 
-/** Maps a lower-case {@link PullRequestSortField} to GitHub's
- *  `PullRequestOrderField` GraphQL enum. */
+/** Maps a lower-case {@link PullRequestSortField} to a value of GitHub's
+ *  `IssueOrderField` GraphQL enum — `Repository.pullRequests`' `orderBy`
+ *  argument is typed `IssueOrder`, not a separate `PullRequestOrder`, despite
+ *  a distinct `PullRequestOrderField` enum existing elsewhere in the schema. */
 function pullRequestSortFieldToGraphQL(field: PullRequestSortField): "CREATED_AT" | "UPDATED_AT" {
   switch (field) {
     case "created":
