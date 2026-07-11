@@ -1,3 +1,21 @@
+# [1.12.0](https://github.com/ExaDev/graphle/compare/v1.11.0...v1.12.0) (2026-07-11)
+
+
+### Bug Fixes
+
+* **github:** dedupe repo-list loaders, add missing test, simplify URL wiring ([b495868](https://github.com/ExaDev/graphle/commit/b495868b23f8578bbde84154de271486b8380d57))
+
+
+### Features
+
+* **github:** add a repo issues/pull-requests list URL loader ([a4c87dc](https://github.com/ExaDev/graphle/commit/a4c87dc0fbdfb78c4398d51b38566654ea511ac8))
+* **github:** add single-repo metadata fetch to GraphQL client ([b12b386](https://github.com/ExaDev/graphle/commit/b12b3864aa635f4270eaa9a09a717a1aea8b5aea))
+* **github:** list a repo's pull requests via the GraphQL client ([ba28a8a](https://github.com/ExaDev/graphle/commit/ba28a8a7a958e119a0c5e82eaa2dceb7aa1db9f4))
+* **github:** materialise pull requests and expand them from a repo node ([91c0594](https://github.com/ExaDev/graphle/commit/91c059425d634e7741bc09458fb073c8f81d999c))
+* **github:** parse repo issues and pull-requests list URLs ([d8d73df](https://github.com/ExaDev/graphle/commit/d8d73df2e3e54064c957e9b3024c31edfc1ff2bf))
+* **schema:** add a pull-request built-in node type ([1fa4e8e](https://github.com/ExaDev/graphle/commit/1fa4e8e6e1486b2cfbc86d385cec0f2b3c6eaee3))
+* **ui:** load GitHub repo issues/pull-requests list URLs ([74321cf](https://github.com/ExaDev/graphle/commit/74321cf6988066e7420792ef0478278de346c915))
+
 # [1.11.0](https://github.com/ExaDev/graphle/compare/v1.10.0...v1.11.0) (2026-07-10)
 
 
