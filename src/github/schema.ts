@@ -30,11 +30,42 @@ export const GitHubRepo = z.object({
 });
 export type GitHubRepo = z.infer<typeof GitHubRepo>;
 
+/**
+ * GitHub's GraphQL `IssueState` enum, upper case (`OPEN`/`CLOSED`) as the API
+ * actually returns it — confirmed against live data, since every hand-written
+ * test fixture in this codebase had assumed lower case and none had been
+ * exercised against a real response. Normalised to lower case here, once, at
+ * the parse boundary, so every other schema and the rest of the app can work
+ * in the lower-case convention `built-in-types.ts`'s data schemas already use.
+ */
+const GitHubIssueState = z.enum(["OPEN", "CLOSED"]).transform((value): "open" | "closed" => {
+  switch (value) {
+    case "OPEN":
+      return "open";
+    case "CLOSED":
+      return "closed";
+  }
+});
+
+/** GitHub's GraphQL `PullRequestState` enum: an issue's two states plus `MERGED`. */
+const GitHubPullRequestState = z
+  .enum(["OPEN", "CLOSED", "MERGED"])
+  .transform((value): "open" | "closed" | "merged" => {
+    switch (value) {
+      case "OPEN":
+        return "open";
+      case "CLOSED":
+        return "closed";
+      case "MERGED":
+        return "merged";
+    }
+  });
+
 /** A GitHub issue. State is required from the issues connection. */
 export const GitHubIssue = z.object({
   number: z.number().int(),
   title: z.string(),
-  state: z.enum(["open", "closed"]),
+  state: GitHubIssueState,
   url: z.string(),
 });
 export type GitHubIssue = z.infer<typeof GitHubIssue>;
@@ -43,7 +74,7 @@ export type GitHubIssue = z.infer<typeof GitHubIssue>;
 export const GitHubPullRequest = z.object({
   number: z.number().int(),
   title: z.string(),
-  state: z.enum(["open", "closed", "merged"]),
+  state: GitHubPullRequestState,
   url: z.string(),
 });
 export type GitHubPullRequest = z.infer<typeof GitHubPullRequest>;
@@ -69,7 +100,7 @@ const IssueContent = z.object({
   __typename: z.literal("Issue"),
   number: z.number().int(),
   title: z.string(),
-  state: z.enum(["open", "closed"]).optional(),
+  state: GitHubIssueState.optional(),
   url: z.string(),
   repository: z.object({
     name: z.string(),

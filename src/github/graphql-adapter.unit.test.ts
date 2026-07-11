@@ -124,7 +124,7 @@ describe("createGitHubClient - pagination", () => {
               repository: {
                 issues: {
                   nodes: [
-                    { number: 1, title: "Bug", state: "open", url: "u1" },
+                    { number: 1, title: "Bug", state: "OPEN", url: "u1" },
                   ],
                   pageInfo: { hasNextPage: false, endCursor: null },
                 },
@@ -157,7 +157,7 @@ describe("createGitHubClient - pagination", () => {
                         __typename: "Issue",
                         number: 7,
                         title: "Tracked",
-                        state: "open",
+                        state: "OPEN",
                         url: "iu7",
                         repository: { name: "graphle", owner: { login: "exadev" } },
                       },
@@ -216,7 +216,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
             data: {
               repository: {
                 pullRequests: {
-                  nodes: [{ number: 1, title: "Add feature", state: "open", url: "pr1" }],
+                  nodes: [{ number: 1, title: "Add feature", state: "OPEN", url: "pr1" }],
                   pageInfo: { hasNextPage: false, endCursor: null },
                 },
               },
@@ -250,11 +250,11 @@ describe("createGitHubClient - listRepoPullRequests", () => {
           const page =
             call === 1
               ? {
-                  nodes: [{ number: 1, title: "First", state: "open", url: "pr1" }],
+                  nodes: [{ number: 1, title: "First", state: "OPEN", url: "pr1" }],
                   pageInfo: { hasNextPage: true, endCursor: "CURSOR1" },
                 }
               : {
-                  nodes: [{ number: 2, title: "Second", state: "merged", url: "pr2" }],
+                  nodes: [{ number: 2, title: "Second", state: "MERGED", url: "pr2" }],
                   pageInfo: { hasNextPage: false, endCursor: null },
                 };
           return jsonResponse({
