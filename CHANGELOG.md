@@ -1,3 +1,10 @@
+## [1.14.1](https://github.com/ExaDev/graphle/compare/v1.14.0...v1.14.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **github:** nest issues by ownership, not project tracking ([496d0ba](https://github.com/ExaDev/graphle/commit/496d0ba2b0cf9828be6851c84a7b2e0452aeb438))
+
 # [1.14.0](https://github.com/ExaDev/graphle/compare/v1.13.0...v1.14.0) (2026-07-11)
 
 
