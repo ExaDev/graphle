@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-and-run
         with:
           task: lint
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-and-run
         with:
           task: typecheck
@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-and-run
         with:
           task: test
@@ -94,7 +94,7 @@ jobs:
       GH_TEST_PAT_CLASSIC_PRIVATE: ${{ secrets.GH_TEST_PAT_CLASSIC_PRIVATE }}
       GH_TEST_PAT_FINE_GRAINED_PRIVATE: ${{ secrets.GH_TEST_PAT_FINE_GRAINED_PRIVATE }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-and-run
         with:
           task: integration-e2e
@@ -113,7 +113,7 @@ jobs:
       contents: write
       issues: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # semantic-release analyses the full commit history since the last release.
           fetch-depth: 0
@@ -150,7 +150,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Check out the latest main (the release commit semantic-release just
           # pushed), not the trigger commit, so the build resolves the new tag.
