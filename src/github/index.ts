@@ -16,6 +16,7 @@ export {
   GitHubOrg,
   GitHubProject,
   GitHubProjectItem,
+  GitHubPullRequest,
   GitHubRepo,
   GitHubViewer,
   PageInfo,
@@ -29,6 +30,7 @@ export {
   ownsEdge,
   projectIssueItemToNode,
   projectToNode,
+  pullRequestToNode,
   repoToNode,
   tracksEdge,
 } from "./materialise";
@@ -40,3 +42,15 @@ export {
   type ProjectOwnerType,
 } from "./project-url";
 export { loadProjectDocument, type ProjectLoadResult } from "./project-loader";
+export {
+  canonicalRepoIssuesUrl,
+  canonicalRepoPullRequestsUrl,
+  parseRepoIssuesUrl,
+  parseRepoPullRequestsUrl,
+  type ParsedRepoListUrl,
+} from "./repo-list-url";
+export {
+  loadRepoIssuesDocument,
+  loadRepoPullRequestsDocument,
+  type RepoListLoadResult,
+} from "./repo-list-loader";
