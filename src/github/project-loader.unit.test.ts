@@ -59,6 +59,7 @@ describe("loadProjectDocument", () => {
 
     const result = await loadProjectDocument(
       { ownerType: "org", login: "exadev", number: 1 },
+      "",
       client,
       new AbortController().signal,
     );
@@ -89,6 +90,7 @@ describe("loadProjectDocument", () => {
 
     const result = await loadProjectDocument(
       { ownerType: "org", login: "exadev", number: 1 },
+      "",
       client,
       new AbortController().signal,
     );
@@ -122,6 +124,7 @@ describe("loadProjectDocument", () => {
 
     const result = await loadProjectDocument(
       { ownerType: "org", login: "exadev", number: 1 },
+      "",
       client,
       new AbortController().signal,
     );
@@ -141,6 +144,7 @@ describe("loadProjectDocument", () => {
 
     const result = await loadProjectDocument(
       { ownerType: "user", login: "octocat", number: 1 },
+      "",
       client,
       new AbortController().signal,
     );
@@ -157,9 +161,34 @@ describe("loadProjectDocument", () => {
     await expect(
       loadProjectDocument(
         { ownerType: "org", login: "exadev", number: 999 },
+        "",
         client,
         new AbortController().signal,
       ),
     ).rejects.toThrow("not found");
+  });
+
+  it("filters items by a case-insensitive title substring match", async () => {
+    const client: GitHubClient = {
+      ...unreachableClient(),
+      getOrgProject: () => Promise.resolve(project),
+      listProjectItems: (): Promise<Page<GitHubProjectItem>> =>
+        Promise.resolve({
+          items: [issueItem(1, "Fix the thing"), issueItem(2, "Another bug")],
+          endCursor: undefined,
+          hasNextPage: false,
+        }),
+    };
+
+    const result = await loadProjectDocument(
+      { ownerType: "org", login: "exadev", number: 1 },
+      "BUG",
+      client,
+      new AbortController().signal,
+    );
+
+    const issueNodes = result.document.nodes.filter((n) => n.type === "issue");
+    expect(issueNodes.map((n) => n.data.title)).toEqual(["Another bug"]);
+    expect(result.canonicalUrl).toBe("https://github.com/orgs/exadev/projects/1?filterQuery=BUG");
   });
 });

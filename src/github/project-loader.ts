@@ -69,13 +69,19 @@ export interface ProjectLoadResult {
 /**
  * Resolve `parsed` to a project (via `getOrgProject`/`getUserProject`
  * depending on `ownerType`), fetch every item, and assemble a fresh graph
- * document: one project node, one issue node per Issue item, `tracks` edges
- * between them. Propagates `GitHubError` on any failure (unresolvable
- * owner/project, network, rate limit) — the caller is responsible for
- * surfacing it.
+ * document: one project node, one issue node per Issue item whose title
+ * matches `searchText`, `tracks` edges between them. `searchText` is
+ * graphle's own client-side filter (a case-insensitive substring match
+ * against each item's title, applied after fetching every item — GitHub's
+ * GraphQL API has no server-side way to filter a project's items connection,
+ * so this is a materially lesser feature than GitHub's own project-view
+ * filters, not a re-implementation of them); pass `""` to keep every item.
+ * Propagates `GitHubError` on any failure (unresolvable owner/project,
+ * network, rate limit) — the caller is responsible for surfacing it.
  */
 export async function loadProjectDocument(
   parsed: ParsedProjectUrl,
+  searchText: string,
   client: GitHubClient,
   signal: AbortSignal,
 ): Promise<ProjectLoadResult> {
@@ -88,7 +94,10 @@ export async function loadProjectDocument(
   // Only Issue items are materialised; DraftIssue items are skipped (no
   // stable identity/URL to key a node on), matching the interactive
   // "project-items" expansion in ./expand.
-  const issues = items.filter((item) => item.__typename === "Issue");
+  const normalisedSearch = searchText.toLowerCase();
+  const issues = items
+    .filter((item) => item.__typename === "Issue")
+    .filter((item) => normalisedSearch === "" || item.title.toLowerCase().includes(normalisedSearch));
 
   const projectNode = projectToNode(parsed.login, project, PROJECT_POSITION);
   const positions = placeAround(PROJECT_POSITION, issues.length);
@@ -101,5 +110,5 @@ export async function loadProjectDocument(
   });
 
   const { document } = applyDelta(emptyDocument(project.title), buildDelta(nodes, edges));
-  return { document, canonicalUrl: canonicalProjectUrl(parsed) };
+  return { document, canonicalUrl: canonicalProjectUrl(parsed, searchText) };
 }

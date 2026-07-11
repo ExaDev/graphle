@@ -19,7 +19,13 @@ import {
   type GraphDelta,
   type GraphOperation,
 } from "@/domain";
-import type { GitHubClient } from "@/github";
+import type {
+  GitHubClient,
+  ParsedProjectUrl,
+  ParsedRepoListUrl,
+  RepoIssuesFilters,
+  RepoPullRequestsFilters,
+} from "@/github";
 import type { GistFileCandidate } from "@/sharing/gist";
 import type { EdgeTypeDefinition, GraphDocument, NodeTypeDefinition } from "@/schema";
 
@@ -51,6 +57,23 @@ export interface SyncConflict {
   localDocument: GraphDocument;
   remoteSha: string;
 }
+
+/**
+ * What the current document was last loaded from, if it was a GitHub
+ * Project/repo-issues/repo-pull-requests URL and hasn't been edited since —
+ * ephemeral, like `selection`/`graphId`, never persisted or written to the
+ * URL's `#g=` payload. Lets the "Remote sync" filter controls in
+ * `GraphsDrawer` re-issue the same load with new filter values through
+ * `replaceDocument`/`writeRemoteUrlToLocation`, the same path the initial
+ * load used — which is what keeps the address bar a live GitHub pointer
+ * rather than forking into an inline share snapshot. Cleared unconditionally
+ * by every document-mutating commit (`commitDocument`, `undo`, `redo`): an
+ * actual edit — including an Expand-menu click — always severs the link.
+ */
+export type RemoteGithubSource =
+  | { kind: "project"; parsed: ParsedProjectUrl; searchText: string }
+  | { kind: "repoIssues"; parsed: ParsedRepoListUrl; filters: RepoIssuesFilters }
+  | { kind: "repoPullRequests"; parsed: ParsedRepoListUrl; filters: RepoPullRequestsFilters };
 
 interface GraphState {
   /** The live document; the single source of truth for graph contents. */
@@ -202,6 +225,14 @@ interface GraphState {
   syncConflict: SyncConflict | undefined;
   /** Set or clear the pending sync conflict. */
   setSyncConflict: (conflict: SyncConflict | undefined) => void;
+  /** What the current document was last loaded from, if a GitHub URL and
+   *  unedited since — see {@link RemoteGithubSource}. */
+  remoteGithubSource: RemoteGithubSource | undefined;
+  /** Set or clear the current GitHub source. Callers set it explicitly right
+   *  after their own `replaceDocument` + `writeRemoteUrlToLocation` pair —
+   *  every document-mutating commit already clears it unconditionally, so
+   *  only a successful GitHub load ever needs to set it. */
+  setRemoteGithubSource: (source: RemoteGithubSource | undefined) => void;
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -222,6 +253,7 @@ export const useGraphStore = create<GraphState>()(
         dirty,
         undoStack: pushHistory(state.undoStack, state.document),
         redoStack: [],
+        remoteGithubSource: undefined,
       });
     };
 
@@ -327,6 +359,7 @@ export const useGraphStore = create<GraphState>()(
           undoStack: state.undoStack.slice(0, -1),
           redoStack: [...state.redoStack, state.document],
           dirty: previous !== state.savedDocument,
+          remoteGithubSource: undefined,
         });
       },
       redo: () => {
@@ -340,6 +373,7 @@ export const useGraphStore = create<GraphState>()(
           redoStack: state.redoStack.slice(0, -1),
           undoStack: [...state.undoStack, state.document],
           dirty: next !== state.savedDocument,
+          remoteGithubSource: undefined,
         });
       },
       gistPicker: undefined,
@@ -352,6 +386,8 @@ export const useGraphStore = create<GraphState>()(
         set({ githubPanelOpened: false, pendingGitHubAction: undefined }),
       syncConflict: undefined,
       setSyncConflict: (syncConflict) => set({ syncConflict }),
+      remoteGithubSource: undefined,
+      setRemoteGithubSource: (remoteGithubSource) => set({ remoteGithubSource }),
     };
   }),
 );

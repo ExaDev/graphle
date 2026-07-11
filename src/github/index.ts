@@ -37,6 +37,7 @@ export {
 export { expansionsForType, type Expansion, type ExpansionResult } from "./expand";
 export {
   canonicalProjectUrl,
+  parseProjectFilterQuery,
   parseProjectUrl,
   type ParsedProjectUrl,
   type ProjectOwnerType,
@@ -45,7 +46,9 @@ export { loadProjectDocument, type ProjectLoadResult } from "./project-loader";
 export {
   canonicalRepoIssuesUrl,
   canonicalRepoPullRequestsUrl,
+  parseRepoIssuesFilters,
   parseRepoIssuesUrl,
+  parseRepoPullRequestsFilters,
   parseRepoPullRequestsUrl,
   type ParsedRepoListUrl,
 } from "./repo-list-url";
@@ -54,3 +57,19 @@ export {
   loadRepoPullRequestsDocument,
   type RepoListLoadResult,
 } from "./repo-list-loader";
+export {
+  DEFAULT_REPO_ISSUES_FILTERS,
+  DEFAULT_REPO_PULL_REQUESTS_FILTERS,
+  isIssueSortField,
+  isIssueState,
+  isPullRequestSortField,
+  isPullRequestState,
+  isSortDirection,
+  type IssueSortField,
+  type IssueState,
+  type PullRequestSortField,
+  type PullRequestState,
+  type RepoIssuesFilters,
+  type RepoPullRequestsFilters,
+  type SortDirection,
+} from "./filters";

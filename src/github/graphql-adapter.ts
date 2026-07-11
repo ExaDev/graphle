@@ -1,5 +1,12 @@
 import type { GitHubClient } from "./contract";
 import { GitHubError, classifyByStatus } from "./errors";
+import type {
+  IssueSortField,
+  IssueState,
+  PullRequestSortField,
+  PullRequestState,
+  SortDirection,
+} from "./filters";
 import {
   OrgProjectResponse,
   OrgProjectsResponse,
@@ -33,9 +40,9 @@ const VIEWER_ORGS_QUERY = `query ViewerOrgs($first:Int!,$after:String){ viewer {
 
 const ORG_REPOS_QUERY = `query OrgRepos($login:String!,$first:Int!,$after:String){ organization(login:$login){ repositories(first:$first,after:$after,orderBy:{field:UPDATED_AT,direction:DESC}){ pageInfo{hasNextPage endCursor} nodes{ name owner{login} url description isArchived } } } rateLimit{remaining resetAt} }`;
 
-const REPO_ISSUES_QUERY = `query RepoIssues($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issues(first:$first,after:$after,states:[OPEN],orderBy:{field:UPDATED_AT,direction:DESC}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
+const REPO_ISSUES_QUERY = `query RepoIssues($owner:String!,$name:String!,$first:Int!,$after:String,$states:[IssueState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ issues(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
 
-const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:[OPEN],orderBy:{field:UPDATED_AT,direction:DESC}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
+const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:PullRequestOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
 
 const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:String){ organization(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
@@ -48,6 +55,64 @@ const ORG_PROJECT_QUERY = `query OrgProject($login:String!,$number:Int!){ organi
 const USER_PROJECT_QUERY = `query UserProject($login:String!,$number:Int!){ user(login:$login){ projectV2(number:$number){ id number title url closed } } rateLimit{remaining resetAt} }`;
 
 const REPO_QUERY = `query Repo($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ owner{login} name url description isArchived } rateLimit{remaining resetAt} }`;
+
+/** Maps a lower-case {@link IssueState} to GitHub's `IssueState` GraphQL enum. */
+function issueStateToGraphQL(state: IssueState): "OPEN" | "CLOSED" {
+  switch (state) {
+    case "open":
+      return "OPEN";
+    case "closed":
+      return "CLOSED";
+  }
+}
+
+/** Maps a lower-case {@link PullRequestState} to GitHub's `PullRequestState`
+ *  GraphQL enum. */
+function pullRequestStateToGraphQL(state: PullRequestState): "OPEN" | "CLOSED" | "MERGED" {
+  switch (state) {
+    case "open":
+      return "OPEN";
+    case "closed":
+      return "CLOSED";
+    case "merged":
+      return "MERGED";
+  }
+}
+
+/** Maps a lower-case {@link IssueSortField} to GitHub's `IssueOrderField`
+ *  GraphQL enum. */
+function issueSortFieldToGraphQL(field: IssueSortField): "CREATED_AT" | "UPDATED_AT" | "COMMENTS" {
+  switch (field) {
+    case "created":
+      return "CREATED_AT";
+    case "updated":
+      return "UPDATED_AT";
+    case "comments":
+      return "COMMENTS";
+  }
+}
+
+/** Maps a lower-case {@link PullRequestSortField} to GitHub's
+ *  `PullRequestOrderField` GraphQL enum. */
+function pullRequestSortFieldToGraphQL(field: PullRequestSortField): "CREATED_AT" | "UPDATED_AT" {
+  switch (field) {
+    case "created":
+      return "CREATED_AT";
+    case "updated":
+      return "UPDATED_AT";
+  }
+}
+
+/** Maps a lower-case {@link SortDirection} to GitHub's `OrderDirection`
+ *  GraphQL enum. */
+function sortDirectionToGraphQL(direction: SortDirection): "ASC" | "DESC" {
+  switch (direction) {
+    case "asc":
+      return "ASC";
+    case "desc":
+      return "DESC";
+  }
+}
 
 /** Returns the GraphQL `errors` array from `body`, or undefined when absent. */
 function extractErrors(body: unknown): unknown[] | undefined {
@@ -188,10 +253,19 @@ export function createGitHubClient(parameters: {
       return { items: repos.nodes, ...toPage(repos.pageInfo) };
     },
 
-    async listRepoIssues(owner, name, cursor, signal) {
+    async listRepoIssues(owner, name, cursor, filters, signal) {
       const result = await graphql(
         REPO_ISSUES_QUERY,
-        { owner, name, first: PAGE_SIZE, after: cursor },
+        {
+          owner,
+          name,
+          first: PAGE_SIZE,
+          after: cursor,
+          states: filters.states.map(issueStateToGraphQL),
+          orderByField: issueSortFieldToGraphQL(filters.sort.field),
+          orderByDirection: sortDirectionToGraphQL(filters.sort.direction),
+          labels: filters.labels.length === 0 ? undefined : filters.labels,
+        },
         RepoIssuesResponse,
         signal,
       );
@@ -204,10 +278,19 @@ export function createGitHubClient(parameters: {
       return { items: issues.nodes, ...toPage(issues.pageInfo) };
     },
 
-    async listRepoPullRequests(owner, name, cursor, signal) {
+    async listRepoPullRequests(owner, name, cursor, filters, signal) {
       const result = await graphql(
         REPO_PULL_REQUESTS_QUERY,
-        { owner, name, first: PAGE_SIZE, after: cursor },
+        {
+          owner,
+          name,
+          first: PAGE_SIZE,
+          after: cursor,
+          states: filters.states.map(pullRequestStateToGraphQL),
+          orderByField: pullRequestSortFieldToGraphQL(filters.sort.field),
+          orderByDirection: sortDirectionToGraphQL(filters.sort.direction),
+          labels: filters.labels.length === 0 ? undefined : filters.labels,
+        },
         RepoPullRequestsResponse,
         signal,
       );

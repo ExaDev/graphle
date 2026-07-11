@@ -9,14 +9,23 @@
  * 1. A GitHub Projects (v2) URL ({@link parseProjectUrl}) loads via the
  *    authenticated GraphQL client — a stored PAT is used directly; with none
  *    stored, `GitHubPanel` opens (via `store.openGitHubPanel`) with a pending
- *    action that resumes the load once the user validates one. Either way,
- *    on success the address bar is normalised to the project's canonical URL
- *    (stripped of any `/views/{N}` or `?query=` the user pasted — this
- *    codec never tracks a view's filter/sort, it always loads every item).
+ *    action that resumes the load once the user validates one. Any
+ *    `?filterQuery=`/`?query=` string is parsed as graphle's own client-side
+ *    title filter (see `project-loader.ts`); a `/views/{N}` segment has no
+ *    GraphQL equivalent and is dropped. On success the address bar is
+ *    normalised to the project's canonical URL, and `store.remoteGithubSource`
+ *    is set so `GraphsDrawer`'s filter controls can re-issue this load with a
+ *    new search term without counting as an edit.
  * 2. A GitHub repo issues or pull-requests list URL ({@link parseRepoIssuesUrl}/
- *    {@link parseRepoPullRequestsUrl}) loads every open item via the
+ *    {@link parseRepoPullRequestsUrl}) loads matching items via the
  *    authenticated GraphQL client, mirroring the Projects branch above (same
- *    stored-PAT-or-prompt flow, same canonical-URL normalisation on success).
+ *    stored-PAT-or-prompt flow, same canonical-URL normalisation and
+ *    `remoteGithubSource` bookkeeping on success). Filters (state/sort/
+ *    labels) are resolved by {@link parseRepoIssuesFilters}/
+ *    {@link parseRepoPullRequestsFilters} — graphle's own query params if the
+ *    URL carries them, else a best-effort translation of GitHub's `q=`
+ *    search DSL, else the previous hardcoded default (open, most recently
+ *    updated).
  * 3. A GitHub repo-file URL ({@link parseGithubFileUrl}) — either the
  *    human-facing `blob` page or a raw-host URL — loads via the Contents API
  *    ({@link fetchGithubFileRevision}), since the human-facing page is an
@@ -56,18 +65,24 @@ import { notifications } from "@mantine/notifications";
 
 import {
   createGitHubClient,
+  DEFAULT_REPO_ISSUES_FILTERS,
+  DEFAULT_REPO_PULL_REQUESTS_FILTERS,
   GitHubError,
   githubErrorMessage,
   loadProjectDocument,
   loadRepoIssuesDocument,
   loadRepoPullRequestsDocument,
+  parseProjectFilterQuery,
   parseProjectUrl,
+  parseRepoIssuesFilters,
   parseRepoIssuesUrl,
+  parseRepoPullRequestsFilters,
   parseRepoPullRequestsUrl,
   type GitHubClient,
   type ParsedProjectUrl,
   type ParsedRepoListUrl,
-  type RepoListLoadResult,
+  type RepoIssuesFilters,
+  type RepoPullRequestsFilters,
 } from "@/github";
 import { ShareDecodeError } from "@/sharing/codec";
 import { resolveRemoteUrl } from "@/sharing/gist";
@@ -108,6 +123,7 @@ export function useUrlSync(): void {
   const setGistPicker = useGraphStore((s) => s.setGistPicker);
   const openGitHubPanel = useGraphStore((s) => s.openGitHubPanel);
   const closeGitHubPanel = useGraphStore((s) => s.closeGitHubPanel);
+  const setRemoteGithubSource = useGraphStore((s) => s.setRemoteGithubSource);
 
   useEffect(() => {
     // Subscribe before loading so the load's own document change is observed
@@ -132,17 +148,21 @@ export function useUrlSync(): void {
     /** Load a GitHub Projects URL with an already-authenticated client,
      *  applying the result or reporting the failure. Shared by the
      *  token-already-stored path and the pending-action resumed after a
-     *  fresh PAT validation. */
+     *  fresh PAT validation. `searchText` is graphle's own client-side
+     *  title-filter (see `project-loader.ts`), parsed from `?filterQuery=`
+     *  if present. */
     function loadProjectWith(
       parsed: ParsedProjectUrl,
+      searchText: string,
       client: GitHubClient,
       onSuccess?: () => void,
     ): void {
-      loadProjectDocument(parsed, client, controller.signal)
+      loadProjectDocument(parsed, searchText, client, controller.signal)
         .then((result) => {
           if (controller.signal.aborted) return;
           replaceDocument(result.document);
           writeRemoteUrlToLocation(result.canonicalUrl);
+          setRemoteGithubSource({ kind: "project", parsed, searchText });
           onSuccess?.();
         })
         .catch((error: unknown) => {
@@ -154,26 +174,46 @@ export function useUrlSync(): void {
         });
     }
 
-    /** Load a GitHub repo issues or pull-requests list URL with an
-     *  already-authenticated client, applying the result or reporting the
-     *  failure. Shared by the token-already-stored path and the
-     *  pending-action resumed after a fresh PAT validation, mirroring
-     *  `loadProjectWith`. */
-    function loadRepoListWith(
+    /** Load a GitHub repo issues list URL with an already-authenticated
+     *  client, applying the result or reporting the failure. Shared by the
+     *  token-already-stored path and the pending-action resumed after a
+     *  fresh PAT validation, mirroring `loadProjectWith`. */
+    function loadRepoIssuesWith(
       parsed: ParsedRepoListUrl,
-      loader: (
-        parsed: ParsedRepoListUrl,
-        client: GitHubClient,
-        signal: AbortSignal,
-      ) => Promise<RepoListLoadResult>,
+      filters: RepoIssuesFilters,
       client: GitHubClient,
       onSuccess?: () => void,
     ): void {
-      loader(parsed, client, controller.signal)
+      loadRepoIssuesDocument(parsed, filters, client, controller.signal)
         .then((result) => {
           if (controller.signal.aborted) return;
           replaceDocument(result.document);
           writeRemoteUrlToLocation(result.canonicalUrl);
+          setRemoteGithubSource({ kind: "repoIssues", parsed, filters });
+          onSuccess?.();
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          notifications.show({
+            color: "red",
+            message: `Could not load the GitHub repo: ${remoteLoadFailureMessage(error)}`,
+          });
+        });
+    }
+
+    /** Mirrors `loadRepoIssuesWith` for a repo pull-requests list URL. */
+    function loadRepoPullRequestsWith(
+      parsed: ParsedRepoListUrl,
+      filters: RepoPullRequestsFilters,
+      client: GitHubClient,
+      onSuccess?: () => void,
+    ): void {
+      loadRepoPullRequestsDocument(parsed, filters, client, controller.signal)
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          replaceDocument(result.document);
+          writeRemoteUrlToLocation(result.canonicalUrl);
+          setRemoteGithubSource({ kind: "repoPullRequests", parsed, filters });
           onSuccess?.();
         })
         .catch((error: unknown) => {
@@ -253,18 +293,20 @@ export function useUrlSync(): void {
           // is tried first so parseRepoPullRequestsUrl is never called on a
           // URL that already matched as an issues list.
           const parsedRepoIssues = parseRepoIssuesUrl(remoteUrl);
-          const parsedRepoList = parsedRepoIssues ?? parseRepoPullRequestsUrl(remoteUrl);
+          const parsedRepoPullRequests =
+            parsedRepoIssues === undefined ? parseRepoPullRequestsUrl(remoteUrl) : undefined;
           if (parsedProject !== undefined) {
+            const searchText = parseProjectFilterQuery(remoteUrl);
             const secretStore = createSecretStore(db);
             secretStore
               .getGitHubToken(controller.signal)
               .then((token) => {
                 if (controller.signal.aborted) return;
                 if (token !== undefined) {
-                  loadProjectWith(parsedProject, createGitHubClient({ token }));
+                  loadProjectWith(parsedProject, searchText, createGitHubClient({ token }));
                 } else {
                   openGitHubPanel((client) =>
-                    loadProjectWith(parsedProject, client, closeGitHubPanel),
+                    loadProjectWith(parsedProject, searchText, client, closeGitHubPanel),
                   );
                 }
               })
@@ -275,19 +317,44 @@ export function useUrlSync(): void {
                   message: `Could not read the stored GitHub token: ${describe(error)}`,
                 });
               });
-          } else if (parsedRepoList !== undefined) {
-            const loader =
-              parsedRepoIssues !== undefined ? loadRepoIssuesDocument : loadRepoPullRequestsDocument;
+          } else if (parsedRepoIssues !== undefined) {
+            const filters = parseRepoIssuesFilters(remoteUrl, DEFAULT_REPO_ISSUES_FILTERS);
             const secretStore = createSecretStore(db);
             secretStore
               .getGitHubToken(controller.signal)
               .then((token) => {
                 if (controller.signal.aborted) return;
                 if (token !== undefined) {
-                  loadRepoListWith(parsedRepoList, loader, createGitHubClient({ token }));
+                  loadRepoIssuesWith(parsedRepoIssues, filters, createGitHubClient({ token }));
                 } else {
                   openGitHubPanel((client) =>
-                    loadRepoListWith(parsedRepoList, loader, client, closeGitHubPanel),
+                    loadRepoIssuesWith(parsedRepoIssues, filters, client, closeGitHubPanel),
+                  );
+                }
+              })
+              .catch((error: unknown) => {
+                if (controller.signal.aborted) return;
+                notifications.show({
+                  color: "red",
+                  message: `Could not read the stored GitHub token: ${describe(error)}`,
+                });
+              });
+          } else if (parsedRepoPullRequests !== undefined) {
+            const filters = parseRepoPullRequestsFilters(remoteUrl, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+            const secretStore = createSecretStore(db);
+            secretStore
+              .getGitHubToken(controller.signal)
+              .then((token) => {
+                if (controller.signal.aborted) return;
+                if (token !== undefined) {
+                  loadRepoPullRequestsWith(
+                    parsedRepoPullRequests,
+                    filters,
+                    createGitHubClient({ token }),
+                  );
+                } else {
+                  openGitHubPanel((client) =>
+                    loadRepoPullRequestsWith(parsedRepoPullRequests, filters, client, closeGitHubPanel),
                   );
                 }
               })
@@ -360,5 +427,5 @@ export function useUrlSync(): void {
       controller.abort();
       if (writeTimer !== undefined) clearTimeout(writeTimer);
     };
-  }, [replaceDocument, setGistPicker, openGitHubPanel, closeGitHubPanel]);
+  }, [replaceDocument, setGistPicker, openGitHubPanel, closeGitHubPanel, setRemoteGithubSource]);
 }

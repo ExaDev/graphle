@@ -1,13 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { createGitHubClient } from "./graphql-adapter";
 import { GitHubError } from "./errors";
+import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
+import { createGitHubClient } from "./graphql-adapter";
 
 /** Narrows a parsed request body to a `{ query: string }` envelope. */
 function hasQueryEnvelope(value: unknown): value is { query: string } {
   if (typeof value !== "object" || value === null) return false;
   if (!("query" in value)) return false;
   return typeof value.query === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Narrows a parsed request body's `variables` field, if present and an object. */
+function extractVariables(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined;
+  if (!("variables" in value)) return undefined;
+  const variables = value.variables;
+  return isRecord(variables) ? variables : undefined;
 }
 
 /**
@@ -183,6 +196,7 @@ describe("createGitHubClient - pagination", () => {
       "exadev",
       "graphle",
       undefined,
+      DEFAULT_REPO_ISSUES_FILTERS,
       new AbortController().signal,
     );
     expect(issues.items).toHaveLength(1);
@@ -230,6 +244,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
       "exadev",
       "graphle",
       undefined,
+      DEFAULT_REPO_PULL_REQUESTS_FILTERS,
       new AbortController().signal,
     );
     expect(pullRequests.items).toHaveLength(1);
@@ -268,6 +283,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
       "exadev",
       "graphle",
       undefined,
+      DEFAULT_REPO_PULL_REQUESTS_FILTERS,
       new AbortController().signal,
     );
     expect(first.items.map((p) => p.number)).toEqual([1]);
@@ -278,6 +294,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
       "exadev",
       "graphle",
       first.endCursor,
+      DEFAULT_REPO_PULL_REQUESTS_FILTERS,
       new AbortController().signal,
     );
     expect(second.items.map((p) => p.number)).toEqual([2]);
@@ -301,6 +318,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
         "exadev",
         "no-such-repo",
         undefined,
+        DEFAULT_REPO_PULL_REQUESTS_FILTERS,
         new AbortController().signal,
       ),
     ).rejects.toMatchObject({ kind: { type: "notFound" } });
@@ -318,10 +336,55 @@ describe("createGitHubClient - listRepoPullRequests", () => {
       }),
     });
     await expect(
-      client.listRepoPullRequests("exadev", "graphle", undefined, new AbortController().signal),
+      client.listRepoPullRequests(
+        "exadev",
+        "graphle",
+        undefined,
+        DEFAULT_REPO_PULL_REQUESTS_FILTERS,
+        new AbortController().signal,
+      ),
     ).rejects.toMatchObject({
       kind: { type: "rateLimited", resetAt: RATE.resetAt },
     });
+  });
+
+  it("maps lower-case filters to GitHub's upper-case GraphQL variables, omitting empty labels", async () => {
+    let capturedVariables: Record<string, unknown> | undefined;
+    const client = createGitHubClient({
+      token: "t",
+      fetch: (_input, init) => {
+        const rawBody = init?.body;
+        if (typeof rawBody !== "string") throw new Error("expected a string request body");
+        const parsed: unknown = JSON.parse(rawBody);
+        const variables = extractVariables(parsed);
+        if (variables !== undefined) capturedVariables = variables;
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              repository: {
+                pullRequests: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+              },
+              rateLimit: RATE,
+            },
+          }),
+        );
+      },
+    });
+
+    await client.listRepoPullRequests(
+      "exadev",
+      "graphle",
+      undefined,
+      { states: ["open", "merged"], sort: { field: "created", direction: "asc" }, labels: [] },
+      new AbortController().signal,
+    );
+
+    expect(capturedVariables).toMatchObject({
+      states: ["OPEN", "MERGED"],
+      orderByField: "CREATED_AT",
+      orderByDirection: "ASC",
+    });
+    expect(capturedVariables?.labels).toBeUndefined();
   });
 });
 

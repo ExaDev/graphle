@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
 import { loadRepoIssuesDocument, loadRepoPullRequestsDocument } from "./repo-list-loader";
 import type { GitHubClient, Page } from "./contract";
 import type { GitHubIssue, GitHubPullRequest, GitHubRepo } from "./schema";
@@ -66,7 +67,7 @@ describe("loadRepoIssuesDocument", () => {
         }),
     };
 
-    const result = await loadRepoIssuesDocument(parsed, client, new AbortController().signal);
+    const result = await loadRepoIssuesDocument(parsed, DEFAULT_REPO_ISSUES_FILTERS, client, new AbortController().signal);
 
     expect(result.canonicalUrl).toBe("https://github.com/exadev/graphle/issues");
     expect(result.document.nodes).toHaveLength(3); // repo + 2 issues
@@ -101,7 +102,7 @@ describe("loadRepoIssuesDocument", () => {
       },
     };
 
-    const result = await loadRepoIssuesDocument(parsed, client, new AbortController().signal);
+    const result = await loadRepoIssuesDocument(parsed, DEFAULT_REPO_ISSUES_FILTERS, client, new AbortController().signal);
 
     expect(calls).toBe(2);
     const issueNodes = result.document.nodes.filter((n) => n.type === "issue");
@@ -117,10 +118,35 @@ describe("loadRepoIssuesDocument", () => {
     await expect(
       loadRepoIssuesDocument(
         { owner: "exadev", repo: "does-not-exist" },
+        DEFAULT_REPO_ISSUES_FILTERS,
         client,
         new AbortController().signal,
       ),
     ).rejects.toThrow("not found");
+  });
+
+  it("passes the given filters through to the client and into the canonical URL", async () => {
+    let receivedFilters: unknown;
+    const client: GitHubClient = {
+      ...unreachableClient(),
+      getRepo: () => Promise.resolve(repo),
+      listRepoIssues: (_owner, _name, _cursor, filters): Promise<Page<GitHubIssue>> => {
+        receivedFilters = filters;
+        return Promise.resolve({ items: [], endCursor: undefined, hasNextPage: false });
+      },
+    };
+    const filters = {
+      states: ["closed"] as const,
+      sort: { field: "created" as const, direction: "asc" as const },
+      labels: ["bug"],
+    };
+
+    const result = await loadRepoIssuesDocument(parsed, filters, client, new AbortController().signal);
+
+    expect(receivedFilters).toEqual(filters);
+    expect(result.canonicalUrl).toBe(
+      "https://github.com/exadev/graphle/issues?state=closed&sort=created&direction=asc&labels=bug",
+    );
   });
 });
 
@@ -139,6 +165,7 @@ describe("loadRepoPullRequestsDocument", () => {
 
     const result = await loadRepoPullRequestsDocument(
       parsed,
+      DEFAULT_REPO_PULL_REQUESTS_FILTERS,
       client,
       new AbortController().signal,
     );
@@ -177,6 +204,7 @@ describe("loadRepoPullRequestsDocument", () => {
 
     const result = await loadRepoPullRequestsDocument(
       parsed,
+      DEFAULT_REPO_PULL_REQUESTS_FILTERS,
       client,
       new AbortController().signal,
     );
@@ -195,9 +223,31 @@ describe("loadRepoPullRequestsDocument", () => {
     await expect(
       loadRepoPullRequestsDocument(
         { owner: "exadev", repo: "does-not-exist" },
+        DEFAULT_REPO_PULL_REQUESTS_FILTERS,
         client,
         new AbortController().signal,
       ),
     ).rejects.toThrow("not found");
+  });
+
+  it("passes the given filters through to the client, including a merged state", async () => {
+    let receivedFilters: unknown;
+    const client: GitHubClient = {
+      ...unreachableClient(),
+      getRepo: () => Promise.resolve(repo),
+      listRepoPullRequests: (_owner, _name, _cursor, filters): Promise<Page<GitHubPullRequest>> => {
+        receivedFilters = filters;
+        return Promise.resolve({ items: [], endCursor: undefined, hasNextPage: false });
+      },
+    };
+    const filters = {
+      states: ["merged"] as const,
+      sort: { field: "updated" as const, direction: "desc" as const },
+      labels: [],
+    };
+
+    await loadRepoPullRequestsDocument(parsed, filters, client, new AbortController().signal);
+
+    expect(receivedFilters).toEqual(filters);
   });
 });

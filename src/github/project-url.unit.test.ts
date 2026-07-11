@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalProjectUrl, parseProjectUrl } from "./project-url";
+import { canonicalProjectUrl, parseProjectFilterQuery, parseProjectUrl } from "./project-url";
 
 describe("parseProjectUrl", () => {
   it("parses an org-owned project URL", () => {
@@ -71,14 +71,36 @@ describe("parseProjectUrl", () => {
 
 describe("canonicalProjectUrl", () => {
   it("rebuilds the stripped project URL from a parsed org-owned project", () => {
-    expect(canonicalProjectUrl({ ownerType: "org", login: "TeamAcelo", number: 1 })).toBe(
+    expect(canonicalProjectUrl({ ownerType: "org", login: "TeamAcelo", number: 1 }, "")).toBe(
       "https://github.com/orgs/TeamAcelo/projects/1",
     );
   });
 
   it("rebuilds the stripped project URL from a parsed user-owned project", () => {
-    expect(canonicalProjectUrl({ ownerType: "user", login: "octocat", number: 42 })).toBe(
+    expect(canonicalProjectUrl({ ownerType: "user", login: "octocat", number: 42 }, "")).toBe(
       "https://github.com/users/octocat/projects/42",
     );
+  });
+
+  it("re-attaches a non-empty search text as ?filterQuery=", () => {
+    expect(
+      canonicalProjectUrl({ ownerType: "org", login: "TeamAcelo", number: 1 }, "assignee:@me"),
+    ).toBe("https://github.com/orgs/TeamAcelo/projects/1?filterQuery=assignee%3A%40me");
+  });
+});
+
+describe("parseProjectFilterQuery", () => {
+  it("returns the filterQuery value verbatim", () => {
+    const url = "https://github.com/orgs/TeamAcelo/projects/1/views/5?filterQuery=assignee%3A%40me";
+    expect(parseProjectFilterQuery(url)).toBe("assignee:@me");
+  });
+
+  it("falls back to the query param name", () => {
+    const url = "https://github.com/orgs/TeamAcelo/projects/1/views/4?query=sort%3Aupdated-desc";
+    expect(parseProjectFilterQuery(url)).toBe("sort:updated-desc");
+  });
+
+  it("returns an empty string when neither param is present", () => {
+    expect(parseProjectFilterQuery("https://github.com/orgs/TeamAcelo/projects/1")).toBe("");
   });
 });

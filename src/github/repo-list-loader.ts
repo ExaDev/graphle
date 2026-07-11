@@ -1,9 +1,10 @@
 /**
  * Loads an entire GitHub repo issues list or pull-requests list — resolved
- * from a parsed {@link ParsedRepoListUrl} — into a fresh {@link GraphDocument}:
- * a repo node plus one issue (or pull request) node per open item, connected
- * by `contains` edges. This is the whole-list counterpart to the existing
- * interactive "repo-issues"/"repo-pull-requests" expansions in `./expand`
+ * from a parsed {@link ParsedRepoListUrl} plus a {@link RepoIssuesFilters}/
+ * {@link RepoPullRequestsFilters} — into a fresh {@link GraphDocument}: a
+ * repo node plus one issue (or pull request) node per matching item,
+ * connected by `contains` edges. This is the whole-list counterpart to the
+ * existing interactive "repo-issues"/"repo-pull-requests" expansions in `./expand`
  * (which add one page of items to an *existing* repo node already on the
  * canvas, one UI click per page); these loaders instead page through every
  * item internally before returning, since they are producing a whole graph in
@@ -26,6 +27,7 @@ import { applyDelta, emptyDocument, placeAround } from "../domain";
 import type { GraphDocument, GraphEdge, GraphNode, Position } from "../schema";
 
 import type { GitHubClient, Page } from "./contract";
+import type { RepoIssuesFilters, RepoPullRequestsFilters } from "./filters";
 import { buildDelta, containsEdge, issueToNode, pullRequestToNode, repoToNode } from "./materialise";
 import {
   canonicalRepoIssuesUrl,
@@ -80,8 +82,9 @@ export interface RepoListLoadResult {
  * rate limit) — the caller is responsible for surfacing it. Shared by
  * {@link loadRepoIssuesDocument} and {@link loadRepoPullRequestsDocument}.
  */
-async function loadRepoListDocument<TItem>(
+async function loadRepoListDocument<TItem, TFilters>(
   parsed: ParsedRepoListUrl,
+  filters: TFilters,
   client: GitHubClient,
   signal: AbortSignal,
   listPage: (
@@ -89,14 +92,15 @@ async function loadRepoListDocument<TItem>(
     owner: string,
     name: string,
     cursor: string | undefined,
+    filters: TFilters,
     signal: AbortSignal,
   ) => Promise<Page<TItem>>,
   itemToNode: (owner: string, name: string, item: TItem, position: Position) => GraphNode,
-  canonicalUrl: (parsed: ParsedRepoListUrl) => string,
+  canonicalUrl: (parsed: ParsedRepoListUrl, filters: TFilters) => string,
 ): Promise<RepoListLoadResult> {
   const repo = await client.getRepo(parsed.owner, parsed.repo, signal);
   const items = await loadAllPages((cursor) =>
-    listPage(client, parsed.owner, parsed.repo, cursor, signal),
+    listPage(client, parsed.owner, parsed.repo, cursor, filters, signal),
   );
 
   const repoNode = repoToNode(repo, REPO_POSITION);
@@ -113,45 +117,49 @@ async function loadRepoListDocument<TItem>(
     emptyDocument(`${parsed.owner}/${parsed.repo}`),
     buildDelta(nodes, edges),
   );
-  return { document, canonicalUrl: canonicalUrl(parsed) };
+  return { document, canonicalUrl: canonicalUrl(parsed, filters) };
 }
 
 /**
- * Resolve `parsed` to a repo, fetch every open issue, and assemble a fresh
- * graph document: one repo node, one issue node per open issue, `contains`
- * edges between them.
+ * Resolve `parsed` to a repo, fetch every issue matching `filters`, and
+ * assemble a fresh graph document: one repo node, one issue node per issue,
+ * `contains` edges between them.
  */
 export function loadRepoIssuesDocument(
   parsed: ParsedRepoListUrl,
+  filters: RepoIssuesFilters,
   client: GitHubClient,
   signal: AbortSignal,
 ): Promise<RepoListLoadResult> {
-  return loadRepoListDocument<GitHubIssue>(
+  return loadRepoListDocument<GitHubIssue, RepoIssuesFilters>(
     parsed,
+    filters,
     client,
     signal,
-    (c, owner, name, cursor, sig) => c.listRepoIssues(owner, name, cursor, sig),
+    (c, owner, name, cursor, f, sig) => c.listRepoIssues(owner, name, cursor, f, sig),
     issueToNode,
     canonicalRepoIssuesUrl,
   );
 }
 
 /**
- * Resolve `parsed` to a repo, fetch every open pull request, and assemble a
- * fresh graph document: one repo node, one pull-request node per open pull
- * request, `contains` edges between them. Mirrors
+ * Resolve `parsed` to a repo, fetch every pull request matching `filters`,
+ * and assemble a fresh graph document: one repo node, one pull-request node
+ * per pull request, `contains` edges between them. Mirrors
  * {@link loadRepoIssuesDocument} for the pull-requests list case.
  */
 export function loadRepoPullRequestsDocument(
   parsed: ParsedRepoListUrl,
+  filters: RepoPullRequestsFilters,
   client: GitHubClient,
   signal: AbortSignal,
 ): Promise<RepoListLoadResult> {
-  return loadRepoListDocument<GitHubPullRequest>(
+  return loadRepoListDocument<GitHubPullRequest, RepoPullRequestsFilters>(
     parsed,
+    filters,
     client,
     signal,
-    (c, owner, name, cursor, sig) => c.listRepoPullRequests(owner, name, cursor, sig),
+    (c, owner, name, cursor, f, sig) => c.listRepoPullRequests(owner, name, cursor, f, sig),
     pullRequestToNode,
     canonicalRepoPullRequestsUrl,
   );

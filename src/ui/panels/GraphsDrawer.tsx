@@ -38,6 +38,20 @@
  * graphs — the two share the same provider API calls and PAT-resume
  * mechanism (see `handlePushToGist`/`handlePushToGithubFile`) but this pair
  * is always user-triggered, regardless of `syncMode`.
+ *
+ * "GitHub filters" is a separate, unrelated section: shown whenever
+ * `store.remoteGithubSource` is set (the current document was loaded from a
+ * GitHub Project/Issues/PRs URL and hasn't been edited since — see
+ * `graph-store.ts`'s doc comment on `RemoteGithubSource`), it lets state/
+ * sort/labels (or, for a project, a client-side title search) be edited and
+ * re-applied via `handleApplyGithubSource`, which re-issues the load through
+ * the same `loadGitHubProject`/`loadGitHubRepoIssues`/
+ * `loadGitHubRepoPullRequests` functions the initial load used — keeping the
+ * address bar a live GitHub pointer rather than forking into a `#g=`
+ * snapshot, since `dirty` stays `false`. This has nothing to do with
+ * `linkedRemote`/`StoredGraph` — it works on an unsaved document exactly as
+ * well as a saved one, and disappears the moment an actual edit clears
+ * `remoteGithubSource`.
  */
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -45,12 +59,16 @@ import {
   ActionIcon,
   Badge,
   Button,
+  Chip,
   Divider,
   Drawer,
   FileInput,
   Group,
   ScrollArea,
+  SegmentedControl,
+  Select,
   Stack,
+  TagsInput,
   Text,
   TextInput,
   UnstyledButton,
@@ -69,18 +87,29 @@ import { notifications } from "@mantine/notifications";
 
 import {
   createGitHubClient,
+  DEFAULT_REPO_ISSUES_FILTERS,
+  DEFAULT_REPO_PULL_REQUESTS_FILTERS,
   GitHubError,
   githubErrorMessage,
+  isIssueSortField,
+  isIssueState,
+  isPullRequestSortField,
+  isPullRequestState,
+  isSortDirection,
   loadProjectDocument,
   loadRepoIssuesDocument,
   loadRepoPullRequestsDocument,
+  parseProjectFilterQuery,
   parseProjectUrl,
+  parseRepoIssuesFilters,
   parseRepoIssuesUrl,
+  parseRepoPullRequestsFilters,
   parseRepoPullRequestsUrl,
   type GitHubClient,
   type ParsedProjectUrl,
   type ParsedRepoListUrl,
-  type RepoListLoadResult,
+  type RepoIssuesFilters,
+  type RepoPullRequestsFilters,
 } from "@/github";
 import { fetchGistRevision, listGistHistory, pushGistFile, resolveRemoteUrl } from "@/sharing/gist";
 import {
@@ -104,7 +133,7 @@ import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
 import { createRevisionStore } from "@/storage/revision-store-dexie";
 import { createSecretStore } from "@/storage/secret-store-dexie";
-import { useGraphStore } from "@/ui/store/graph-store";
+import { useGraphStore, type RemoteGithubSource } from "@/ui/store/graph-store";
 
 import { graphRow, selectedGraphRow } from "./GraphsDrawer.css";
 
@@ -135,6 +164,8 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
   const setGistPicker = useGraphStore((state) => state.setGistPicker);
   const openGitHubPanel = useGraphStore((state) => state.openGitHubPanel);
   const closeGitHubPanel = useGraphStore((state) => state.closeGitHubPanel);
+  const remoteGithubSource = useGraphStore((state) => state.remoteGithubSource);
+  const setRemoteGithubSource = useGraphStore((state) => state.setRemoteGithubSource);
 
   const summaries = useLiveQuery(
     async () => store.list(new AbortController().signal),
@@ -178,6 +209,18 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     setFileHistoryGraphId(currentGraph?.id);
     setFileHistory(undefined);
   }
+
+  // Editable draft of the current GitHub source's filters, reset whenever
+  // `remoteGithubSource` itself changes (a fresh load, an Apply, or an edit
+  // clearing it) — same "adjust state during render" pattern as
+  // `fileHistoryGraphId` above, rather than an effect.
+  const [draftSource, setDraftSource] = useState(remoteGithubSource);
+  const [draftSourceOrigin, setDraftSourceOrigin] = useState(remoteGithubSource);
+  if (draftSourceOrigin !== remoteGithubSource) {
+    setDraftSourceOrigin(remoteGithubSource);
+    setDraftSource(remoteGithubSource);
+  }
+  const [filterApplying, setFilterApplying] = useState(false);
 
   async function handleSave(): Promise<void> {
     if (graphId === undefined) {
@@ -281,17 +324,22 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
    * Load a GitHub Projects URL with an already-authenticated client, applying
    * the result or reporting the failure itself — this is also handed to
    * `openGitHubPanel` as a fire-and-forget pending action (no surrounding
-   * try/catch there), so it cannot leave an error unhandled.
+   * try/catch there), so it cannot leave an error unhandled. `searchText` is
+   * graphle's own client-side title filter (`project-loader.ts`); also used
+   * by the "Remote sync" filter controls below to re-issue this same load
+   * with a new search term.
    */
   async function loadGitHubProject(
     parsed: ParsedProjectUrl,
+    searchText: string,
     client: GitHubClient,
   ): Promise<void> {
     try {
-      const result = await loadProjectDocument(parsed, client, new AbortController().signal);
+      const result = await loadProjectDocument(parsed, searchText, client, new AbortController().signal);
       replaceDocument(result.document);
       setGraphId(undefined);
       writeRemoteUrlToLocation(result.canonicalUrl);
+      setRemoteGithubSource({ kind: "project", parsed, searchText });
       notifications.show({ color: "green", message: "GitHub project loaded" });
     } catch (error) {
       notifications.show({
@@ -308,25 +356,23 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
   }
 
   /**
-   * Load a GitHub repo issues or pull-requests list URL with an
-   * already-authenticated client, applying the result or reporting the
-   * failure itself — mirrors `loadGitHubProject`, including its use as a
-   * fire-and-forget `openGitHubPanel` pending action.
+   * Load a GitHub repo issues list URL with an already-authenticated client,
+   * applying the result or reporting the failure itself — mirrors
+   * `loadGitHubProject`, including its use as a fire-and-forget
+   * `openGitHubPanel` pending action, and its re-use by the "Remote sync"
+   * filter controls below to re-issue this same load with new filters.
    */
-  async function loadGitHubRepoList(
+  async function loadGitHubRepoIssues(
     parsed: ParsedRepoListUrl,
-    loader: (
-      parsed: ParsedRepoListUrl,
-      client: GitHubClient,
-      signal: AbortSignal,
-    ) => Promise<RepoListLoadResult>,
+    filters: RepoIssuesFilters,
     client: GitHubClient,
   ): Promise<void> {
     try {
-      const result = await loader(parsed, client, new AbortController().signal);
+      const result = await loadRepoIssuesDocument(parsed, filters, client, new AbortController().signal);
       replaceDocument(result.document);
       setGraphId(undefined);
       writeRemoteUrlToLocation(result.canonicalUrl);
+      setRemoteGithubSource({ kind: "repoIssues", parsed, filters });
       notifications.show({ color: "green", message: "GitHub repo loaded" });
     } catch (error) {
       notifications.show({
@@ -339,6 +385,80 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
               : String(error)
         }`,
       });
+    }
+  }
+
+  /** Mirrors {@link loadGitHubRepoIssues} for a repo pull-requests list URL. */
+  async function loadGitHubRepoPullRequests(
+    parsed: ParsedRepoListUrl,
+    filters: RepoPullRequestsFilters,
+    client: GitHubClient,
+  ): Promise<void> {
+    try {
+      const result = await loadRepoPullRequestsDocument(
+        parsed,
+        filters,
+        client,
+        new AbortController().signal,
+      );
+      replaceDocument(result.document);
+      setGraphId(undefined);
+      writeRemoteUrlToLocation(result.canonicalUrl);
+      setRemoteGithubSource({ kind: "repoPullRequests", parsed, filters });
+      notifications.show({ color: "green", message: "GitHub repo loaded" });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `Could not load the GitHub repo: ${
+          error instanceof GitHubError
+            ? githubErrorMessage(error)
+            : error instanceof Error
+              ? error.message
+              : String(error)
+        }`,
+      });
+    }
+  }
+
+  /** Re-issues `source`'s load with its (possibly just-edited) filters using
+   *  an already-authenticated client — dispatches to whichever of
+   *  `loadGitHubProject`/`loadGitHubRepoIssues`/`loadGitHubRepoPullRequests`
+   *  matches `source.kind`, so this is a "load", not an "edit": it goes
+   *  through the same `replaceDocument`/`writeRemoteUrlToLocation`/
+   *  `setRemoteGithubSource` path as the initial load, keeping the address
+   *  bar a live GitHub pointer. */
+  async function applyGithubSourceWith(source: RemoteGithubSource, client: GitHubClient): Promise<void> {
+    switch (source.kind) {
+      case "project":
+        await loadGitHubProject(source.parsed, source.searchText, client);
+        return;
+      case "repoIssues":
+        await loadGitHubRepoIssues(source.parsed, source.filters, client);
+        return;
+      case "repoPullRequests":
+        await loadGitHubRepoPullRequests(source.parsed, source.filters, client);
+        return;
+    }
+  }
+
+  /** Apply the "Remote sync" filter controls' current draft, using a stored
+   *  PAT if there is one or prompting for one otherwise — mirrors
+   *  `handleLoadFromUrl`'s GitHub branches. */
+  async function handleApplyGithubSource(): Promise<void> {
+    if (draftSource === undefined) return;
+    setFilterApplying(true);
+    try {
+      const secretStore = createSecretStore(db);
+      const token = await secretStore.getGitHubToken(new AbortController().signal);
+      if (token !== undefined) {
+        await applyGithubSourceWith(draftSource, createGitHubClient({ token }));
+      } else {
+        openGitHubPanel((client) => {
+          void applyGithubSourceWith(draftSource, client).then(closeGitHubPanel);
+        });
+      }
+    } finally {
+      setFilterApplying(false);
     }
   }
 
@@ -405,29 +525,46 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     try {
       const parsedProject = parseProjectUrl(trimmed);
       if (parsedProject !== undefined) {
+        const searchText = parseProjectFilterQuery(trimmed);
         const secretStore = createSecretStore(db);
         const token = await secretStore.getGitHubToken(new AbortController().signal);
         if (token !== undefined) {
-          await loadGitHubProject(parsedProject, createGitHubClient({ token }));
+          await loadGitHubProject(parsedProject, searchText, createGitHubClient({ token }));
         } else {
           openGitHubPanel((client) => {
-            void loadGitHubProject(parsedProject, client).then(closeGitHubPanel);
+            void loadGitHubProject(parsedProject, searchText, client).then(closeGitHubPanel);
           });
         }
         return;
       }
 
       const parsedRepoIssues = parseRepoIssuesUrl(trimmed);
-      const parsedRepoList = parsedRepoIssues ?? parseRepoPullRequestsUrl(trimmed);
-      if (parsedRepoList !== undefined) {
-        const loader = parsedRepoIssues !== undefined ? loadRepoIssuesDocument : loadRepoPullRequestsDocument;
+      const parsedRepoPullRequests =
+        parsedRepoIssues === undefined ? parseRepoPullRequestsUrl(trimmed) : undefined;
+      if (parsedRepoIssues !== undefined) {
+        const filters = parseRepoIssuesFilters(trimmed, DEFAULT_REPO_ISSUES_FILTERS);
         const secretStore = createSecretStore(db);
         const token = await secretStore.getGitHubToken(new AbortController().signal);
         if (token !== undefined) {
-          await loadGitHubRepoList(parsedRepoList, loader, createGitHubClient({ token }));
+          await loadGitHubRepoIssues(parsedRepoIssues, filters, createGitHubClient({ token }));
         } else {
           openGitHubPanel((client) => {
-            void loadGitHubRepoList(parsedRepoList, loader, client).then(closeGitHubPanel);
+            void loadGitHubRepoIssues(parsedRepoIssues, filters, client).then(closeGitHubPanel);
+          });
+        }
+        return;
+      }
+      if (parsedRepoPullRequests !== undefined) {
+        const filters = parseRepoPullRequestsFilters(trimmed, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+        const secretStore = createSecretStore(db);
+        const token = await secretStore.getGitHubToken(new AbortController().signal);
+        if (token !== undefined) {
+          await loadGitHubRepoPullRequests(parsedRepoPullRequests, filters, createGitHubClient({ token }));
+        } else {
+          openGitHubPanel((client) => {
+            void loadGitHubRepoPullRequests(parsedRepoPullRequests, filters, client).then(
+              closeGitHubPanel,
+            );
           });
         }
         return;
@@ -961,6 +1098,210 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
                 </Stack>
               </ScrollArea.Autosize>
             )}
+          </Stack>
+        )}
+        {draftSource?.kind === "repoIssues" && (
+          <Stack gap="xs">
+            <Divider label="GitHub filters" labelPosition="center" />
+            <Text size="xs" c="dimmed">
+              Loaded from{" "}
+              <Text span fw={600}>
+                {draftSource.parsed.owner}/{draftSource.parsed.repo}
+              </Text>{" "}
+              issues
+            </Text>
+            <Chip.Group
+              multiple
+              value={[...draftSource.filters.states]}
+              onChange={(values) =>
+                setDraftSource({
+                  ...draftSource,
+                  filters: { ...draftSource.filters, states: values.filter(isIssueState) },
+                })
+              }
+            >
+              <Group gap="xs">
+                <Chip value="open" size="xs">
+                  Open
+                </Chip>
+                <Chip value="closed" size="xs">
+                  Closed
+                </Chip>
+              </Group>
+            </Chip.Group>
+            <Group gap="xs" align="flex-end">
+              <Select
+                size="xs"
+                label="Sort by"
+                data={[
+                  { value: "updated", label: "Updated" },
+                  { value: "created", label: "Created" },
+                  { value: "comments", label: "Comments" },
+                ]}
+                value={draftSource.filters.sort.field}
+                allowDeselect={false}
+                onChange={(value) => {
+                  if (value !== null && isIssueSortField(value)) {
+                    setDraftSource({
+                      ...draftSource,
+                      filters: { ...draftSource.filters, sort: { ...draftSource.filters.sort, field: value } },
+                    });
+                  }
+                }}
+              />
+              <SegmentedControl
+                size="xs"
+                data={[
+                  { value: "desc", label: "Newest" },
+                  { value: "asc", label: "Oldest" },
+                ]}
+                value={draftSource.filters.sort.direction}
+                onChange={(value) => {
+                  if (isSortDirection(value)) {
+                    setDraftSource({
+                      ...draftSource,
+                      filters: {
+                        ...draftSource.filters,
+                        sort: { ...draftSource.filters.sort, direction: value },
+                      },
+                    });
+                  }
+                }}
+              />
+            </Group>
+            <TagsInput
+              size="xs"
+              label="Labels"
+              value={[...draftSource.filters.labels]}
+              onChange={(labels) =>
+                setDraftSource({ ...draftSource, filters: { ...draftSource.filters, labels } })
+              }
+            />
+            <Button
+              variant="default"
+              size="xs"
+              loading={filterApplying}
+              onClick={() => void handleApplyGithubSource()}
+            >
+              Apply filters
+            </Button>
+          </Stack>
+        )}
+        {draftSource?.kind === "repoPullRequests" && (
+          <Stack gap="xs">
+            <Divider label="GitHub filters" labelPosition="center" />
+            <Text size="xs" c="dimmed">
+              Loaded from{" "}
+              <Text span fw={600}>
+                {draftSource.parsed.owner}/{draftSource.parsed.repo}
+              </Text>{" "}
+              pull requests
+            </Text>
+            <Chip.Group
+              multiple
+              value={[...draftSource.filters.states]}
+              onChange={(values) =>
+                setDraftSource({
+                  ...draftSource,
+                  filters: { ...draftSource.filters, states: values.filter(isPullRequestState) },
+                })
+              }
+            >
+              <Group gap="xs">
+                <Chip value="open" size="xs">
+                  Open
+                </Chip>
+                <Chip value="closed" size="xs">
+                  Closed
+                </Chip>
+                <Chip value="merged" size="xs">
+                  Merged
+                </Chip>
+              </Group>
+            </Chip.Group>
+            <Group gap="xs" align="flex-end">
+              <Select
+                size="xs"
+                label="Sort by"
+                data={[
+                  { value: "updated", label: "Updated" },
+                  { value: "created", label: "Created" },
+                ]}
+                value={draftSource.filters.sort.field}
+                allowDeselect={false}
+                onChange={(value) => {
+                  if (value !== null && isPullRequestSortField(value)) {
+                    setDraftSource({
+                      ...draftSource,
+                      filters: { ...draftSource.filters, sort: { ...draftSource.filters.sort, field: value } },
+                    });
+                  }
+                }}
+              />
+              <SegmentedControl
+                size="xs"
+                data={[
+                  { value: "desc", label: "Newest" },
+                  { value: "asc", label: "Oldest" },
+                ]}
+                value={draftSource.filters.sort.direction}
+                onChange={(value) => {
+                  if (isSortDirection(value)) {
+                    setDraftSource({
+                      ...draftSource,
+                      filters: {
+                        ...draftSource.filters,
+                        sort: { ...draftSource.filters.sort, direction: value },
+                      },
+                    });
+                  }
+                }}
+              />
+            </Group>
+            <TagsInput
+              size="xs"
+              label="Labels"
+              value={[...draftSource.filters.labels]}
+              onChange={(labels) =>
+                setDraftSource({ ...draftSource, filters: { ...draftSource.filters, labels } })
+              }
+            />
+            <Button
+              variant="default"
+              size="xs"
+              loading={filterApplying}
+              onClick={() => void handleApplyGithubSource()}
+            >
+              Apply filters
+            </Button>
+          </Stack>
+        )}
+        {draftSource?.kind === "project" && (
+          <Stack gap="xs">
+            <Divider label="GitHub filter" labelPosition="center" />
+            <Text size="xs" c="dimmed">
+              Loaded from{" "}
+              <Text span fw={600}>
+                {draftSource.parsed.login}
+              </Text>{" "}
+              project #{draftSource.parsed.number}
+            </Text>
+            <TextInput
+              size="xs"
+              label="Filter items (matches title)"
+              value={draftSource.searchText}
+              onChange={(event) =>
+                setDraftSource({ ...draftSource, searchText: event.currentTarget.value })
+              }
+            />
+            <Button
+              variant="default"
+              size="xs"
+              loading={filterApplying}
+              onClick={() => void handleApplyGithubSource()}
+            >
+              Apply filter
+            </Button>
           </Stack>
         )}
         <Divider label="Saved graphs" labelPosition="center" />

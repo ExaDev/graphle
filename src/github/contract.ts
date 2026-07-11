@@ -1,3 +1,4 @@
+import type { RepoIssuesFilters, RepoPullRequestsFilters } from "./filters";
 import type {
   GitHubIssue,
   GitHubOrg,
@@ -41,12 +42,14 @@ export interface GitHubClient {
     owner: string,
     name: string,
     cursor: string | undefined,
+    filters: RepoIssuesFilters,
     signal: AbortSignal,
   ): Promise<Page<GitHubIssue>>;
   listRepoPullRequests(
     owner: string,
     name: string,
     cursor: string | undefined,
+    filters: RepoPullRequestsFilters,
     signal: AbortSignal,
   ): Promise<Page<GitHubPullRequest>>;
   listOrgProjects(

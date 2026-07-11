@@ -1,6 +1,7 @@
 import { placeAround, type GraphDelta } from "../domain";
 import type { GraphEdge, GraphNode, Position } from "../schema";
 import type { GitHubClient } from "./contract";
+import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
 import {
   buildDelta,
   containsEdge,
@@ -124,7 +125,7 @@ const repoIssues: Expansion = {
     }
     const owner = requireString(source, "owner");
     const name = requireString(source, "name");
-    const page = await client.listRepoIssues(owner, name, cursor, signal);
+    const page = await client.listRepoIssues(owner, name, cursor, DEFAULT_REPO_ISSUES_FILTERS, signal);
     const positions = placeAround(source.position, page.items.length);
     const nodes = page.items.map((issue, i) =>
       issueToNode(owner, name, issue, positionAt(positions, i)),
@@ -147,7 +148,13 @@ const repoPullRequests: Expansion = {
     }
     const owner = requireString(source, "owner");
     const name = requireString(source, "name");
-    const page = await client.listRepoPullRequests(owner, name, cursor, signal);
+    const page = await client.listRepoPullRequests(
+      owner,
+      name,
+      cursor,
+      DEFAULT_REPO_PULL_REQUESTS_FILTERS,
+      signal,
+    );
     const positions = placeAround(source.position, page.items.length);
     const nodes = page.items.map((pullRequest, i) =>
       pullRequestToNode(owner, name, pullRequest, positionAt(positions, i)),
