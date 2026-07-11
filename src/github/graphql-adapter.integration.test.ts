@@ -3,32 +3,39 @@ import { describe, expect, it } from "vitest";
 import { createGitHubClient } from "./graphql-adapter";
 
 /**
- * Hits the real GitHub GraphQL API with a real token — not a mock. Skipped
- * entirely wherever `GITHUB_TEST_PAT` isn't set (a developer without a local
- * `.env`, or the existing mocked-only CI `test` job); runs for real in the
- * dedicated CI job that supplies the secret, and locally once `.env` is set
- * up (see `.env.example`).
+ * Hits the real GitHub GraphQL API with a real token — not a mock. Runs once
+ * per configured token type (classic, fine-grained), since graphle supports
+ * both and they have different scope models (see `GitHubPanel.tsx`'s own
+ * scope guidance). Skipped entirely wherever neither `GITHUB_TEST_PAT_CLASSIC`
+ * nor `GITHUB_TEST_PAT_FINE_GRAINED` is set (a developer without a local
+ * `.env`, or the existing mocked-only CI `test` job); runs for real, for
+ * whichever of the two is configured, in the dedicated CI job that supplies
+ * the secrets, and locally once `.env` is set up (see `.env.example`).
  *
  * Assertions are deliberately independent of the token's own org
  * memberships — `viewer` resolves whoever the token belongs to, and
- * `octocat/Hello-World` is GitHub's own stable, public, canonical demo repo
- * — so this stays low-flake regardless of which account issued the token.
+ * `octocat/Hello-World` is GitHub's own stable, public, canonical demo repo,
+ * readable by both token types with no elevated scope — so this stays
+ * low-flake regardless of which account or token type issued it.
  */
-const token = process.env.GITHUB_TEST_PAT;
+const TOKEN_TYPES = [
+  { label: "classic", token: process.env.GITHUB_TEST_PAT_CLASSIC },
+  { label: "fine-grained", token: process.env.GITHUB_TEST_PAT_FINE_GRAINED },
+].filter((entry): entry is { label: string; token: string } => entry.token !== undefined);
 
-describe.skipIf(token === undefined)("GitHub API integration", () => {
-  it("resolves the authenticated viewer", async () => {
-    if (token === undefined) throw new Error("unreachable: describe.skipIf guards this");
-    const client = createGitHubClient({ token });
-    const viewer = await client.viewer(new AbortController().signal);
-    expect(viewer.login.length).toBeGreaterThan(0);
-  });
+describe.skipIf(TOKEN_TYPES.length === 0)("GitHub API integration", () => {
+  describe.each(TOKEN_TYPES)("with a $label token", ({ token }) => {
+    it("resolves the authenticated viewer", async () => {
+      const client = createGitHubClient({ token });
+      const viewer = await client.viewer(new AbortController().signal);
+      expect(viewer.login.length).toBeGreaterThan(0);
+    });
 
-  it("resolves a known public repository", async () => {
-    if (token === undefined) throw new Error("unreachable: describe.skipIf guards this");
-    const client = createGitHubClient({ token });
-    const repo = await client.getRepo("octocat", "Hello-World", new AbortController().signal);
-    expect(repo.name).toBe("Hello-World");
-    expect(repo.owner.login).toBe("octocat");
+    it("resolves a known public repository", async () => {
+      const client = createGitHubClient({ token });
+      const repo = await client.getRepo("octocat", "Hello-World", new AbortController().signal);
+      expect(repo.name).toBe("Hello-World");
+      expect(repo.owner.login).toBe("octocat");
+    });
   });
 });

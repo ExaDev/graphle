@@ -80,8 +80,11 @@ jobs:
     # suite. Still runs and reports on every push, just doesn't block release.
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Both secrets are optional and independent — the tests run once per
+    # secret that's actually configured, and skip cleanly for the other.
     env:
-      GITHUB_TEST_PAT: ${{ secrets.GITHUB_TEST_PAT }}
+      GITHUB_TEST_PAT_CLASSIC: ${{ secrets.GITHUB_TEST_PAT_CLASSIC }}
+      GITHUB_TEST_PAT_FINE_GRAINED: ${{ secrets.GITHUB_TEST_PAT_FINE_GRAINED }}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-and-run
