@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/ExaDev/graphle/compare/v1.15.0...v1.16.0) (2026-07-11)
+
+
+### Features
+
+* **ui:** add deterministic auto-layout controls ([7fd6c85](https://github.com/ExaDev/graphle/commit/7fd6c85b15308b2de04e5cdd03c7c3f44e49e463))
+
 # [1.15.0](https://github.com/ExaDev/graphle/compare/v1.14.1...v1.15.0) (2026-07-11)
 
 
