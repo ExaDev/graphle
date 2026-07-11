@@ -248,7 +248,8 @@ describe("expansionsForType - project-items", () => {
     // One issue node, no freeform (draft) nodes; one tracks edge.
     expect(delta.nodes).toHaveLength(1);
     expect(delta.nodes[0]?.type).toBe("issue");
-    expect(delta.nodes[0]?.parentId).toBe(source.id);
+    // A project tracks issues, it doesn't own them — no parentId claim.
+    expect(delta.nodes[0]?.parentId).toBeUndefined();
     expect(delta.edges).toHaveLength(1);
     expect(delta.edges[0]?.type).toBe("tracks");
   });

@@ -35,6 +35,12 @@ function edgeTripleKey(
  *   surviving node.
  * - Nodes whose type has no identity fields (no identity key) are always added;
  *   every one is distinct.
+ * - If a dropped delta node carries a `parentId` and the surviving node has
+ *   none yet, the surviving node is patched with it (a backfill). An
+ *   already-assigned `parentId` is never overridden — this only fills a gap
+ *   left by an earlier expansion that couldn't establish a parent, so a node
+ *   reached first via a non-hierarchical relation and later via its true
+ *   owner still ends up correctly nested regardless of expansion order.
  *
  * Edge handling: each delta edge's endpoints are re-pointed through the id
  * mapping, then the edge is added only if no existing or already-added edge
@@ -64,6 +70,9 @@ export function applyDelta(
   // delta node id gets an entry: either the surviving existing id (when deduped
   // against an earlier node) or its own id (when added).
   const idMapping = new Map<string, string>();
+  // surviving id -> parentId to backfill, from a dropped delta node that
+  // carried one. Only used for survivors currently missing a parentId.
+  const parentBackfills = new Map<string, string>();
 
   for (const node of delta.nodes) {
     const key = nodeIdentityKey(node, doc.types);
@@ -71,6 +80,9 @@ export function applyDelta(
       const survivingId = identityIndex.get(key);
       if (survivingId !== undefined) {
         idMapping.set(node.id, survivingId);
+        if (node.parentId !== undefined) {
+          parentBackfills.set(survivingId, node.parentId);
+        }
         continue;
       }
       identityIndex.set(key, node.id);
@@ -79,6 +91,12 @@ export function applyDelta(
     addedNodeIds.push(node.id);
     idMapping.set(node.id, node.id);
   }
+
+  const patchedDocNodes = doc.nodes.map((node) => {
+    const backfill = parentBackfills.get(node.id);
+    if (backfill === undefined || node.parentId !== undefined) return node;
+    return { ...node, parentId: backfill };
+  });
 
   // Existing edge triples, so incoming duplicates are dropped.
   const edgeTriples = new Set<string>();
@@ -105,7 +123,7 @@ export function applyDelta(
   return {
     document: {
       ...doc,
-      nodes: [...doc.nodes, ...addedNodes],
+      nodes: [...patchedDocNodes, ...addedNodes],
       edges: [...doc.edges, ...addedEdges],
     },
     addedNodeIds,

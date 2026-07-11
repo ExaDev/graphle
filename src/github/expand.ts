@@ -30,14 +30,18 @@ export type ExpansionResult = {
  * (e.g. a "Repositories" button on an org node); `run` does the work and is
  * given the cursor so the same expansion can be re-invoked for the next page.
  *
- * Every expansion also stamps `parentId: source.id` onto each node it
- * materialises — this is the org→repo→issue→sub-issue subgraph nesting
- * (`GraphNode.parentId`/`collapsed`, `src/schema/node.ts`) the source node
- * expanded into is a natural parent of its own fetched children, no
- * synthetic `"group"` wrapper needed; the expanded node's collapse toggle
- * (see `GenericNode`) then hides them again on demand. New children are
- * never collapsed on arrival — the point of expanding is to see what was
- * just fetched.
+ * Every expansion whose source is the fetched children's true owner also
+ * stamps `parentId: source.id` onto each node it materialises — this is
+ * the org→repo→issue→sub-issue subgraph nesting (`GraphNode.parentId`/
+ * `collapsed`, `src/schema/node.ts`); the source node expanded into is a
+ * natural parent of its own fetched children, no synthetic `"group"`
+ * wrapper needed; the expanded node's collapse toggle (see `GenericNode`)
+ * then hides them again on demand. New children are never collapsed on
+ * arrival — the point of expanding is to see what was just fetched.
+ *
+ * The one exception is `projectItems`: a project *tracks* issues, it
+ * doesn't own them (the same issue can be tracked by several projects), so
+ * that expansion never sets `parentId` — see its own comment.
  */
 export type Expansion = {
   id: string;
@@ -235,7 +239,11 @@ const projectItems: Expansion = {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
     issues.forEach((item, i) => {
-      const node = { ...projectIssueItemToNode(item, positionAt(positions, i)), parentId: source.id };
+      // Deliberately no `parentId: source.id` here — see the doc comment on
+      // `Expansion` above. "Tracks" is not ownership: an issue can be
+      // tracked by several projects, so a project must never claim it as a
+      // subgraph parent.
+      const node = projectIssueItemToNode(item, positionAt(positions, i));
       nodes.push(node);
       edges.push(tracksEdge(source.id, node.id));
     });

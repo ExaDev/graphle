@@ -137,6 +137,35 @@ describe("applyDelta - node dedup by identity key", () => {
     expect(next.nodes).toEqual([a, b]);
     expect(addedNodeIds).toEqual([a.id, b.id]);
   });
+
+  it("backfills a surviving node's missing parentId from a dropped duplicate", () => {
+    const existing = repoNode("exadev", "graphle"); // no parentId — reached without an owner yet
+    const org = orgNode("exadev");
+    const doc = documentWith([existing, org]);
+
+    const dup = { ...repoNode("exadev", "graphle"), parentId: org.id }; // same identity, now with a true owner
+    const delta: GraphDelta = { nodes: [dup], edges: [] };
+
+    const { document: next } = applyDelta(doc, delta);
+
+    const survivor = next.nodes.find((n) => n.id === existing.id);
+    expect(survivor?.parentId).toBe(org.id);
+  });
+
+  it("never overrides an already-assigned parentId with a later duplicate's parentId", () => {
+    const orgA = orgNode("exadev-a");
+    const orgB = orgNode("exadev-b");
+    const existing = { ...repoNode("exadev", "graphle"), parentId: orgA.id };
+    const doc = documentWith([existing, orgA, orgB]);
+
+    const dup = { ...repoNode("exadev", "graphle"), parentId: orgB.id };
+    const delta: GraphDelta = { nodes: [dup], edges: [] };
+
+    const { document: next } = applyDelta(doc, delta);
+
+    const survivor = next.nodes.find((n) => n.id === existing.id);
+    expect(survivor?.parentId).toBe(orgA.id);
+  });
 });
 
 describe("applyDelta - edge dedup by (source, target, type)", () => {
