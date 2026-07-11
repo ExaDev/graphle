@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/ExaDev/graphle/compare/v1.16.1...v1.17.0) (2026-07-11)
+
+
+### Features
+
+* **test:** add integration and e2e testing with a local .env ([f77b941](https://github.com/ExaDev/graphle/commit/f77b94171780d764a8f768edc34fed5922473bad))
+
 ## [1.16.1](https://github.com/ExaDev/graphle/compare/v1.16.0...v1.16.1) (2026-07-11)
 
 
