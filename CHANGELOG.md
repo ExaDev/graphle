@@ -1,3 +1,10 @@
+## [1.17.1](https://github.com/ExaDev/graphle/compare/v1.17.0...v1.17.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **test:** rename GITHUB_ test PAT vars, fix empty-secret guard ([1ffafde](https://github.com/ExaDev/graphle/commit/1ffafdea0c84227c920d32a6dc320d62107a5455))
+
 # [1.17.0](https://github.com/ExaDev/graphle/compare/v1.16.1...v1.17.0) (2026-07-11)
 
 
