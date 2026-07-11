@@ -25,6 +25,15 @@ log. A classic token needs `repo`, `read:org`, `read:project`; a fine-grained
 token needs the org's Projects read permission. Projects (v2) are GraphQL-only,
 which is why a token is required even for public data.
 
+If an org's project/repo comes back "not found" despite existing, and the
+token's scopes look right, check whether the org enforces SAML single
+sign-on — a classic token also needs to be **authorised for SSO** against
+that specific org (github.com/settings/tokens → the token → "Configure SSO"),
+independently of its scopes. GitHub's API can't distinguish "doesn't exist"
+from "exists but this token can't see it" (the same privacy reasoning behind
+a private repo returning 404 rather than 401/403), so a missing scope and a
+missing SSO authorisation both surface identically as "not found."
+
 ## Build, test, and lint
 
 ```sh

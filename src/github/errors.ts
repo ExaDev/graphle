@@ -69,7 +69,7 @@ export function githubErrorMessage(error: GitHubError): string {
     case "forbidden":
       return `Forbidden: ${error.kind.message}`;
     case "notFound":
-      return "Not found";
+      return "Not found (or your PAT can't see it — check its scopes, and for an SSO-enforcing org, that the token is authorised for SSO)";
     case "invalidResponse":
       return `Invalid response: ${error.kind.message}`;
   }
@@ -119,6 +119,17 @@ function hasRateLimitedError(graphQLErrors: unknown): boolean {
  * a `NOT_FOUND` entry here — never as an HTTP 404. Without this check that
  * response falls through to the generic `forbidden` branch below, which is
  * the wrong classification for "this doesn't exist."
+ *
+ * GitHub deliberately does not distinguish "doesn't exist" from "exists but
+ * this token can't see it" here (the same non-disclosure reasoning as a
+ * private repo's Contents API returning 404 rather than 401/403 — see
+ * `sharing/github-file.ts`), so a resource this really does exist can still
+ * classify as `notFound`: most commonly an org-scoped classic PAT missing
+ * the `read:project`/`read:org` scope, or — easy to miss, since it's
+ * independent of scopes — a token that has never been authorised for SSO
+ * against an org enforcing SAML single sign-on (github.com/settings/tokens
+ * → the token → "Configure SSO"). {@link githubErrorMessage}'s `notFound`
+ * case hints at both, since the API gives no way to tell them apart.
  */
 function hasNotFoundError(graphQLErrors: unknown): boolean {
   if (!isUnknownArray(graphQLErrors)) return false;
