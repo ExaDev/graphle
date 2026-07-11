@@ -51,10 +51,14 @@ const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:
 
 const REPO_PROJECTS_QUERY = `query RepoProjects($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
-// GitHub's `trackedIssues` connection (sub-issues) has no states/labels/
-// orderBy argument, unlike `issues`/`pullRequests` — confirmed against the
-// GraphQL schema reference, not assumed.
-const ISSUE_SUB_ISSUES_QUERY = `query IssueSubIssues($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issue(number:$number){ trackedIssues(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } } rateLimit{remaining resetAt} }`;
+// GitHub's `subIssues` connection has no states/labels/orderBy argument,
+// unlike `issues`/`pullRequests` — confirmed against the GraphQL schema
+// reference, not assumed. Deliberately `subIssues`, not `trackedIssues`: the
+// two are distinct fields (confirmed via introspection and against real
+// sub-issue fixture data — `trackedIssues` stays empty for a genuine
+// sub-issue relationship created via the REST API or `addSubIssue`; only
+// `subIssues`/`parent` reflect it).
+const ISSUE_SUB_ISSUES_QUERY = `query IssueSubIssues($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issue(number:$number){ subIssues(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } } rateLimit{remaining resetAt} }`;
 
 const ISSUE_BLOCKED_BY_QUERY = `query IssueBlockedBy($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ issue(number:$number){ blockedBy(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ number title state url repository{name owner{login}} } } } } rateLimit{remaining resetAt} }`;
 
@@ -388,8 +392,8 @@ export function createGitHubClient(parameters: {
       if (issue === null) {
         throw new GitHubError({ type: "notFound" });
       }
-      const trackedIssues = issue.trackedIssues;
-      return { items: trackedIssues.nodes, ...toPage(trackedIssues.pageInfo) };
+      const subIssues = issue.subIssues;
+      return { items: subIssues.nodes, ...toPage(subIssues.pageInfo) };
     },
 
     async listIssueBlockedBy(owner, name, issueNumber, cursor, signal) {

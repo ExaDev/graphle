@@ -338,7 +338,7 @@ const issueBlocking: Expansion = {
  * The expansions available for a node type. `org` nodes offer their owned
  * repos and projects; `repo` nodes offer their issues, pull requests, and
  * projects; `project` nodes offer their items; `issue` nodes offer their
- * sub-issues (GitHub's own "sub-issues" feature — `Issue.trackedIssues`) and
+ * sub-issues (GitHub's own "sub-issues" feature — `Issue.subIssues`) and
  * their blocking relationships (`Issue.blockedBy`/`Issue.blocking`); every
  * other type (including `pullRequest`, `freeform`, and any custom type) has
  * nothing to expand into, so an empty list is returned.

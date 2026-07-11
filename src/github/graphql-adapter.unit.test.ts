@@ -575,7 +575,7 @@ describe("createGitHubClient - listIssueSubIssues", () => {
             data: {
               repository: {
                 issue: {
-                  trackedIssues: {
+                  subIssues: {
                     nodes: [{ number: 8, title: "Sub-issue", state: "OPEN", url: "u8" }],
                     pageInfo: { hasNextPage: false, endCursor: null },
                   },
