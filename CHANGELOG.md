@@ -1,3 +1,10 @@
+## [1.16.1](https://github.com/ExaDev/graphle/compare/v1.16.0...v1.16.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **ui:** wrap PAT entry in a form so Enter submits it ([f52dabd](https://github.com/ExaDev/graphle/commit/f52dabddb26bd1048901d3bf71f42661e1023efb))
+
 # [1.16.0](https://github.com/ExaDev/graphle/compare/v1.15.0...v1.16.0) (2026-07-11)
 
 
