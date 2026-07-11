@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/ExaDev/graphle/compare/v1.14.1...v1.15.0) (2026-07-11)
+
+
+### Features
+
+* **github:** fetch and visualise issue blocking relationships ([6afcc2d](https://github.com/ExaDev/graphle/commit/6afcc2d007864d77edcd5f09c26986765013fecc))
+
 ## [1.14.1](https://github.com/ExaDev/graphle/compare/v1.14.0...v1.14.1) (2026-07-11)
 
 
