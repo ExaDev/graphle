@@ -380,7 +380,14 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
     >
       <Stack gap="md">
         {/* --- PAT entry + validation -------------------------------- */}
-        <Stack gap="xs">
+        <Stack
+          component="form"
+          gap="xs"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleValidate();
+          }}
+        >
           <PasswordInput
             label="Personal access token"
             placeholder="ghp_… / github_pat_…"
@@ -424,14 +431,10 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
             </Group>
           </Stack>
           <Group gap="xs">
-            <Button variant="default" onClick={() => void handleSaveToken()}>
+            <Button type="button" variant="default" onClick={() => void handleSaveToken()}>
               Save
             </Button>
-            <Button
-              leftSection={<IconShieldCheck size={16} />}
-              loading={validating}
-              onClick={() => void handleValidate()}
-            >
+            <Button type="submit" leftSection={<IconShieldCheck size={16} />} loading={validating}>
               Validate
             </Button>
           </Group>
