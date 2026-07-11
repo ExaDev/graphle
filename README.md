@@ -51,12 +51,13 @@ pnpm test:e2e         # Playwright, drives the real UI in a browser
   for pure logic and a `jsdom` project for `src/ui` and `*.smoke.test.ts`; both
   are picked up automatically by path.
 - **Integration/e2e tests** need a real GitHub token: copy `.env.example` to
-  `.env` and fill in `GITHUB_TEST_PAT_CLASSIC` and/or
-  `GITHUB_TEST_PAT_FINE_GRAINED` (minimally-scoped, read-only, public-repo
-  tokens are enough — see `.env.example`). Both run once per token type
-  that's configured, and skip cleanly — never fail — for whichever isn't, so
-  `pnpm test`/CI's main `test` job are unaffected either way. `pnpm test:e2e`
-  needs Playwright's browser installed once:
+  `.env` and fill in `GH_TEST_PAT_CLASSIC` and/or `GH_TEST_PAT_FINE_GRAINED`
+  (minimally-scoped, read-only, public-repo tokens are enough — see
+  `.env.example`; named `GH_` rather than `GITHUB_` because GitHub Actions
+  rejects a secret name starting with `GITHUB_`). Both run once per token
+  type that's configured, and skip cleanly — never fail — for whichever
+  isn't, so `pnpm test`/CI's main `test` job are unaffected either way.
+  `pnpm test:e2e` needs Playwright's browser installed once:
   `pnpm exec playwright install chromium`.
 - **Format:** no Prettier/Biome. `eslint --fix` is the formatter and runs on
   staged `*.{ts,tsx}` via lint-staged at commit time.

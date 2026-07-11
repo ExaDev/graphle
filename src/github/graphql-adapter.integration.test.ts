@@ -6,11 +6,19 @@ import { createGitHubClient } from "./graphql-adapter";
  * Hits the real GitHub GraphQL API with a real token — not a mock. Runs once
  * per configured token type (classic, fine-grained), since graphle supports
  * both and they have different scope models (see `GitHubPanel.tsx`'s own
- * scope guidance). Skipped entirely wherever neither `GITHUB_TEST_PAT_CLASSIC`
- * nor `GITHUB_TEST_PAT_FINE_GRAINED` is set (a developer without a local
- * `.env`, or the existing mocked-only CI `test` job); runs for real, for
- * whichever of the two is configured, in the dedicated CI job that supplies
- * the secrets, and locally once `.env` is set up (see `.env.example`).
+ * scope guidance). Skipped entirely wherever neither `GH_TEST_PAT_CLASSIC`
+ * nor `GH_TEST_PAT_FINE_GRAINED` is set (a developer without a local `.env`,
+ * or the existing mocked-only CI `test` job); runs for real, for whichever
+ * of the two is configured, in the dedicated CI job that supplies the
+ * secrets, and locally once `.env` is set up (see `.env.example`). Named
+ * `GH_` rather than `GITHUB_` because GitHub Actions rejects any repository
+ * secret name starting with `GITHUB_` (reserved for its own built-ins).
+ *
+ * A token counts as "configured" only when non-empty: GitHub Actions always
+ * sets an `env:` var sourced from `secrets.X`, as an empty string rather
+ * than leaving it unset, when the secret doesn't exist — treating merely
+ * "defined" as configured would attempt a doomed empty-token request instead
+ * of skipping.
  *
  * Assertions are deliberately independent of the token's own org
  * memberships — `viewer` resolves whoever the token belongs to, and
@@ -19,9 +27,12 @@ import { createGitHubClient } from "./graphql-adapter";
  * low-flake regardless of which account or token type issued it.
  */
 const TOKEN_TYPES = [
-  { label: "classic", token: process.env.GITHUB_TEST_PAT_CLASSIC },
-  { label: "fine-grained", token: process.env.GITHUB_TEST_PAT_FINE_GRAINED },
-].filter((entry): entry is { label: string; token: string } => entry.token !== undefined);
+  { label: "classic", token: process.env.GH_TEST_PAT_CLASSIC },
+  { label: "fine-grained", token: process.env.GH_TEST_PAT_FINE_GRAINED },
+].filter(
+  (entry): entry is { label: string; token: string } =>
+    entry.token !== undefined && entry.token !== "",
+);
 
 describe.skipIf(TOKEN_TYPES.length === 0)("GitHub API integration", () => {
   describe.each(TOKEN_TYPES)("with a $label token", ({ token }) => {

@@ -82,9 +82,11 @@ jobs:
     timeout-minutes: 15
     # Both secrets are optional and independent — the tests run once per
     # secret that's actually configured, and skip cleanly for the other.
+    # Named GH_ rather than GITHUB_: Actions rejects any secret name starting
+    # with GITHUB_ (reserved for its own built-ins).
     env:
-      GITHUB_TEST_PAT_CLASSIC: ${{ secrets.GITHUB_TEST_PAT_CLASSIC }}
-      GITHUB_TEST_PAT_FINE_GRAINED: ${{ secrets.GITHUB_TEST_PAT_FINE_GRAINED }}
+      GH_TEST_PAT_CLASSIC: ${{ secrets.GH_TEST_PAT_CLASSIC }}
+      GH_TEST_PAT_FINE_GRAINED: ${{ secrets.GH_TEST_PAT_FINE_GRAINED }}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-and-run
