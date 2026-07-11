@@ -206,6 +206,125 @@ describe("createGitHubClient - pagination", () => {
   });
 });
 
+describe("createGitHubClient - listRepoPullRequests", () => {
+  it("fetches a page of pull requests", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoPullRequests: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                pullRequests: {
+                  nodes: [{ number: 1, title: "Add feature", state: "open", url: "pr1" }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+
+    const pullRequests = await client.listRepoPullRequests(
+      "exadev",
+      "graphle",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(pullRequests.items).toHaveLength(1);
+    expect(pullRequests.items[0]?.number).toBe(1);
+    expect(pullRequests.items[0]?.state).toBe("open");
+    expect(pullRequests.hasNextPage).toBe(false);
+    expect(pullRequests.endCursor).toBeUndefined();
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("threads endCursor from one page into the next call", async () => {
+    let call = 0;
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoPullRequests: () => {
+          call += 1;
+          const page =
+            call === 1
+              ? {
+                  nodes: [{ number: 1, title: "First", state: "open", url: "pr1" }],
+                  pageInfo: { hasNextPage: true, endCursor: "CURSOR1" },
+                }
+              : {
+                  nodes: [{ number: 2, title: "Second", state: "merged", url: "pr2" }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                };
+          return jsonResponse({
+            data: { repository: { pullRequests: page }, rateLimit: RATE },
+          });
+        },
+      }),
+    });
+
+    const first = await client.listRepoPullRequests(
+      "exadev",
+      "graphle",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(first.items.map((p) => p.number)).toEqual([1]);
+    expect(first.endCursor).toBe("CURSOR1");
+    expect(first.hasNextPage).toBe(true);
+
+    const second = await client.listRepoPullRequests(
+      "exadev",
+      "graphle",
+      first.endCursor,
+      new AbortController().signal,
+    );
+    expect(second.items.map((p) => p.number)).toEqual([2]);
+    expect(second.endCursor).toBeUndefined();
+    expect(second.hasNextPage).toBe(false);
+  });
+
+  it("throws notFound when the repository doesn't resolve", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoPullRequests: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listRepoPullRequests(
+        "exadev",
+        "no-such-repo",
+        undefined,
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("classifies a RATE_LIMITED GraphQL error as rateLimited with resetAt", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoPullRequests: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "RATE_LIMITED", message: "too many" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listRepoPullRequests("exadev", "graphle", undefined, new AbortController().signal),
+    ).rejects.toMatchObject({
+      kind: { type: "rateLimited", resetAt: RATE.resetAt },
+    });
+  });
+});
+
 describe("createGitHubClient - getOrgProject / getUserProject", () => {
   it("resolves an org-owned project by number", async () => {
     const client = createGitHubClient({
