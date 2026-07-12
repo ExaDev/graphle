@@ -215,6 +215,57 @@ describe("applyDelta - edge dedup by (source, target, type)", () => {
   });
 });
 
+describe("applyDelta - onExistingMatch: \"overwrite\"", () => {
+  it("replaces an existing node's data with the delta node's data", () => {
+    const existing = { ...orgNode("exadev"), data: { login: "exadev", stars: 1 } };
+    const doc = documentWith([existing]);
+
+    const refreshed = { ...orgNode("exadev"), id: existing.id, data: { login: "exadev", stars: 2 } };
+    const delta: GraphDelta = { nodes: [refreshed], edges: [] };
+
+    const { document: next } = applyDelta(doc, delta, "overwrite");
+
+    const survivor = next.nodes.find((n) => n.id === existing.id);
+    expect(survivor?.data).toEqual({ login: "exadev", stars: 2 });
+  });
+
+  it("updates fetchedAt from the delta node's value", () => {
+    const existing = { ...orgNode("exadev"), fetchedAt: "2024-01-01T00:00:00Z" };
+    const doc = documentWith([existing]);
+
+    const refreshed = { ...orgNode("exadev"), id: existing.id, fetchedAt: "2024-06-01T00:00:00Z" };
+    const delta: GraphDelta = { nodes: [refreshed], edges: [] };
+
+    const { document: next } = applyDelta(doc, delta, "overwrite");
+
+    const survivor = next.nodes.find((n) => n.id === existing.id);
+    expect(survivor?.fetchedAt).toBe("2024-06-01T00:00:00Z");
+  });
+
+  it("does not re-add the node and still applies the parentId backfill alongside the overwrite", () => {
+    const existing = { ...repoNode("exadev", "graphle"), data: { owner: "exadev", name: "graphle", stars: 1 } }; // no parentId yet
+    const org = orgNode("exadev");
+    const doc = documentWith([existing, org]);
+
+    const refreshed = {
+      ...repoNode("exadev", "graphle"),
+      id: existing.id,
+      parentId: org.id,
+      data: { owner: "exadev", name: "graphle", stars: 5 },
+    };
+    const delta: GraphDelta = { nodes: [refreshed], edges: [] };
+
+    const { document: next, addedNodeIds } = applyDelta(doc, delta, "overwrite");
+
+    expect(addedNodeIds).toEqual([]);
+    expect(next.nodes.map((n) => n.id)).toEqual([existing.id, org.id]);
+
+    const survivor = next.nodes.find((n) => n.id === existing.id);
+    expect(survivor?.data).toEqual({ owner: "exadev", name: "graphle", stars: 5 });
+    expect(survivor?.parentId).toBe(org.id);
+  });
+});
+
 describe("applyDelta - immutability", () => {
   it("does not mutate the input document", () => {
     const org = orgNode("exadev");

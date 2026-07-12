@@ -128,8 +128,13 @@ interface GraphState {
    * document via {@link applyDelta}, marking it dirty. Returns the ids of the
    * delta nodes that were actually added (freeform nodes and first occurrences
    * of keyed entities) so callers can report "Added N nodes".
+   *
+   * `onExistingMatch` (default `"keep"`, per {@link applyDelta}) governs a
+   * delta node that dedupes against an existing node: `"keep"` for a normal
+   * expansion that must not clobber a user's manual edits, `"overwrite"` for
+   * an explicit refresh action that should reflect the current fetched state.
    */
-  mergeDelta: (delta: GraphDelta) => string[];
+  mergeDelta: (delta: GraphDelta, onExistingMatch?: "keep" | "overwrite") => string[];
   /** Replace the document wholesale (URL/storage load) and clear dirty. */
   replaceDocument: (doc: GraphDocument) => void;
   /**
@@ -291,12 +296,12 @@ export const useGraphStore = create<GraphState>()(
       redoStack: [],
       savedDocument: undefined,
       apply: (op) => commitDocument(applyOperation(get().document, op), true),
-      mergeDelta: (delta) => {
+      mergeDelta: (delta, onExistingMatch) => {
         // Read-then-commit: applyDelta is pure and returns the merged document
         // plus the ids actually added. Computing against `get().document`
         // first keeps the action free of `set`'s inability to return a value
         // to the caller.
-        const result = applyDelta(get().document, delta);
+        const result = applyDelta(get().document, delta, onExistingMatch);
         commitDocument(result.document, true);
         return result.addedNodeIds;
       },

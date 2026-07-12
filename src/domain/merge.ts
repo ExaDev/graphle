@@ -47,6 +47,15 @@ function edgeTripleKey(
  * shares its (source, target, type) triple. The edge keeps its own id, type,
  * and data.
  *
+ * `onExistingMatch` governs what happens to a delta node that dedupes against
+ * an existing node (default `"keep"`): `"keep"` leaves the surviving node's
+ * `data`/`fetchedAt` untouched (aside from the `parentId` backfill above) —
+ * a normal expansion must never clobber a field the user may have manually
+ * edited. `"overwrite"` replaces the surviving node's `data` and `fetchedAt`
+ * with the delta node's — an explicit refresh action should reflect the
+ * current truth. The surviving node's own `id`/`type`/`position` are kept
+ * either way.
+ *
  * Returns the new document plus the ids of the delta nodes that were actually
  * added (nodes without identity keys and first occurrences of keyed entities).
  * The input document and delta are not mutated.
@@ -54,6 +63,7 @@ function edgeTripleKey(
 export function applyDelta(
   doc: GraphDocument,
   delta: GraphDelta,
+  onExistingMatch: "keep" | "overwrite" = "keep",
 ): { document: GraphDocument; addedNodeIds: string[] } {
   // identityKey -> id of the node that owns that key in the merged set so far.
   const identityIndex = new Map<string, string>();
@@ -73,6 +83,9 @@ export function applyDelta(
   // surviving id -> parentId to backfill, from a dropped delta node that
   // carried one. Only used for survivors currently missing a parentId.
   const parentBackfills = new Map<string, string>();
+  // surviving id -> the delta node whose data/fetchedAt should replace the
+  // existing node's, when onExistingMatch === "overwrite".
+  const dataOverwrites = new Map<string, GraphNode>();
 
   for (const node of delta.nodes) {
     const key = nodeIdentityKey(node, doc.types);
@@ -82,6 +95,9 @@ export function applyDelta(
         idMapping.set(node.id, survivingId);
         if (node.parentId !== undefined) {
           parentBackfills.set(survivingId, node.parentId);
+        }
+        if (onExistingMatch === "overwrite") {
+          dataOverwrites.set(survivingId, node);
         }
         continue;
       }
@@ -94,8 +110,21 @@ export function applyDelta(
 
   const patchedDocNodes = doc.nodes.map((node) => {
     const backfill = parentBackfills.get(node.id);
-    if (backfill === undefined || node.parentId !== undefined) return node;
-    return { ...node, parentId: backfill };
+    const parentId =
+      backfill === undefined || node.parentId !== undefined
+        ? node.parentId
+        : backfill;
+
+    const overwrite = dataOverwrites.get(node.id);
+    if (overwrite === undefined) {
+      return parentId === node.parentId ? node : { ...node, parentId };
+    }
+    return {
+      ...node,
+      parentId,
+      data: overwrite.data,
+      fetchedAt: overwrite.fetchedAt,
+    };
   });
 
   // Existing edge triples, so incoming duplicates are dropped.
