@@ -45,7 +45,7 @@ import {
   IconTemplate,
 } from "@tabler/icons-react";
 import { ReactFlowProvider } from "@xyflow/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { alignNodes, connectedNodeIds, distributeNodes, type AlignEdge, type DistributeAxis } from "@/domain";
 import { expansionsForType, type Expansion } from "@/github";
@@ -58,10 +58,8 @@ import { useGraphStore } from "@/ui/store/graph-store";
 
 import { buildMeta } from "./buildMeta";
 import { ContextMenu, type ContextMenuState } from "./flow/ContextMenu";
-import { GraphCanvas } from "./flow/GraphCanvas";
+import { GraphCanvas, type GraphCanvasHandle } from "./flow/GraphCanvas";
 import { runNodeExpansion } from "./flow/run-node-expansion";
-import { exportCanvasAsPng, exportCanvasAsSvg } from "./flow/snapshot-export";
-import { documentToFlow } from "./flow/to-flow";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
 import { EdgeTypeEditorModal } from "./panels/EdgeTypeEditorModal";
 import { GistPickerModal } from "./panels/GistPickerModal";
@@ -136,6 +134,10 @@ export function AppShell() {
   // falls back to the cascade).
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [addHerePos, setAddHerePos] = useState<Position | undefined>(undefined);
+  // Imperative PNG/SVG export handle — see handleExportSnapshot and
+  // GraphCanvasHandle's own doc comment for why this can't just re-derive
+  // nodes from the document.
+  const canvasRef = useRef<GraphCanvasHandle>(null);
 
   /** The expansions valid to run across the whole multi-selection: the
    *  intersection, by `Expansion.id`, of `expansionsForType` across every
@@ -400,20 +402,20 @@ export function AppShell() {
     }
   }
 
-  /** Rasterises the canvas as a PNG or SVG snapshot. Both need the React Flow
-   *  node array `GraphCanvas` owns internally, so it is re-derived here from
-   *  the document via `documentToFlow` — the export only reads node
-   *  ids/positions, which the document already has. Genuinely async browser
-   *  work (unlike the other export formats, which are synchronous string
-   *  serialisations), so failures — e.g. the canvas not being mounted — are
-   *  caught and surfaced the same way as `handleCopyShareUrl`. */
+  /** Rasterises the canvas as a PNG or SVG snapshot, via {@link GraphCanvas}'s
+   *  imperative handle rather than re-deriving nodes from the document —
+   *  a correct bounding-box computation for grouped/nested nodes needs
+   *  `useReactFlow().getNodesBounds`, which only exists inside that
+   *  component (see `snapshot-export.ts`'s doc comment). Genuinely async
+   *  browser work (unlike the other export formats, which are synchronous
+   *  string serialisations), so failures — e.g. the canvas not being
+   *  mounted — are caught and surfaced the same way as `handleCopyShareUrl`. */
   async function handleExportSnapshot(format: "png" | "svg"): Promise<void> {
     try {
-      const { nodes } = documentToFlow(document);
       if (format === "png") {
-        await exportCanvasAsPng(nodes);
+        await canvasRef.current?.exportAsPng();
       } else {
-        await exportCanvasAsSvg(nodes);
+        await canvasRef.current?.exportAsSvg();
       }
     } catch (error) {
       notifications.show({
@@ -612,7 +614,7 @@ export function AppShell() {
          *  viewport height so the 100% has something concrete to fill. */}
         <div style={{ height: `calc(100dvh - ${HEADER_HEIGHT}px)` }}>
           <ReactFlowProvider>
-            <GraphCanvas onContextMenu={setCtxMenu} />
+            <GraphCanvas ref={canvasRef} onContextMenu={setCtxMenu} />
           </ReactFlowProvider>
         </div>
       </MantineAppShell.Main>

@@ -2,18 +2,34 @@
  * "Download as image" for the canvas — a PNG or SVG snapshot of the current
  * graph, framed to fit every node exactly as React Flow's own docs recommend:
  * compute a bounding box and a viewport transform with `getNodesBounds`/
- * `getViewportForBounds` (both from `@xyflow/react`), then rasterise the
- * live viewport DOM node at that transform with `html-to-image`.
+ * `getViewportForBounds`, then rasterise the live viewport DOM node at that
+ * transform with `html-to-image`.
+ *
+ * `getNodesBounds` is passed in by the caller rather than imported from
+ * `@xyflow/react` directly: the standalone function has no access to React
+ * Flow's internal node lookup, so it computes the wrong bounds for a graph
+ * containing grouped/collapsed nodes (a real feature of this app — see
+ * `groupNodes` in `src/domain/operations.ts`) — React Flow's own runtime
+ * warns exactly this ("use `getNodesBounds` from the `useReactFlow` hook…
+ * to support sub flows"). `GraphCanvas.tsx`, the only caller, is inside
+ * `<ReactFlowProvider>` and passes `useReactFlow().getNodesBounds`, the
+ * hook-bound version that resolves absolute positions correctly for nested
+ * nodes.
  *
  * This is deliberately untested (see the module's callers) — it renders real
  * DOM to a canvas via `html-to-image`, the same class of browser-only,
  * canvas-rendering-dependent code as `GraphCanvas.tsx`/`ContextMenu.tsx`,
  * which the project verifies by hand in the browser rather than in Vitest.
  */
-import { getNodesBounds, getViewportForBounds } from "@xyflow/react";
+import { getViewportForBounds, type Rect } from "@xyflow/react";
 import { toPng, toSvg } from "html-to-image";
 
 import type { GraphFlowNode } from "./to-flow";
+
+/** The shape of `useReactFlow().getNodesBounds` — the hook-bound version
+ *  that correctly resolves nested/grouped node positions (see the module
+ *  doc comment above). */
+type GetNodesBounds = (nodes: GraphFlowNode[]) => Rect;
 
 /** Fixed export canvas size (px). Large enough to read comfortably when
  *  opened at 100%, small enough to stay a fast, single-frame capture. */
@@ -42,7 +58,10 @@ const VIEWPORT_SELECTOR = ".react-flow__viewport";
  * and a `style.transform` reproducing the translate/scale React Flow itself
  * would apply for that viewport.
  */
-function buildExportOptions(nodes: GraphFlowNode[]): {
+function buildExportOptions(
+  nodes: GraphFlowNode[],
+  getNodesBounds: GetNodesBounds,
+): {
   backgroundColor: string;
   width: number;
   height: number;
@@ -102,16 +121,26 @@ function triggerImageDownload(dataUrl: string, filename: string): void {
   anchor.remove();
 }
 
-/** Export the current canvas as a PNG and trigger a browser download. */
-export async function exportCanvasAsPng(nodes: GraphFlowNode[]): Promise<void> {
+/** Export the current canvas as a PNG and trigger a browser download.
+ *  `getNodesBounds` must be `useReactFlow().getNodesBounds` — see the
+ *  module doc comment for why the standalone import isn't used. */
+export async function exportCanvasAsPng(
+  nodes: GraphFlowNode[],
+  getNodesBounds: GetNodesBounds,
+): Promise<void> {
   const viewportElement = getViewportElement();
-  const dataUrl = await toPng(viewportElement, buildExportOptions(nodes));
+  const dataUrl = await toPng(viewportElement, buildExportOptions(nodes, getNodesBounds));
   triggerImageDownload(dataUrl, "graphle.png");
 }
 
-/** Export the current canvas as an SVG and trigger a browser download. */
-export async function exportCanvasAsSvg(nodes: GraphFlowNode[]): Promise<void> {
+/** Export the current canvas as an SVG and trigger a browser download.
+ *  `getNodesBounds` must be `useReactFlow().getNodesBounds` — see the
+ *  module doc comment for why the standalone import isn't used. */
+export async function exportCanvasAsSvg(
+  nodes: GraphFlowNode[],
+  getNodesBounds: GetNodesBounds,
+): Promise<void> {
   const viewportElement = getViewportElement();
-  const dataUrl = await toSvg(viewportElement, buildExportOptions(nodes));
+  const dataUrl = await toSvg(viewportElement, buildExportOptions(nodes, getNodesBounds));
   triggerImageDownload(dataUrl, "graphle.svg");
 }

@@ -17,7 +17,7 @@
  * drag-stop leave the fingerprint unchanged, so React Flow's live drag state
  * is never blown away mid-drag.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { useMantineColorScheme } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
 import { IconArrowAutofitDown, IconArrowAutofitRight, IconGrid3x3 } from "@tabler/icons-react";
@@ -42,6 +42,7 @@ import { useGraphStore } from "@/ui/store/graph-store";
 import { computeAutoLayout, type NodeSize } from "./auto-layout";
 import { type ContextMenuState } from "./ContextMenu";
 import { snapToggleActive } from "./GraphCanvas.css";
+import { exportCanvasAsPng, exportCanvasAsSvg } from "./snapshot-export";
 import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
 import { nodeTypes } from "./type-presentation";
 
@@ -56,6 +57,17 @@ const DEFAULT_NODE_HEIGHT = 80;
 // Controls toggle below.
 const SNAP_GRID_PX = 16;
 
+/** Imperative export capability exposed to {@link AppShell} via `ref` — the
+ *  PNG/SVG export menu items live in AppShell (outside
+ *  `<ReactFlowProvider>`), but a correct bounding-box computation for a
+ *  graph with grouped/nested nodes needs `useReactFlow().getNodesBounds`
+ *  (see `snapshot-export.ts`'s doc comment), which only exists inside this
+ *  component. */
+export interface GraphCanvasHandle {
+  exportAsPng: () => Promise<void>;
+  exportAsSvg: () => Promise<void>;
+}
+
 export interface GraphCanvasProps {
   /**
    * Fired on a right-click over a node, edge, or the pane. Receives a fully
@@ -65,16 +77,19 @@ export interface GraphCanvasProps {
    * seed an "Add node here" without needing its own React Flow context.
    */
   onContextMenu: (state: ContextMenuState) => void;
+  /** Exposes {@link GraphCanvasHandle} to the owner — React 19 supports
+   *  `ref` as a plain prop on function components, no `forwardRef` needed. */
+  ref?: Ref<GraphCanvasHandle>;
 }
 
-export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
+export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
   const graphDocument = useGraphStore((s) => s.document);
   const graphId = useGraphStore((s) => s.graphId);
   const apply = useGraphStore((s) => s.apply);
   const setSelection = useGraphStore((s) => s.setSelection);
   const setSelectedNodeIds = useGraphStore((s) => s.setSelectedNodeIds);
   const selectedNodeIds = useGraphStore((s) => s.selectedNodeIds);
-  const { fitView, screenToFlowPosition } = useReactFlow();
+  const { fitView, screenToFlowPosition, getNodesBounds } = useReactFlow();
   // Drive React Flow's colour mode from the Mantine scheme so the controls and
   // minimap follow light/dark/system (React Flow otherwise defaults to light).
   const { colorScheme } = useMantineColorScheme();
@@ -419,6 +434,15 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
       },
     ],
   ]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      exportAsPng: () => exportCanvasAsPng(nodes, getNodesBounds),
+      exportAsSvg: () => exportCanvasAsSvg(nodes, getNodesBounds),
+    }),
+    [nodes, getNodesBounds],
+  );
 
   return (
     <div style={{ height: "100%", width: "100%" }}>
