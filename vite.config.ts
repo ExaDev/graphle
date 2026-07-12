@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { fileURLToPath, URL } from "node:url";
 
 import { transformSync, type PluginItem } from "@babel/core";
@@ -13,6 +14,34 @@ import { PRIMARY_COLOUR, BACKGROUND_DARK } from "./src/ui/theme/tokens";
  * Detect CI via GITHUB_ACTIONS so the built artefact gets the right asset base.
  */
 const base = process.env.CI ? "/graphle/" : "/";
+
+/** Run a git command at config-load time. Returns "" on failure — HEAD not
+ *  being an exact tag is the normal "not a release build" case, not an error. */
+function git(command: string): string {
+  try {
+    return execSync(command, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "";
+  }
+}
+
+// Build-time metadata injected into the bundle for the header's version link
+// (see src/ui/buildMeta.ts). `buildTag` is non-empty only when HEAD is
+// exactly a release tag — CI's build-and-deploy job runs after release and
+// checks out full history/tags, so on a releasing push this resolves to the
+// just-created tag (see .github/workflows/ci.yml's build-and-deploy job
+// comment); `buildRepo` is the OWNER/REPO slug parsed from the git remote so
+// the link is never hardcoded to this fork; `buildDate` is the tag's
+// creation date for releases or the commit date otherwise.
+const buildHash = git("git rev-parse --short HEAD");
+const buildTag = git("git describe --tags --exact-match HEAD");
+const buildRepo = git("git config --get remote.origin.url")
+  .replace(/^.*github\.com[:/]/, "")
+  .replace(/\.git$/, "");
+const buildDate =
+  buildTag !== ""
+    ? git(`git for-each-ref --format='%(creatordate:iso-strict)' refs/tags/${buildTag}`)
+    : git("git log -1 --format=%cI HEAD");
 
 /** babel-plugin-react-compiler with default (compile-everything) options.
  *  Typed as a tuple so the literal isn't widened to `(string | object)[]`. */
@@ -137,6 +166,12 @@ const pwa = VitePWA({
 
 export default defineConfig({
   base,
+  define: {
+    __BUILD_HASH__: JSON.stringify(buildHash),
+    __BUILD_TAG__: JSON.stringify(buildTag),
+    __BUILD_REPO__: JSON.stringify(buildRepo),
+    __BUILD_DATE__: JSON.stringify(buildDate),
+  },
   plugins: [react(), reactCompiler, vanillaExtractPlugin(), pwa],
   resolve: {
     alias: {

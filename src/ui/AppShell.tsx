@@ -17,12 +17,14 @@
  */
 import {
   ActionIcon,
+  Anchor,
   AppShell as MantineAppShell,
   Badge,
   Box,
   Button,
   Group,
   TextInput,
+  Tooltip,
 } from "@mantine/core";
 import { useDisclosure, useHotkeys } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -44,6 +46,7 @@ import { type Position } from "@/schema";
 import { buildShareUrl } from "@/sharing/url";
 import { useGraphStore } from "@/ui/store/graph-store";
 
+import { buildMeta } from "./buildMeta";
 import { ContextMenu, type ContextMenuState } from "./flow/ContextMenu";
 import { GraphCanvas } from "./flow/GraphCanvas";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
@@ -319,6 +322,21 @@ export function AppShell() {
           >
             <IconAdjustmentsHorizontal size={16} />
           </ActionIcon>
+
+          {buildMeta !== undefined && (
+            <Tooltip label={buildMeta.title} position="bottom" withArrow openDelay={200}>
+              <Anchor
+                size="xs"
+                c="dimmed"
+                href={buildMeta.href}
+                target="_blank"
+                rel="noreferrer noopener"
+                visibleFrom="sm"
+              >
+                {buildMeta.label}
+              </Anchor>
+            </Tooltip>
+          )}
         </Group>
       </MantineAppShell.Header>
 
