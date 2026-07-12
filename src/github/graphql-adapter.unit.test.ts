@@ -99,11 +99,11 @@ describe("createGitHubClient - pagination", () => {
           call += 1;
           const page = call === 1
             ? {
-                nodes: [{ name: "alpha", owner: { login: "exadev" } }],
+                nodes: [{ name: "alpha", owner: { login: "exadev" }, description: null }],
                 pageInfo: { hasNextPage: true, endCursor: "CURSOR1" },
               }
             : {
-                nodes: [{ name: "beta", owner: { login: "exadev" } }],
+                nodes: [{ name: "beta", owner: { login: "exadev" }, description: null }],
                 pageInfo: { hasNextPage: false, endCursor: null },
               };
           return jsonResponse({
@@ -217,6 +217,61 @@ describe("createGitHubClient - pagination", () => {
     // The PullRequest item is dropped; Issue and DraftIssue survive.
     expect(items.items).toHaveLength(2);
     expect(items.items.map((i) => i.__typename)).toEqual(["Issue", "DraftIssue"]);
+  });
+});
+
+describe("createGitHubClient - explicit-null nullable fields", () => {
+  // GraphQL returns an explicit `null` for a selected-but-unset nullable
+  // scalar, not an absent key (confirmed via live search API testing:
+  // User.name and Repository.description are both genuinely nullable, and
+  // real accounts/repos without one really do come back `null`). A schema
+  // that only accepts `undefined` for these fields fails to parse the
+  // instant a real node has one — these tests pin the fix (`nullableString`
+  // in schema.ts transforming `null` to `undefined` at the parse boundary)
+  // so it can't silently regress back to `.optional()`.
+  it("parses an org with a null name", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        ViewerOrgs: () =>
+          jsonResponse({
+            data: {
+              viewer: {
+                login: "joe",
+                organizations: {
+                  nodes: [{ login: "exadev", name: null }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const orgs = await client.listViewerOrgs(undefined, new AbortController().signal);
+    expect(orgs.items).toEqual([{ login: "exadev", name: undefined }]);
+  });
+
+  it("parses a repo with a null description", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        OrgRepos: () =>
+          jsonResponse({
+            data: {
+              organization: {
+                repositories: {
+                  nodes: [{ name: "graphle", owner: { login: "exadev" }, description: null }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const repos = await client.listOrgRepos("exadev", undefined, new AbortController().signal);
+    expect(repos.items[0]?.description).toBeUndefined();
   });
 });
 

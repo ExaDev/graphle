@@ -19,8 +19,8 @@ import type { GitHubIssue, GitHubIssueWithRepo, GitHubOrg, GitHubProject, GitHub
 
 const position = { x: 0, y: 0 };
 
-const org: GitHubOrg = { login: "ExaDev" };
-const repo: GitHubRepo = { name: "graphle", owner: { login: "ExaDev" } };
+const org: GitHubOrg = { login: "ExaDev", name: undefined };
+const repo: GitHubRepo = { name: "graphle", owner: { login: "ExaDev" }, description: undefined };
 const issue: GitHubIssue = { number: 1, title: "An issue", state: "open", url: "https://github.com/ExaDev/graphle/issues/1" };
 const issueWithRepo: GitHubIssueWithRepo = {
   ...issue,
@@ -65,7 +65,10 @@ describe("materialise - deterministic node ids", () => {
   });
 
   it("lower-cases node ids, matching identity-key case-insensitivity", () => {
-    const node = repoToNode({ name: "Graphle", owner: { login: "ExaDev" } }, position);
+    const node = repoToNode(
+      { name: "Graphle", owner: { login: "ExaDev" }, description: undefined },
+      position,
+    );
     expect(node.id).toBe(node.id.toLowerCase());
   });
 });

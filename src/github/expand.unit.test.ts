@@ -25,7 +25,7 @@ function clientWithRepos(repos: Page<{
   name: string;
   owner: { login: string };
   url?: string;
-  description?: string;
+  description: string | undefined;
   isArchived?: boolean;
 }>): GitHubClient {
   return {
@@ -82,8 +82,8 @@ describe("expansionsForType - org-repos", () => {
     const source = orgSource();
     const client = clientWithRepos({
       items: [
-        { name: "graphle", owner: { login: "exadev" } },
-        { name: "shipwright", owner: { login: "exadev" } },
+        { name: "graphle", owner: { login: "exadev" }, description: undefined },
+        { name: "shipwright", owner: { login: "exadev" }, description: undefined },
       ],
       endCursor: undefined,
       hasNextPage: false,
@@ -122,7 +122,7 @@ describe("expansionsForType - org-repos", () => {
   it("produces a delta consumable by applyDelta", async () => {
     const source = orgSource();
     const client = clientWithRepos({
-      items: [{ name: "graphle", owner: { login: "exadev" } }],
+      items: [{ name: "graphle", owner: { login: "exadev" }, description: undefined }],
       endCursor: undefined,
       hasNextPage: false,
     });

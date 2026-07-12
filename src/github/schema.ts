@@ -7,6 +7,26 @@ import { z } from "zod";
  * the rest of the client derives its types from these definitions.
  */
 
+/**
+ * A nullable GraphQL string scalar, transformed to `undefined` once at the
+ * parse boundary so the rest of the app can keep its "absence is
+ * `undefined`, never `null`" convention. GraphQL returns an explicit `null`
+ * for a selected-but-unset nullable field — it does not omit the key — so a
+ * bare `z.string().optional()` (which only accepts `undefined`) fails to
+ * parse the instant a real node has one, e.g. `User.name`/`Repository.description`
+ * for the (very common) case of no display name/description set. Confirmed
+ * via schema introspection and a live search API response, since this is
+ * exactly the class of bug — a hand-assumed wire shape nothing had checked
+ * against a real response — that has bitten this file more than once
+ * already (see `GitHubIssueState`'s doc comment for the sibling casing bug).
+ */
+function nullableString() {
+  return z
+    .string()
+    .nullable()
+    .transform((value) => value ?? undefined);
+}
+
 /** The authenticated user — the root of every `viewer { ... }` query. */
 export const GitHubViewer = z.object({ login: z.string() });
 export type GitHubViewer = z.infer<typeof GitHubViewer>;
@@ -14,7 +34,7 @@ export type GitHubViewer = z.infer<typeof GitHubViewer>;
 /** A GitHub organisation (or user account treated as an org). */
 export const GitHubOrg = z.object({
   login: z.string(),
-  name: z.string().optional(),
+  name: nullableString(),
   url: z.string().optional(),
   avatarUrl: z.string().optional(),
 });
@@ -25,7 +45,7 @@ export const GitHubRepo = z.object({
   name: z.string(),
   owner: z.object({ login: z.string() }),
   url: z.string().optional(),
-  description: z.string().optional(),
+  description: nullableString(),
   isArchived: z.boolean().optional(),
 });
 export type GitHubRepo = z.infer<typeof GitHubRepo>;
