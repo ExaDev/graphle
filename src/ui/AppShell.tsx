@@ -31,6 +31,7 @@ import { useDisclosure, useHotkeys } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustmentsHorizontal,
+  IconAlertTriangle,
   IconBrandGithub,
   IconArrowsSplit2,
   IconCategory,
@@ -60,6 +61,7 @@ import { GitHubPanel } from "./panels/GitHubPanel";
 import { GraphsDrawer } from "./panels/GraphsDrawer";
 import { HistoryDrawer } from "./panels/HistoryDrawer";
 import { InspectorPanel } from "./panels/InspectorPanel";
+import { SchemaDriftDrawer } from "./panels/SchemaDriftDrawer";
 import { SyncConflictModal } from "./panels/SyncConflictModal";
 import { TypeEditorModal } from "./panels/TypeEditorModal";
 import { TypesDrawer } from "./panels/TypesDrawer";
@@ -116,6 +118,8 @@ export function AppShell() {
   const [historyOpened, { open: openHistory, close: closeHistory }] =
     useDisclosure(false);
   const [typesManagerOpened, { open: openTypesManager, close: closeTypesManager }] =
+    useDisclosure(false);
+  const [schemaDriftOpened, { open: openSchemaDrift, close: closeSchemaDrift }] =
     useDisclosure(false);
   const [inspectorOpened, { toggle: toggleInspector }] = useDisclosure(false);
 
@@ -511,6 +515,15 @@ export function AppShell() {
             <IconCategory size={16} />
           </ActionIcon>
 
+          <ActionIcon
+            variant="default"
+            size="lg"
+            aria-label="Schema drift"
+            onClick={openSchemaDrift}
+          >
+            <IconAlertTriangle size={16} />
+          </ActionIcon>
+
           <ThemeToggle />
 
           <ActionIcon
@@ -568,6 +581,7 @@ export function AppShell() {
       <GraphsDrawer opened={graphsOpened} onClose={closeGraphs} />
       <HistoryDrawer opened={historyOpened} onClose={closeHistory} />
       <TypesDrawer opened={typesManagerOpened} onClose={closeTypesManager} />
+      <SchemaDriftDrawer opened={schemaDriftOpened} onClose={closeSchemaDrift} />
       <GistPickerModal />
       <SyncConflictModal />
       <ContextMenu

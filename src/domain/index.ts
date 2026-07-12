@@ -34,3 +34,4 @@ export {
   type PositionedNode,
 } from "./align";
 export { connectedNodeIds } from "./reachability";
+export { findSchemaDrift, type DriftEntry } from "./schema-drift";
