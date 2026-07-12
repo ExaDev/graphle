@@ -1,3 +1,10 @@
+# [1.22.0](https://github.com/ExaDev/graphle/compare/v1.21.0...v1.22.0) (2026-07-12)
+
+
+### Features
+
+* **github:** replace stacked-PR edges with head/base branch nodes ([6f7faf8](https://github.com/ExaDev/graphle/commit/6f7faf8785e7a18eace4773e11888075aa95eeac))
+
 # [1.21.0](https://github.com/ExaDev/graphle/compare/v1.20.1...v1.21.0) (2026-07-12)
 
 
