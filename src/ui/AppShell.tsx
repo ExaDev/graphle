@@ -42,7 +42,7 @@ import {
 import { ReactFlowProvider } from "@xyflow/react";
 import { useState } from "react";
 
-import { alignNodes, distributeNodes, type AlignEdge, type DistributeAxis } from "@/domain";
+import { alignNodes, connectedNodeIds, distributeNodes, type AlignEdge, type DistributeAxis } from "@/domain";
 import { expansionsForType } from "@/github";
 import { type Position } from "@/schema";
 import { buildShareUrl } from "@/sharing/url";
@@ -237,6 +237,14 @@ export function AppShell() {
     const nodes = document.nodes.filter((n) => nodeIds.includes(n.id));
     if (nodes.length === 0) return;
     apply({ type: "moveNodes", moves: distributeNodes(nodes, axis) });
+  }
+
+  /** Selects every node reachable from `nodeId` by following edges in
+   *  either direction (see `connectedNodeIds` in `reachability.ts`). The
+   *  canvas's own selection-sync effect applies the visual highlight from
+   *  `selectedNodeIds`, so no React Flow state needs touching here. */
+  function handleSelectConnected(nodeId: string): void {
+    setSelectedNodeIds(connectedNodeIds(nodeId, document));
   }
 
   function handleAddHere(): void {
@@ -442,6 +450,7 @@ export function AppShell() {
         onSelectEdge={(edgeId) =>
           setSelection({ nodeId: undefined, edgeId })
         }
+        onSelectConnected={handleSelectConnected}
         onAddHere={handleAddHere}
         selectedNodeIds={selectedNodeIds}
         onGroupSelection={handleGroupSelection}

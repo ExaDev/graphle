@@ -25,6 +25,7 @@
  */
 import { Divider, Menu } from "@mantine/core";
 import {
+  IconAffiliate,
   IconChevronDown,
   IconChevronRight,
   IconCopy,
@@ -96,6 +97,9 @@ export interface ContextMenuProps {
   onDeleteEdge: (edgeId: string) => void;
   onSelectNode: (nodeId: string) => void;
   onSelectEdge: (edgeId: string) => void;
+  /** Select every node reachable from `nodeId` by following edges in either
+   *  direction (see `connectedNodeIds` in `reachability.ts`). */
+  onSelectConnected: (nodeId: string) => void;
   /** Open the add-node modal seeded with the pane click's flow position. */
   onAddHere: () => void;
   /** The canvas's current multi-selected node ids — read-only here, used
@@ -132,6 +136,7 @@ export function ContextMenu({
   onDeleteEdge,
   onSelectNode,
   onSelectEdge,
+  onSelectConnected,
   onAddHere,
   selectedNodeIds,
   onGroupSelection,
@@ -246,6 +251,14 @@ export function ContextMenu({
                 }}
               >
                 Select
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconAffiliate size={14} />}
+                onClick={() => {
+                  if (state.nodeId !== undefined) onSelectConnected(state.nodeId);
+                }}
+              >
+                Select connected
               </Menu.Item>
               {state.nodeType !== undefined &&
                 expansionsForType(state.nodeType).map((expansion) => (

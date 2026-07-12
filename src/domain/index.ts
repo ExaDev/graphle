@@ -33,3 +33,4 @@ export {
   type DistributeAxis,
   type PositionedNode,
 } from "./align";
+export { connectedNodeIds } from "./reachability";
