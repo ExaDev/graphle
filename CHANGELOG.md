@@ -1,3 +1,10 @@
+# [1.21.0](https://github.com/ExaDev/graphle/compare/v1.20.1...v1.21.0) (2026-07-12)
+
+
+### Features
+
+* **ui:** show a build version/commit link in the header ([3c47a8a](https://github.com/ExaDev/graphle/commit/3c47a8ac2c03484805adf5e91da9db09aab0bb15))
+
 ## [1.20.1](https://github.com/ExaDev/graphle/compare/v1.20.0...v1.20.1) (2026-07-12)
 
 
