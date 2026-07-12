@@ -23,6 +23,7 @@ import {
   Box,
   Button,
   Group,
+  Menu,
   Text,
   TextInput,
   Tooltip,
@@ -35,6 +36,8 @@ import {
   IconBrandGithub,
   IconArrowsSplit2,
   IconCategory,
+  IconChevronDown,
+  IconDownload,
   IconHistory,
   IconLink,
   IconPlus,
@@ -47,6 +50,9 @@ import { useMemo, useState } from "react";
 import { alignNodes, connectedNodeIds, distributeNodes, type AlignEdge, type DistributeAxis } from "@/domain";
 import { expansionsForType, type Expansion } from "@/github";
 import { type Position } from "@/schema";
+import { triggerDotDownload } from "@/sharing/dot";
+import { exportDocument } from "@/sharing/json";
+import { triggerMermaidDownload } from "@/sharing/mermaid";
 import { buildShareUrl } from "@/sharing/url";
 import { useGraphStore } from "@/ui/store/graph-store";
 
@@ -54,6 +60,8 @@ import { buildMeta } from "./buildMeta";
 import { ContextMenu, type ContextMenuState } from "./flow/ContextMenu";
 import { GraphCanvas } from "./flow/GraphCanvas";
 import { runNodeExpansion } from "./flow/run-node-expansion";
+import { exportCanvasAsPng, exportCanvasAsSvg } from "./flow/snapshot-export";
+import { documentToFlow } from "./flow/to-flow";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
 import { EdgeTypeEditorModal } from "./panels/EdgeTypeEditorModal";
 import { GistPickerModal } from "./panels/GistPickerModal";
@@ -392,6 +400,29 @@ export function AppShell() {
     }
   }
 
+  /** Rasterises the canvas as a PNG or SVG snapshot. Both need the React Flow
+   *  node array `GraphCanvas` owns internally, so it is re-derived here from
+   *  the document via `documentToFlow` — the export only reads node
+   *  ids/positions, which the document already has. Genuinely async browser
+   *  work (unlike the other export formats, which are synchronous string
+   *  serialisations), so failures — e.g. the canvas not being mounted — are
+   *  caught and surfaced the same way as `handleCopyShareUrl`. */
+  async function handleExportSnapshot(format: "png" | "svg"): Promise<void> {
+    try {
+      const { nodes } = documentToFlow(document);
+      if (format === "png") {
+        await exportCanvasAsPng(nodes);
+      } else {
+        await exportCanvasAsSvg(nodes);
+      }
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `Could not export ${format.toUpperCase()}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
   return (
     <MantineAppShell
       header={{ height: HEADER_HEIGHT }}
@@ -467,6 +498,28 @@ export function AppShell() {
               Copy share URL
             </Box>
           </Button>
+
+          <Menu position="bottom-start" withinPortal shadow="sm">
+            <Menu.Target>
+              <Button
+                variant="default"
+                size="xs"
+                leftSection={<IconDownload size={16} />}
+                rightSection={<IconChevronDown size={14} />}
+              >
+                <Box component="span" visibleFrom="sm">
+                  Export
+                </Box>
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item onClick={() => exportDocument(document)}>JSON</Menu.Item>
+              <Menu.Item onClick={() => triggerMermaidDownload(document)}>Mermaid</Menu.Item>
+              <Menu.Item onClick={() => triggerDotDownload(document)}>DOT</Menu.Item>
+              <Menu.Item onClick={() => void handleExportSnapshot("png")}>PNG</Menu.Item>
+              <Menu.Item onClick={() => void handleExportSnapshot("svg")}>SVG</Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
 
           <Button
             variant="default"
