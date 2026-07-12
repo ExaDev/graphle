@@ -146,6 +146,202 @@ describe("expansionsForType - org-repos", () => {
   });
 });
 
+function repoSource(): GraphNode {
+  return {
+    id: "repo-1",
+    type: "repo",
+    position,
+    data: { owner: "exadev", name: "graphle" },
+  };
+}
+
+type PullRequestFixture = {
+  number: number;
+  title: string;
+  state: "open" | "closed" | "merged";
+  url: string;
+  baseRefName: string;
+  headRefName: string;
+  isCrossRepository: boolean;
+};
+
+/** Builds a client whose listRepoPullRequests returns a fixed canned page,
+ *  all other methods throw so a test fails loudly on an unexpected call. */
+function clientWithPullRequests(page: Page<PullRequestFixture>): GitHubClient {
+  const unexpected = (name: string) => () => Promise.reject(new Error(`unexpected ${name} call`));
+  return {
+    viewer: unexpected("viewer"),
+    listViewerOrgs: unexpected("listViewerOrgs"),
+    listOrgRepos: unexpected("listOrgRepos"),
+    listRepoIssues: unexpected("listRepoIssues"),
+    listRepoPullRequests() {
+      return Promise.resolve(page);
+    },
+    listOrgProjects: unexpected("listOrgProjects"),
+    listRepoProjects: unexpected("listRepoProjects"),
+    listProjectItems: unexpected("listProjectItems"),
+    listIssueSubIssues: unexpected("listIssueSubIssues"),
+    listIssueBlockedBy: unexpected("listIssueBlockedBy"),
+    listIssueBlocking: unexpected("listIssueBlocking"),
+    getOrgProject: unexpected("getOrgProject"),
+    getUserProject: unexpected("getUserProject"),
+    getRepo: unexpected("getRepo"),
+    get lastRateLimit() {
+      return undefined;
+    },
+  };
+}
+
+function findPullRequestsExpansion() {
+  const expansion = expansionsForType("repo").find((e) => e.id === "repo-pull-requests");
+  if (expansion === undefined) throw new Error("repo-pull-requests expansion missing");
+  return expansion;
+}
+
+describe("expansionsForType - repo-pull-requests", () => {
+  it("builds pull request nodes and contains edges from the source repo", async () => {
+    const source = repoSource();
+    const client = clientWithPullRequests({
+      items: [
+        {
+          number: 1,
+          title: "Add feature",
+          state: "open",
+          url: "https://github.com/exadev/graphle/pull/1",
+          baseRefName: "main",
+          headRefName: "feature-1",
+          isCrossRepository: false,
+        },
+      ],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const { delta } = await findPullRequestsExpansion().run(
+      source,
+      client,
+      undefined,
+      new AbortController().signal,
+    );
+
+    expect(delta.nodes).toHaveLength(1);
+    expect(delta.nodes[0]?.type).toBe("pullRequest");
+    expect(delta.nodes[0]?.parentId).toBe(source.id);
+    expect(delta.edges).toHaveLength(1);
+    expect(delta.edges[0]?.type).toBe("contains");
+    expect(delta.edges[0]?.source).toBe(source.id);
+  });
+
+  it("adds a stackedOn edge when one PR's baseRefName matches another's headRefName", async () => {
+    const source = repoSource();
+    const client = clientWithPullRequests({
+      items: [
+        {
+          number: 1,
+          title: "Base of the stack",
+          state: "open",
+          url: "https://github.com/exadev/graphle/pull/1",
+          baseRefName: "main",
+          headRefName: "feature-base",
+          isCrossRepository: false,
+        },
+        {
+          number: 2,
+          title: "Stacked on #1",
+          state: "open",
+          url: "https://github.com/exadev/graphle/pull/2",
+          baseRefName: "feature-base",
+          headRefName: "feature-stacked",
+          isCrossRepository: false,
+        },
+      ],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const { delta } = await findPullRequestsExpansion().run(
+      source,
+      client,
+      undefined,
+      new AbortController().signal,
+    );
+
+    const baseNode = delta.nodes.find((n) => n.data.number === 1);
+    const stackedNode = delta.nodes.find((n) => n.data.number === 2);
+    if (baseNode === undefined || stackedNode === undefined) throw new Error("fixture: both PR nodes must exist");
+
+    const stackEdges = delta.edges.filter((e) => e.type === "stackedOn");
+    expect(stackEdges).toHaveLength(1);
+    expect(stackEdges[0]?.source).toBe(stackedNode.id);
+    expect(stackEdges[0]?.target).toBe(baseNode.id);
+  });
+
+  it("does not add a stackedOn edge for a PR based on the repo's default branch", async () => {
+    const source = repoSource();
+    const client = clientWithPullRequests({
+      items: [
+        {
+          number: 1,
+          title: "Ordinary PR",
+          state: "open",
+          url: "https://github.com/exadev/graphle/pull/1",
+          baseRefName: "main",
+          headRefName: "feature-1",
+          isCrossRepository: false,
+        },
+      ],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const { delta } = await findPullRequestsExpansion().run(
+      source,
+      client,
+      undefined,
+      new AbortController().signal,
+    );
+
+    expect(delta.edges.filter((e) => e.type === "stackedOn")).toHaveLength(0);
+  });
+
+  it("ignores a headRefName match from a cross-repository (fork) PR", async () => {
+    const source = repoSource();
+    const client = clientWithPullRequests({
+      items: [
+        {
+          number: 1,
+          title: "Fork PR that happens to share a branch name",
+          state: "open",
+          url: "https://github.com/exadev/graphle/pull/1",
+          baseRefName: "main",
+          headRefName: "feature-base",
+          isCrossRepository: true,
+        },
+        {
+          number: 2,
+          title: "Unrelated PR",
+          state: "open",
+          url: "https://github.com/exadev/graphle/pull/2",
+          baseRefName: "feature-base",
+          headRefName: "feature-2",
+          isCrossRepository: false,
+        },
+      ],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const { delta } = await findPullRequestsExpansion().run(
+      source,
+      client,
+      undefined,
+      new AbortController().signal,
+    );
+
+    expect(delta.edges.filter((e) => e.type === "stackedOn")).toHaveLength(0);
+  });
+});
+
 describe("expansionsForType - dispatch table", () => {
   it("offers repos and projects for org/repo, items for project, sub-issues/blocking for issue, nothing for freeform/unknown", () => {
     expect(expansionsForType("org").map((e) => e.id)).toEqual(["org-repos", "org-projects"]);

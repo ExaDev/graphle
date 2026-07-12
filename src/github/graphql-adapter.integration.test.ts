@@ -60,8 +60,10 @@ describe.skipIf(TOKEN_TYPES.length === 0)("GitHub API integration", () => {
  * fixture repos created solely for this purpose
  * (`Mearman/graphle-test-private`, `ExaDev/graphle-test-private`). Each
  * fixture repo has: three issues (a parent with a sub-issue, and a third
- * issue the parent blocks), one pull request, and a Projects v2 board
- * (linked to the repo) with two of the issues added as items.
+ * issue the parent blocks), two pull requests (#5 stacked on #4 — #5's base
+ * branch is #4's head branch, for testing stacked-PR detection), and a
+ * Projects v2 board (linked to the repo) with two of the issues added as
+ * items.
  *
  * Coverage is asymmetric by design, not oversight: a fine-grained token can
  * only target one resource owner, so `GH_TEST_PAT_FINE_GRAINED_PRIVATE` is
@@ -88,6 +90,7 @@ type PrivateFixture = {
   subIssue: number;
   blockedIssue: number;
   pr: number;
+  stackedPr: number;
   projectNumber: number;
   projectNodeId: string;
 };
@@ -100,6 +103,7 @@ const MEARMAN_FIXTURE: PrivateFixture = {
   subIssue: 2,
   blockedIssue: 3,
   pr: 4,
+  stackedPr: 5,
   projectNumber: 8,
   projectNodeId: "PVT_kwHOABRSoM4BdIcn",
 };
@@ -112,6 +116,7 @@ const EXADEV_FIXTURE: PrivateFixture = {
   subIssue: 2,
   blockedIssue: 3,
   pr: 4,
+  stackedPr: 5,
   projectNumber: 13,
   projectNodeId: "PVT_kwDOCFoIAs4BdIco",
 };
@@ -164,6 +169,25 @@ describe.skipIf(PRIVATE_TOKEN_TYPES.length === 0)("GitHub API integration - priv
       );
       expect(page.items.length).toBeGreaterThanOrEqual(1);
     });
+
+    it.each(fixtures)(
+      "resolves the stacked PR relationship for $owner/$repo",
+      async ({ owner, repo, pr, stackedPr }) => {
+        const client = createGitHubClient({ token });
+        const page = await client.listRepoPullRequests(
+          owner,
+          repo,
+          undefined,
+          DEFAULT_REPO_PULL_REQUESTS_FILTERS,
+          new AbortController().signal,
+        );
+        const base = page.items.find((item) => item.number === pr);
+        const stacked = page.items.find((item) => item.number === stackedPr);
+        if (base === undefined || stacked === undefined) throw new Error("fixture: both PRs must exist");
+        expect(stacked.baseRefName).toBe(base.headRefName);
+        expect(stacked.isCrossRepository).toBe(false);
+      },
+    );
 
     it.each(fixtures)(
       "resolves the sub-issue of the parent issue in $owner/$repo",

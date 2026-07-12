@@ -65,6 +65,14 @@ export const BUILT_IN_EDGE_TYPES: RuntimeEdgeType[] = [
     labelField: "label",
     schema: labelDataSchema,
   }),
+  defineBuiltInEdgeType({
+    name: "stackedOn",
+    label: "Stacked on",
+    color: "violet",
+    strokeStyle: "dashed",
+    labelField: "label",
+    schema: labelDataSchema,
+  }),
 ];
 
 /** Built-in edge types keyed by {@link RuntimeEdgeType.name} for O(1) lookup. */

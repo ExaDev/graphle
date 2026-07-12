@@ -13,6 +13,7 @@ import {
   projectToNode,
   pullRequestToNode,
   repoToNode,
+  stackedOnEdge,
   tracksEdge,
 } from "./materialise";
 
@@ -191,9 +192,31 @@ const repoPullRequests: Expansion = {
       ...pullRequestToNode(owner, name, pullRequest, positionAt(positions, i)),
       parentId: source.id,
     }));
-    const edges = nodes.map((node) => containsEdge(source.id, node.id));
+    const containsEdges = nodes.map((node) => containsEdge(source.id, node.id));
+    // GitHub has no "which PR is this based on" field, so stacking is
+    // inferred by matching one PR's baseRefName against another's
+    // headRefName within this same fetched page (see repoPullRequests'
+    // module-level doc comment for the page-local limitation this implies).
+    // A cross-repository PR's headRefName names a branch in its fork, not
+    // this repo, so it can never legitimately be another PR's baseRefName
+    // here.
+    const nodeByHeadRef = new Map<string, GraphNode>();
+    page.items.forEach((pullRequest, i) => {
+      if (!pullRequest.isCrossRepository) {
+        const node = nodes[i];
+        if (node !== undefined) nodeByHeadRef.set(pullRequest.headRefName, node);
+      }
+    });
+    const stackEdges = page.items.flatMap((pullRequest, i) => {
+      const dependentNode = nodes[i];
+      const baseNode = nodeByHeadRef.get(pullRequest.baseRefName);
+      if (dependentNode === undefined || baseNode === undefined || baseNode.id === dependentNode.id) {
+        return [];
+      }
+      return [stackedOnEdge(dependentNode.id, baseNode.id)];
+    });
     return {
-      delta: buildDelta(nodes, edges),
+      delta: buildDelta(nodes, [...containsEdges, ...stackEdges]),
       endCursor: page.endCursor,
       hasNextPage: page.hasNextPage,
     };

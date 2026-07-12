@@ -72,6 +72,7 @@ describe("migrateV1Document", () => {
       "custom",
       "owns",
       "references",
+      "stackedOn",
       "tracks",
     ]);
     for (const t of edgeTypes) {
@@ -157,6 +158,7 @@ describe("migrateV2Document", () => {
       "custom",
       "owns",
       "references",
+      "stackedOn",
       "tracks",
     ]);
   });

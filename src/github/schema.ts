@@ -82,12 +82,23 @@ export const GitHubIssueWithRepo = GitHubIssue.extend({
 });
 export type GitHubIssueWithRepo = z.infer<typeof GitHubIssueWithRepo>;
 
-/** A GitHub pull request. State adds "merged" alongside an issue's open/closed. */
+/**
+ * A GitHub pull request. State adds "merged" alongside an issue's open/closed.
+ * `baseRefName`/`headRefName` are the branch names GitHub exposes no direct
+ * "which PR is this based on" field for — stacking is inferred client-side by
+ * matching one PR's `baseRefName` against another's `headRefName`.
+ * `isCrossRepository` marks a fork PR, whose `headRefName` names a branch in
+ * the fork rather than this repo, so it can never legitimately be another
+ * PR's `baseRefName` here.
+ */
 export const GitHubPullRequest = z.object({
   number: z.number().int(),
   title: z.string(),
   state: GitHubPullRequestState,
   url: z.string(),
+  baseRefName: z.string(),
+  headRefName: z.string(),
+  isCrossRepository: z.boolean(),
 });
 export type GitHubPullRequest = z.infer<typeof GitHubPullRequest>;
 

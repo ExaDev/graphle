@@ -12,6 +12,7 @@ import {
   projectToNode,
   pullRequestToNode,
   repoToNode,
+  stackedOnEdge,
   tracksEdge,
 } from "./materialise";
 import type { GitHubIssue, GitHubIssueWithRepo, GitHubOrg, GitHubProject, GitHubPullRequest, GitHubRepo } from "./schema";
@@ -30,6 +31,9 @@ const pullRequest: GitHubPullRequest = {
   title: "A pull request",
   state: "open",
   url: "https://github.com/ExaDev/graphle/pull/4",
+  baseRefName: "main",
+  headRefName: "feature",
+  isCrossRepository: false,
 };
 const project: GitHubProject = { id: "PVT_1", number: 1, title: "Board", url: "https://github.com/orgs/ExaDev/projects/1" };
 
@@ -73,6 +77,12 @@ describe("materialise - deterministic edge ids", () => {
     expect(first.id).toBe(second.id);
   });
 
+  it("gives different edge types between the same two nodes different ids", () => {
+    const blocks = blocksEdge("pr-a", "pr-b");
+    const stacked = stackedOnEdge("pr-a", "pr-b");
+    expect(blocks.id).not.toBe(stacked.id);
+  });
+
   it("gives opposite directions between the same two nodes different ids", () => {
     const forward = containsEdge("repo-1", "pr-1");
     const backward = containsEdge("pr-1", "repo-1");
@@ -84,5 +94,22 @@ describe("materialise - deterministic edge ids", () => {
     expect(containsEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "contains" });
     expect(tracksEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "tracks" });
     expect(blocksEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "blocks" });
+  });
+});
+
+describe("stackedOnEdge", () => {
+  it("points from the dependent (stacked) PR to the PR it's based on", () => {
+    const edge = stackedOnEdge("dependent-pr", "base-pr");
+    expect(edge.source).toBe("dependent-pr");
+    expect(edge.target).toBe("base-pr");
+    expect(edge.type).toBe("stackedOn");
+  });
+});
+
+describe("pullRequestToNode", () => {
+  it("carries baseRefName and headRefName into node data", () => {
+    const node = pullRequestToNode("ExaDev", "graphle", pullRequest, position);
+    expect(node.data.baseRefName).toBe("main");
+    expect(node.data.headRefName).toBe("feature");
   });
 });

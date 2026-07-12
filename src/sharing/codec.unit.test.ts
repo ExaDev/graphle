@@ -421,7 +421,15 @@ describe("share codec", () => {
       // The built-in edge type definitions are injected by the chained
       // v2 -> v3 step.
       const edgeTypeNames = decoded.edgeTypes.map((t) => t.name);
-      expect(edgeTypeNames).toEqual(["owns", "contains", "tracks", "references", "custom", "blocks"]);
+      expect(edgeTypeNames).toEqual([
+        "owns",
+        "contains",
+        "tracks",
+        "references",
+        "custom",
+        "blocks",
+        "stackedOn",
+      ]);
     });
   });
 
@@ -452,7 +460,15 @@ describe("share codec", () => {
       expect(edge.type).toBe("owns");
       expect(edge.data).toEqual({ label: "owns it" });
       const edgeTypeNames = decoded.edgeTypes.map((t) => t.name);
-      expect(edgeTypeNames).toEqual(["owns", "contains", "tracks", "references", "custom", "blocks"]);
+      expect(edgeTypeNames).toEqual([
+        "owns",
+        "contains",
+        "tracks",
+        "references",
+        "custom",
+        "blocks",
+        "stackedOn",
+      ]);
     });
   });
 });

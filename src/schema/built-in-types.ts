@@ -52,6 +52,8 @@ const pullRequestDataSchema = z.object({
   title: z.string().min(1),
   state: z.enum(["open", "closed", "merged"]).optional(),
   url: z.string().optional(),
+  baseRefName: z.string().optional(),
+  headRefName: z.string().optional(),
 });
 
 /** GitHub Projects v2 project. */

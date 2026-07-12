@@ -230,7 +230,17 @@ describe("createGitHubClient - listRepoPullRequests", () => {
             data: {
               repository: {
                 pullRequests: {
-                  nodes: [{ number: 1, title: "Add feature", state: "OPEN", url: "pr1" }],
+                  nodes: [
+                    {
+                      number: 1,
+                      title: "Add feature",
+                      state: "OPEN",
+                      url: "pr1",
+                      baseRefName: "main",
+                      headRefName: "feature-1",
+                      isCrossRepository: false,
+                    },
+                  ],
                   pageInfo: { hasNextPage: false, endCursor: null },
                 },
               },
@@ -250,6 +260,9 @@ describe("createGitHubClient - listRepoPullRequests", () => {
     expect(pullRequests.items).toHaveLength(1);
     expect(pullRequests.items[0]?.number).toBe(1);
     expect(pullRequests.items[0]?.state).toBe("open");
+    expect(pullRequests.items[0]?.baseRefName).toBe("main");
+    expect(pullRequests.items[0]?.headRefName).toBe("feature-1");
+    expect(pullRequests.items[0]?.isCrossRepository).toBe(false);
     expect(pullRequests.hasNextPage).toBe(false);
     expect(pullRequests.endCursor).toBeUndefined();
     expect(client.lastRateLimit).toEqual(RATE);
@@ -265,11 +278,31 @@ describe("createGitHubClient - listRepoPullRequests", () => {
           const page =
             call === 1
               ? {
-                  nodes: [{ number: 1, title: "First", state: "OPEN", url: "pr1" }],
+                  nodes: [
+                    {
+                      number: 1,
+                      title: "First",
+                      state: "OPEN",
+                      url: "pr1",
+                      baseRefName: "main",
+                      headRefName: "feature-1",
+                      isCrossRepository: false,
+                    },
+                  ],
                   pageInfo: { hasNextPage: true, endCursor: "CURSOR1" },
                 }
               : {
-                  nodes: [{ number: 2, title: "Second", state: "MERGED", url: "pr2" }],
+                  nodes: [
+                    {
+                      number: 2,
+                      title: "Second",
+                      state: "MERGED",
+                      url: "pr2",
+                      baseRefName: "main",
+                      headRefName: "feature-2",
+                      isCrossRepository: false,
+                    },
+                  ],
                   pageInfo: { hasNextPage: false, endCursor: null },
                 };
           return jsonResponse({

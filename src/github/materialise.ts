@@ -145,6 +145,8 @@ export function pullRequestToNode(
       title: pullRequest.title,
       state: pullRequest.state,
       url: pullRequest.url,
+      baseRefName: pullRequest.baseRefName,
+      headRefName: pullRequest.headRefName,
     },
   };
 }
@@ -235,6 +237,21 @@ export function blocksEdge(blockingIssueId: string, blockedIssueId: string): Gra
     source: blockingIssueId,
     target: blockedIssueId,
     type: "blocks",
+    data: {},
+  };
+}
+
+/**
+ * `source` is always the dependent ("stacked") PR and `target` the PR its
+ * base branch points at, so the arrow reads "stacked PR -> its base",
+ * regardless of which PR in the pair was the expansion's own source node.
+ */
+export function stackedOnEdge(dependentPrId: string, basePrId: string): GraphEdge {
+  return {
+    id: githubEdgeId("stackedOn", dependentPrId, basePrId),
+    source: dependentPrId,
+    target: basePrId,
+    type: "stackedOn",
     data: {},
   };
 }

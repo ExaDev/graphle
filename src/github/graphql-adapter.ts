@@ -50,7 +50,7 @@ const REPO_ISSUES_QUERY = `query RepoIssues($owner:String!,$name:String!,$first:
 // (confirmed via schema introspection), even though a distinct
 // `PullRequestOrderField` enum exists elsewhere in the schema and is not what
 // this argument accepts.
-const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url } } } rateLimit{remaining resetAt} }`;
+const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url baseRefName headRefName isCrossRepository } } } rateLimit{remaining resetAt} }`;
 
 const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:String){ organization(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 

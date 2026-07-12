@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { BUILT_IN_EDGE_TYPES, BUILT_IN_EDGE_TYPES_BY_NAME } from "./built-in-edge-types";
 
-const EXPECTED_NAMES = ["owns", "contains", "tracks", "references", "custom", "blocks"] as const;
+const EXPECTED_NAMES = [
+  "owns",
+  "contains",
+  "tracks",
+  "references",
+  "custom",
+  "blocks",
+  "stackedOn",
+] as const;
 
 /** Expected colour + strokeStyle pairing per built-in edge type, per the plan. */
 const EXPECTED_PRESENTATION: Record<
@@ -15,6 +23,7 @@ const EXPECTED_PRESENTATION: Record<
   references: { color: "gray", strokeStyle: "dotted" },
   custom: { color: "gray", strokeStyle: "solid" },
   blocks: { color: "red", strokeStyle: "dashed" },
+  stackedOn: { color: "violet", strokeStyle: "dashed" },
 };
 
 describe("BUILT_IN_EDGE_TYPES", () => {
