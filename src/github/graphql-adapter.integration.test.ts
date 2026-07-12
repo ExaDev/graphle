@@ -49,16 +49,26 @@ describe.skipIf(TOKEN_TYPES.length === 0)("GitHub API integration", () => {
       expect(repo.name).toBe("Hello-World");
       expect(repo.owner.login).toBe("octocat");
     });
+  });
+});
 
-    // searchAccounts specifically needs the read:org scope (confirmed via a
-    // real CI failure: "The 'login' field requires one of the following
-    // scopes: ['read:org']", even though GitHubPanel.tsx's own
-    // REQUIRED_CLASSIC_SCOPES already documents read:org as required for
-    // every classic token graphle uses). Account search never touches
-    // private data, so it belongs on the minimally-scoped public token pool
-    // rather than the separately-scoped private one — octocat is GitHub's
-    // own stable, public, well-known account, matching this describe
-    // block's own low-flake convention.
+/**
+ * `searchAccounts` specifically needs the `read:org` scope (confirmed via a
+ * real CI failure: "The 'login' field requires one of the following scopes:
+ * ['read:org']"), which `GH_TEST_PAT_CLASSIC` deliberately doesn't carry — it
+ * was scoped to nothing at all, since ordinary public-repo reads need no
+ * scope. `GH_TEST_PAT_FINE_GRAINED` already covers it (fine-grained tokens
+ * aren't subject to this classic-scope check), so account search is
+ * exercised there rather than widening the classic token — the same
+ * asymmetric-by-design coverage the private-token block below already
+ * documents. Account search never touches private data, so this belongs on
+ * the public token pool; octocat is GitHub's own stable, public, well-known
+ * account, matching this file's low-flake convention.
+ */
+const ACCOUNT_SEARCH_TOKEN_TYPES = TOKEN_TYPES.filter((entry) => entry.label === "fine-grained");
+
+describe.skipIf(ACCOUNT_SEARCH_TOKEN_TYPES.length === 0)("GitHub API integration - account search", () => {
+  describe.each(ACCOUNT_SEARCH_TOKEN_TYPES)("with a $label token", ({ token }) => {
     it("searches accounts, finding octocat", async () => {
       const client = createGitHubClient({ token });
       const page = await client.searchAccounts("octocat", undefined, new AbortController().signal);
