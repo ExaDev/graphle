@@ -29,6 +29,12 @@ import {
   IconChevronRight,
   IconCopy,
   IconFolderOpen,
+  IconLayoutAlignBottom,
+  IconLayoutAlignLeft,
+  IconLayoutAlignRight,
+  IconLayoutAlignTop,
+  IconLayoutDistributeHorizontal,
+  IconLayoutDistributeVertical,
   IconPencil,
   IconPlaylistAdd,
   IconPlus,
@@ -37,6 +43,7 @@ import {
 } from "@tabler/icons-react";
 import type { CSSProperties } from "react";
 
+import type { AlignEdge, DistributeAxis } from "@/domain";
 import { expansionsForType } from "@/github";
 import type { Position } from "@/schema";
 
@@ -101,6 +108,12 @@ export interface ContextMenuProps {
   onDuplicateSelection: (nodeIds: string[]) => void;
   /** Delete every id in `nodeIds` in one undo step. */
   onDeleteSelection: (nodeIds: string[]) => void;
+  /** Snap every id in `nodeIds` to a shared edge/centre line in one undo
+   *  step (see `alignNodes` in `align.ts`). */
+  onAlignSelection: (nodeIds: string[], edge: AlignEdge) => void;
+  /** Space every id in `nodeIds` evenly along one axis in one undo step
+   *  (see `distributeNodes` in `align.ts`). */
+  onDistributeSelection: (nodeIds: string[], axis: DistributeAxis) => void;
   /** Toggle a node's `collapsed` state. */
   onToggleCollapse: (nodeId: string) => void;
   /** Remove a `"group"`-typed node, promoting its children back to
@@ -124,6 +137,8 @@ export function ContextMenu({
   onGroupSelection,
   onDuplicateSelection,
   onDeleteSelection,
+  onAlignSelection,
+  onDistributeSelection,
   onToggleCollapse,
   onUngroup,
   onExpand,
@@ -164,6 +179,43 @@ export function ContextMenu({
                 onClick={() => onDuplicateSelection(selectedNodeIds)}
               >
                 Duplicate {selectedNodeIds.length} nodes
+              </Menu.Item>
+              <Divider />
+              <Menu.Item
+                leftSection={<IconLayoutAlignLeft size={14} />}
+                onClick={() => onAlignSelection(selectedNodeIds, "left")}
+              >
+                Align left
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconLayoutAlignRight size={14} />}
+                onClick={() => onAlignSelection(selectedNodeIds, "right")}
+              >
+                Align right
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconLayoutAlignTop size={14} />}
+                onClick={() => onAlignSelection(selectedNodeIds, "top")}
+              >
+                Align top
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconLayoutAlignBottom size={14} />}
+                onClick={() => onAlignSelection(selectedNodeIds, "bottom")}
+              >
+                Align bottom
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconLayoutDistributeHorizontal size={14} />}
+                onClick={() => onDistributeSelection(selectedNodeIds, "horizontal")}
+              >
+                Distribute horizontally
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconLayoutDistributeVertical size={14} />}
+                onClick={() => onDistributeSelection(selectedNodeIds, "vertical")}
+              >
+                Distribute vertically
               </Menu.Item>
               <Divider />
               <Menu.Item

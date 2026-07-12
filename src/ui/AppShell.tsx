@@ -42,6 +42,7 @@ import {
 import { ReactFlowProvider } from "@xyflow/react";
 import { useState } from "react";
 
+import { alignNodes, distributeNodes, type AlignEdge, type DistributeAxis } from "@/domain";
 import { expansionsForType } from "@/github";
 import { type Position } from "@/schema";
 import { buildShareUrl } from "@/sharing/url";
@@ -220,6 +221,22 @@ export function AppShell() {
       childIds: nodeIds,
       position: { x: centroid.x / selected.length, y: centroid.y / selected.length },
     });
+  }
+
+  /** Snaps every node in `nodeIds` to a shared edge/centre line in one undo
+   *  step (see `alignNodes` in `align.ts`). */
+  function handleAlignSelection(nodeIds: string[], edge: AlignEdge): void {
+    const nodes = document.nodes.filter((n) => nodeIds.includes(n.id));
+    if (nodes.length === 0) return;
+    apply({ type: "moveNodes", moves: alignNodes(nodes, edge) });
+  }
+
+  /** Spaces every node in `nodeIds` evenly along one axis in one undo step
+   *  (see `distributeNodes` in `align.ts`). */
+  function handleDistributeSelection(nodeIds: string[], axis: DistributeAxis): void {
+    const nodes = document.nodes.filter((n) => nodeIds.includes(n.id));
+    if (nodes.length === 0) return;
+    apply({ type: "moveNodes", moves: distributeNodes(nodes, axis) });
   }
 
   function handleAddHere(): void {
@@ -430,6 +447,8 @@ export function AppShell() {
         onGroupSelection={handleGroupSelection}
         onDuplicateSelection={handleDuplicateSelection}
         onDeleteSelection={handleDeleteSelection}
+        onAlignSelection={handleAlignSelection}
+        onDistributeSelection={handleDistributeSelection}
         onToggleCollapse={handleToggleCollapse}
         onUngroup={handleUngroup}
         onExpand={handleExpandNode}

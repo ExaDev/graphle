@@ -26,3 +26,10 @@ export {
   applyOperation,
   type GraphOperation,
 } from "./operations";
+export {
+  alignNodes,
+  distributeNodes,
+  type AlignEdge,
+  type DistributeAxis,
+  type PositionedNode,
+} from "./align";
