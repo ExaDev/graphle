@@ -1,3 +1,10 @@
+## [1.19.2](https://github.com/ExaDev/graphle/compare/v1.19.1...v1.19.2) (2026-07-12)
+
+
+### Bug Fixes
+
+* **github:** scope searchAccounts integration coverage to fine-grained token ([0f79069](https://github.com/ExaDev/graphle/commit/0f7906940aa8d8ccdb66f0d10755c7e8e1b5f825))
+
 ## [1.19.1](https://github.com/ExaDev/graphle/compare/v1.19.0...v1.19.1) (2026-07-12)
 
 
