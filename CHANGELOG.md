@@ -1,3 +1,11 @@
+# [1.20.0](https://github.com/ExaDev/graphle/compare/v1.19.2...v1.20.0) (2026-07-12)
+
+
+### Features
+
+* **github:** add multi-owner GitHub token schema and resolution ([1f42e8e](https://github.com/ExaDev/graphle/commit/1f42e8eabc8c0de7ba4d41dd355863a31670a219))
+* **github:** support multiple stored GitHub tokens with auto-resolution ([b62ef2a](https://github.com/ExaDev/graphle/commit/b62ef2ae0a1f9df048a733cba1602b59588817cc))
+
 ## [1.19.2](https://github.com/ExaDev/graphle/compare/v1.19.1...v1.19.2) (2026-07-12)
 
 
