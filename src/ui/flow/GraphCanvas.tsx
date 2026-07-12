@@ -273,12 +273,72 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
     [apply, graphDocument, nodes, edges],
   );
 
+  // Tracks whether Alt is currently held, for the alt-drag-subtract marquee
+  // gesture below. Modifier state is read from raw window keydown/keyup
+  // rather than the selection-change event itself, because
+  // `OnSelectionChangeParams` carries no modifier flags. A `blur` listener
+  // resets it too: if the window loses focus mid-hold (e.g. an OS-level
+  // Alt-Tab), no `keyup` for Alt is ever delivered and the ref would
+  // otherwise stay stuck `true`.
+  const altHeldRef = useRef(false);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Alt") altHeldRef.current = true;
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Alt") altHeldRef.current = false;
+    };
+    const handleBlur = () => {
+      altHeldRef.current = false;
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
+  // Tracks whether a marquee (selection-box) drag is currently in progress,
+  // via React Flow's dedicated `onSelectionStart`/`onSelectionEnd` pane
+  // callbacks below — the only reliable way to distinguish a box-drag
+  // selection from a plain node/pane click, since both fire through the same
+  // `onSelectionChange`. This is what lets alt-drag-subtract apply only to an
+  // actual marquee drag: a plain click never fires `onSelectionStart` (it
+  // goes through the node's own click handler, not the pane's pointer-move
+  // selection-box logic), so alt-held-while-clicking a single node is
+  // unaffected and behaves exactly as before.
+  const marqueeActiveRef = useRef(false);
+
   // Mirror React Flow's selection into the store's EPHEMERAL selection. Never
   // written into the document. `selectedNodeIds` carries the full multi
   // -select list (for bulk actions like "Group"); `selection` stays
   // single-item, for the inspector.
+  //
+  // Alt-drag-subtract: when Alt is held for an actual marquee drag that
+  // captured at least one node, the box-selected nodes are REMOVED from the
+  // current selection instead of replacing it (React Flow v12's default is
+  // shift-drag-to-add; there is no built-in subtract gesture). The current
+  // selection is read fresh from the store here rather than depending on a
+  // `selectedNodeIds` closure, so this callback's identity (and the
+  // `onSelectionChange` prop) never needs to change across selection
+  // updates. Known limitation: only node ids are subtracted, matching the
+  // store's `selectedNodeIds`; an alt-marquee that also boxes edges still
+  // replaces the edge selection normally, since edges have no equivalent
+  // multi-select list to subtract against.
   const handleSelectionChange = useCallback(
     ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
+      if (altHeldRef.current && marqueeActiveRef.current && selectedNodes.length > 0) {
+        const subtractedIds = new Set(selectedNodes.map((node) => node.id));
+        const remainingIds = useGraphStore
+          .getState()
+          .selectedNodeIds.filter((id) => !subtractedIds.has(id));
+        setSelectedNodeIds(remainingIds);
+        setSelection({ nodeId: remainingIds[0], edgeId: selectedEdges[0]?.id });
+        return;
+      }
       setSelection({
         nodeId: selectedNodes[0]?.id,
         edgeId: selectedEdges[0]?.id,
@@ -339,6 +399,12 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
         onConnect={handleConnect}
         onNodeDragStop={handleNodeDragStop}
         onSelectionChange={handleSelectionChange}
+        onSelectionStart={() => {
+          marqueeActiveRef.current = true;
+        }}
+        onSelectionEnd={() => {
+          marqueeActiveRef.current = false;
+        }}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();
           setSelection({ nodeId: node.id, edgeId: undefined });
