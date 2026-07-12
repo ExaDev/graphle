@@ -1,3 +1,10 @@
+# [1.24.0](https://github.com/ExaDev/graphle/compare/v1.23.0...v1.24.0) (2026-07-12)
+
+
+### Features
+
+* **ui:** support duplicate and delete on multi-selected nodes ([fbe81b6](https://github.com/ExaDev/graphle/commit/fbe81b6d051c6dd9ffe9b6953e1de15b25816789))
+
 # [1.23.0](https://github.com/ExaDev/graphle/compare/v1.22.0...v1.23.0) (2026-07-12)
 
 
