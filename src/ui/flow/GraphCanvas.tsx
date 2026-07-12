@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMantineColorScheme } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
-import { IconArrowAutofitDown, IconArrowAutofitRight } from "@tabler/icons-react";
+import { IconArrowAutofitDown, IconArrowAutofitRight, IconGrid3x3 } from "@tabler/icons-react";
 import {
   Background,
   ControlButton,
@@ -41,6 +41,7 @@ import { useGraphStore } from "@/ui/store/graph-store";
 
 import { computeAutoLayout, type NodeSize } from "./auto-layout";
 import { type ContextMenuState } from "./ContextMenu";
+import { snapToggleActive } from "./GraphCanvas.css.ts";
 import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
 import { nodeTypes } from "./type-presentation";
 
@@ -50,6 +51,10 @@ import { nodeTypes } from "./type-presentation";
 // rendered size.
 const DEFAULT_NODE_WIDTH = 220;
 const DEFAULT_NODE_HEIGHT = 80;
+
+// Grid spacing (px) nodes snap to when snap-to-grid is enabled via the
+// Controls toggle below.
+const SNAP_GRID_PX = 16;
 
 export interface GraphCanvasProps {
   /**
@@ -82,6 +87,11 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
   const [edges, setEdges] = useState<GraphFlowEdge[]>(
     () => documentToFlow(graphDocument).edges,
   );
+
+  // Snap-to-grid is a drafting preference, not graph data — it never touches
+  // the store or the document, so it resets to off on reload and is never
+  // shared via the URL.
+  const [snapEnabled, setSnapEnabled] = useState(false);
 
   // Re-sync React Flow from the store when the STRUCTURE or the node/edge DATA
   // changes — an add, remove, inspector data edit, external document load, or
@@ -460,6 +470,8 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
           });
         }}
         deleteKeyCode={["Backspace", "Delete"]}
+        snapToGrid={snapEnabled}
+        snapGrid={[SNAP_GRID_PX, SNAP_GRID_PX]}
         fitView
       >
         <Background />
@@ -469,6 +481,14 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
           </ControlButton>
           <ControlButton title="Layout left-to-right" onClick={() => handleAutoLayout("LR")}>
             <IconArrowAutofitRight />
+          </ControlButton>
+          <ControlButton
+            title={snapEnabled ? "Snap to grid on" : "Snap to grid off"}
+            className={snapEnabled ? snapToggleActive : undefined}
+            aria-pressed={snapEnabled}
+            onClick={() => setSnapEnabled((prev) => !prev)}
+          >
+            <IconGrid3x3 />
           </ControlButton>
         </Controls>
         <MiniMap />
