@@ -31,7 +31,6 @@ describe("createTypeLibraryStore", () => {
     db = new GraphleDB();
     await Promise.all([
       db.graphs.clear(),
-      db.secrets.clear(),
       db.revisions.clear(),
       db.typeLibrary.clear(),
     ]);

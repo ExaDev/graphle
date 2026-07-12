@@ -1,32 +1,42 @@
 /**
- * GitHub integration drawer. Three phases, top to bottom:
+ * GitHub integration drawer. Four sections, top to bottom:
  *
- * 1. PAT entry: a PasswordInput plus Save (writes the token to the SecretStore,
- *    the only place the PAT ever lives in this app) and Validate (builds a
- *    client from the entered token, calls `viewer` to confirm it works, then
- *    surfaces the login and the rate-limit budget).
- * 2. Browse: lists the viewer's organisations. Selecting one loads its repos
- *    (listOrgRepos) and projects (listOrgProjects) into tabs; every row has an
- *    "Add to graph" action that materialises the entity into a node via the
- *    pure mappers and folds it through `store.mergeDelta`.
- * 3. Pagination tails: each list offers "Load more" while its connection has a
- *    next page.
+ * 1. Token list: every stored GitHub token, with its type/scope/last-used
+ *    summary and Edit/Delete actions.
+ * 2. Add/Edit form: label, token type (classic/fine-grained), scope (any
+ *    owner, or one/more owner logins — a fine-grained token is restricted to
+ *    exactly one, per {@link StoredGithubToken}'s schema constraint), and the
+ *    token string itself. Saving calls `viewer` to confirm the token works
+ *    before writing it to the {@link GithubTokenStore}.
+ * 3. "Acting as": a single-select of the stored tokens driving Browse/Search
+ *    below, defaulting via {@link resolveTokenForOwner} to whichever token
+ *    already matches `store.suggestedGithubOwner` (the owner a caller was
+ *    resolving a token for), or the most recently used any-scoped token.
+ * 4. Browse/Search: lists the acting-as token's organisations, repos, and
+ *    projects, or runs a GitHub search. Every row has an "Add to graph"
+ *    action that materialises the entity into a node via the pure mappers
+ *    and folds it through `store.mergeDelta`. Each list offers "Load more"
+ *    while its connection has a next page.
  *
  * Opening and closing lives in `store.githubPanelOpened` rather than local
  * component state — a caller with no JSX of its own (`useUrlSync`, on page
- * mount) can still open this drawer to prompt for a PAT. Such a caller can
+ * mount) can still open this drawer to prompt for a token. Such a caller can
  * also attach a one-shot `store.pendingGitHubAction`, run with the freshly
- * validated client right after a successful `handleValidate` and then
- * cleared; this component never inspects what that action does (e.g. resume
- * a GitHub Projects URL load) — it stays a general auth+browse drawer.
+ * resolved client right after a token is added/selected and then cleared;
+ * this component never inspects what that action does (e.g. resume a GitHub
+ * Projects URL load) — it stays a general auth+browse drawer. When the panel
+ * opens because no token resolved for `store.suggestedGithubOwner`, it jumps
+ * straight to the Add form with that owner pre-filled, rather than showing an
+ * empty acting-as selector.
  *
- * SECURITY: the PAT is sensitive credential material. It lives only in the
- * SecretStore (IndexedDB `secrets` table, separate from graph data) and in the
- * Authorization header `createGitHubClient` sends. It is never written to the
- * document, never placed in a URL, never passed to `notifications.show`, and
- * never included in an export — `exportDocument` serialises the graph document,
- * which structurally cannot carry it. Keep it that way: do not log the token,
- * do not copy it into graph node data, do not echo it in error messages.
+ * SECURITY: a token is sensitive credential material. It lives only in the
+ * GithubTokenStore (IndexedDB `githubTokens` table, separate from graph data)
+ * and in the Authorization header `createGitHubClient` sends. It is never
+ * written to the document, never placed in a URL, never passed to
+ * `notifications.show`, and never included in an export — `exportDocument`
+ * serialises the graph document, which structurally cannot carry it. Keep it
+ * that way: do not log a token, do not copy it into graph node data, do not
+ * echo it in error messages.
  *
  * Every fetch passes the drawer's AbortSignal, which is aborted on close so an
  * in-flight request does not resolve into an unmounted state update. Errors
@@ -35,6 +45,7 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActionIcon,
   Anchor,
   Badge,
   Button,
@@ -45,8 +56,10 @@ import {
   PasswordInput,
   ScrollArea,
   SegmentedControl,
+  Select,
   Stack,
   Tabs,
+  TagsInput,
   Text,
   TextInput,
   UnstyledButton,
@@ -56,9 +69,12 @@ import {
   IconCirclePlus,
   IconExternalLink,
   IconKey,
+  IconPencil,
+  IconPlus,
   IconRefresh,
   IconSearch,
   IconShieldCheck,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import {
@@ -71,6 +87,7 @@ import {
   projectToNode,
   pullRequestWithRepoToNode,
   repoToNode,
+  resolveTokenForOwner,
   type GitHubClient,
   type GitHubIssueWithRepo,
   type GitHubOrg,
@@ -80,10 +97,10 @@ import {
   type GitHubSearchAccount,
   type GitHubViewer,
 } from "@/github";
-import type { GraphNode } from "@/schema";
+import type { GithubTokenType, GraphNode, StoredGithubToken } from "@/schema";
 import { cascadePosition } from "@/domain";
 import { db } from "@/storage/db";
-import { createSecretStore } from "@/storage/secret-store-dexie";
+import { createGithubTokenStore } from "@/storage/github-token-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 export interface GitHubPanelProps {
@@ -182,15 +199,37 @@ function notifyGitHubError(error: unknown): void {
   });
 }
 
+/** One-line "acting as" Select option label: label plus type and scope. */
+function tokenSummary(token: StoredGithubToken): string {
+  const scope = token.scope.kind === "any" ? "any owner" : token.scope.owners.join(", ");
+  return `${token.label} (${token.tokenType}, ${scope})`;
+}
+
 export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
-  // The SecretStore is created once; `db` is a process-wide singleton. The UI
-  // never touches Dexie directly, keeping the storage boundary clean.
-  const secretStore = useMemo(() => createSecretStore(db), []);
+  // The GithubTokenStore is created once; `db` is a process-wide singleton.
+  // The UI never touches Dexie directly, keeping the storage boundary clean.
+  const tokenStore = useMemo(() => createGithubTokenStore(db), []);
 
   const nodeCount = useGraphStore((state) => state.document.nodes.length);
   const mergeDelta = useGraphStore((state) => state.mergeDelta);
+  const suggestedGithubOwner = useGraphStore((state) => state.suggestedGithubOwner);
 
-  const [tokenInput, setTokenInput] = useState("");
+  const [tokens, setTokens] = useState<StoredGithubToken[]>([]);
+  const [actingAsId, setActingAsId] = useState<string | undefined>(undefined);
+
+  // Add/Edit form state. `editingId` is undefined for a fresh Add, or the id
+  // of the token being edited (its token string is re-shown for re-validation,
+  // matching the single-token drawer's original "seed the input" behaviour).
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | undefined>(undefined);
+  const [editingCreatedAt, setEditingCreatedAt] = useState<string | undefined>(undefined);
+  const [formLabel, setFormLabel] = useState("");
+  const [formTokenType, setFormTokenType] = useState<GithubTokenType>("classic");
+  const [formScopeKind, setFormScopeKind] = useState<"any" | "owner">("any");
+  const [formOwners, setFormOwners] = useState<string[]>([]);
+  const [formSingleOwner, setFormSingleOwner] = useState("");
+  const [formTokenInput, setFormTokenInput] = useState("");
+
   const [viewer, setViewer] = useState<GitHubViewer | undefined>(undefined);
   const [rateLimit, setRateLimit] = useState<
     { remaining: number; resetAt: string } | undefined
@@ -255,24 +294,105 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
     };
   }, [opened]);
 
-  // Seed the input with any previously saved token when the drawer opens, so a
-  // returning user can re-validate without retyping.
+  /** Resets the Add/Edit form to a fresh Add, optionally pre-filling an
+   *  owner (used when no token resolved for `suggestedGithubOwner`). */
+  function openAddForm(prefillOwner?: string): void {
+    setFormOpen(true);
+    setEditingId(undefined);
+    setEditingCreatedAt(undefined);
+    setFormLabel("");
+    setFormTokenType("classic");
+    setFormScopeKind(prefillOwner === undefined ? "any" : "owner");
+    setFormOwners(prefillOwner === undefined ? [] : [prefillOwner]);
+    setFormSingleOwner(prefillOwner ?? "");
+    setFormTokenInput("");
+  }
+
+  function openEditForm(token: StoredGithubToken): void {
+    setFormOpen(true);
+    setEditingId(token.id);
+    setEditingCreatedAt(token.createdAt);
+    setFormLabel(token.label);
+    setFormTokenType(token.tokenType);
+    setFormScopeKind(token.scope.kind);
+    setFormOwners(token.scope.kind === "owner" ? token.scope.owners : []);
+    setFormSingleOwner(token.scope.kind === "owner" ? (token.scope.owners[0] ?? "") : "");
+    setFormTokenInput(token.token);
+  }
+
+  // Load every stored token when the drawer opens, and default the acting-as
+  // selection via resolveTokenForOwner: a token scoped to suggestedGithubOwner
+  // when the caller who opened the panel was resolving one, else the most
+  // recently used any-scoped token. When suggestedGithubOwner is set but
+  // nothing resolves for it (the only reason a caller escalates — see
+  // ExpandMenu/GraphsDrawer/etc.), jump straight to the Add form instead of
+  // showing an empty acting-as selector.
   useEffect(() => {
     if (!opened) return;
     const controller = new AbortController();
-    void secretStore
-      .getGitHubToken(controller.signal)
-      .then((stored) => {
-        if (controller.signal.aborted || stored === undefined) return;
-        setTokenInput(stored);
+    void tokenStore
+      .list(controller.signal)
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setTokens(list);
+        const resolved = resolveTokenForOwner(list, suggestedGithubOwner);
+        if (resolved !== undefined) {
+          setActingAsId(resolved.id);
+        } else if (suggestedGithubOwner !== undefined) {
+          openAddForm(suggestedGithubOwner);
+        }
       })
-      // On abort the cleanup already ran; on a non-abort read failure leave
-      // the input unseeded so the user can retype their token.
       .catch(() => {
         if (controller.signal.aborted) return;
       });
     return () => controller.abort();
-  }, [opened, secretStore]);
+  }, [opened, suggestedGithubOwner, tokenStore]);
+
+  // Build a client for the acting-as token and confirm it works, refreshing
+  // viewer/rate-limit and (re)loading orgs. Also fires any pending action
+  // queued by the caller that opened the panel, exactly once, the same way
+  // the single-token drawer resumed a pending action after Validate.
+  useEffect(() => {
+    if (!opened) return;
+    const token = tokens.find((candidate) => candidate.id === actingAsId);
+    if (token === undefined) return;
+    const client = createGitHubClient({ token: token.token });
+    const controller = new AbortController();
+    void runWith(() => client.viewer(controller.signal), controller.signal).then(
+      async (result) => {
+        if (controller.signal.aborted || result === undefined) return;
+        clientRef.current = client;
+        setViewer(result);
+        setRateLimit(client.lastRateLimit);
+        setSelectedAccount(undefined);
+        setRepos([]);
+        setReposPage(NO_PAGE);
+        setProjects([]);
+        setProjectsPage(NO_PAGE);
+
+        // Inlined rather than calling the component's own loadOrgs so this
+        // effect doesn't need to depend on a function identity that's
+        // recreated every render.
+        setLoadingOrgs(true);
+        const orgsResult = await runWith(
+          () => client.listViewerOrgs(undefined, controller.signal),
+          controller.signal,
+        );
+        setLoadingOrgs(false);
+        if (!controller.signal.aborted && orgsResult !== undefined) {
+          setOrgs(orgsResult.items);
+          setOrgsPage({ cursor: orgsResult.endCursor, hasNextPage: orgsResult.hasNextPage });
+        }
+
+        const pendingAction = useGraphStore.getState().pendingGitHubAction;
+        if (pendingAction !== undefined) {
+          useGraphStore.setState({ pendingGitHubAction: undefined });
+          pendingAction(client);
+        }
+      },
+    );
+    return () => controller.abort();
+  }, [opened, actingAsId, tokens]);
 
   /** The drawer's signal while open, or undefined when closed/no controller yet. */
   function signal(): AbortSignal | undefined {
@@ -310,66 +430,93 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
     });
   }
 
-  async function handleSaveToken(): Promise<void> {
+  /** Builds the scope the form currently describes, or undefined when the
+   *  form is missing a required owner (caller shows the matching error). */
+  function formScope(): { kind: "any" } | { kind: "owner"; owners: string[] } | undefined {
+    if (formTokenType === "fine-grained") {
+      const owner = formSingleOwner.trim();
+      return owner === "" ? undefined : { kind: "owner", owners: [owner] };
+    }
+    if (formScopeKind === "any") return { kind: "any" };
+    return formOwners.length === 0 ? undefined : { kind: "owner", owners: formOwners };
+  }
+
+  /** Validates the entered token via `viewer`, then writes it to the
+   *  GithubTokenStore — a fine-grained token is restricted to a single owner
+   *  by GitHub itself, so the form only offers a single owner field for it;
+   *  a classic token may be scoped to any number of owners or left unscoped. */
+  async function handleSaveForm(): Promise<void> {
     const sig = signal();
     if (sig === undefined) return;
-    if (tokenInput === "") {
+    if (formLabel.trim() === "") {
+      notifications.show({ color: "red", message: "Enter a label first" });
+      return;
+    }
+    if (formTokenInput === "") {
       notifications.show({ color: "red", message: "Enter a token first" });
       return;
     }
-    // setGitHubToken resolves to void, so success and the runWith "undefined on
-    // error" path are indistinguishable by return value: handle the save
-    // explicitly so the success notification only fires when it actually wrote.
-    try {
-      await secretStore.setGitHubToken(tokenInput, sig);
-      notifications.show({ color: "green", message: "PAT saved" });
-    } catch (error) {
-      if (sig.aborted) return;
-      notifyGitHubError(error);
-    }
-  }
-
-  async function handleValidate(): Promise<void> {
-    const sig = signal();
-    if (sig === undefined) return;
-    if (tokenInput === "") {
-      notifications.show({ color: "red", message: "Enter a token first" });
+    const scope = formScope();
+    if (scope === undefined) {
+      notifications.show({ color: "red", message: "Enter at least one owner" });
       return;
     }
     setValidating(true);
-    const client = createGitHubClient({ token: tokenInput });
+    const client = createGitHubClient({ token: formTokenInput });
     const result = await runWith(() => client.viewer(sig), sig);
     setValidating(false);
-    if (result === undefined) {
-      // Validation failed; clear any prior session so the browse section does
-      // not show stale data behind a dead token.
-      clientRef.current = undefined;
-      setViewer(undefined);
+    if (result === undefined) return;
+
+    const id = editingId ?? crypto.randomUUID();
+    const stored: StoredGithubToken = {
+      id,
+      label: formLabel.trim(),
+      tokenType: formTokenType,
+      token: formTokenInput,
+      scope,
+      createdAt: editingCreatedAt ?? new Date().toISOString(),
+    };
+    try {
+      await tokenStore.save(stored, sig);
+    } catch (error) {
+      if (sig.aborted) return;
+      notifyGitHubError(error);
       return;
     }
-    clientRef.current = client;
-    setViewer(result);
-    setRateLimit(client.lastRateLimit);
     notifications.show({ color: "green", message: `Signed in as ${result.login}` });
 
-    // Resume any pending action (e.g. a GitHub Projects URL load waiting on
-    // auth) with the freshly validated client, then clear it. This panel
-    // doesn't inspect what the action does, or decide whether to close
-    // itself afterwards — that's the caller's call, made when it set the
-    // action via store.openGitHubPanel(pendingAction).
-    const pendingAction = useGraphStore.getState().pendingGitHubAction;
-    if (pendingAction !== undefined) {
-      useGraphStore.setState({ pendingGitHubAction: undefined });
-      pendingAction(client);
-    }
+    setFormOpen(false);
+    setEditingId(undefined);
+    setEditingCreatedAt(undefined);
+    const list = await tokenStore.list(sig);
+    setTokens(list);
+    setActingAsId(id);
+  }
 
-    // Reset browse state for the freshly authenticated viewer, then load orgs.
-    setSelectedAccount(undefined);
-    setRepos([]);
-    setReposPage(NO_PAGE);
-    setProjects([]);
-    setProjectsPage(NO_PAGE);
-    void loadOrgs(undefined, sig);
+  async function handleDeleteToken(id: string): Promise<void> {
+    const sig = signal();
+    if (sig === undefined) return;
+    try {
+      await tokenStore.remove(id, sig);
+    } catch (error) {
+      if (sig.aborted) return;
+      notifyGitHubError(error);
+      return;
+    }
+    const list = await tokenStore.list(sig);
+    setTokens(list);
+    if (actingAsId === id) {
+      const next = resolveTokenForOwner(list, undefined);
+      setActingAsId(next?.id);
+      // The acting-as effect only fetches for a resolvable token; when
+      // nothing resolves (no any-scoped token left) it never runs, so clear
+      // the deleted token's stale viewer/rate-limit here instead.
+      if (next === undefined) {
+        clientRef.current = undefined;
+        setViewer(undefined);
+        setRateLimit(undefined);
+      }
+    }
   }
 
   async function loadOrgs(cursor: string | undefined, sig: AbortSignal): Promise<void> {
@@ -554,79 +701,177 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
       size="md"
     >
       <Stack gap="md">
-        {/* --- PAT entry + validation -------------------------------- */}
-        <Stack
-          component="form"
-          gap="xs"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleValidate();
-          }}
-        >
-          <PasswordInput
-            label="Personal access token"
-            placeholder="ghp_… / github_pat_…"
-            leftSection={<IconKey size={16} />}
-            value={tokenInput}
-            onChange={(event) => setTokenInput(event.currentTarget.value)}
-          />
-          <Stack gap={2}>
-            <Text size="xs" c="dimmed">
-              Classic token needs{" "}
-              {REQUIRED_CLASSIC_SCOPES.map((scope, index) => (
-                <Fragment key={scope}>
-                  {index > 0 && ", "}
-                  <Code>{scope}</Code>
-                </Fragment>
-              ))}
-              . Fine-grained needs{" "}
-              {Object.keys(FINE_GRAINED_PERMISSIONS).map((permission, index) => (
-                <Fragment key={permission}>
-                  {index > 0 && ", "}
-                  <Code>{permission}</Code>
-                </Fragment>
-              ))}{" "}
-              — but only for an org-owned project; a fine-grained token can't
-              read a personal account's own Projects boards, use a classic
-              token for those.
+        {/* --- Token list ---------------------------------------------- */}
+        <Stack gap="xs">
+          <Group justify="space-between">
+            <Text fw={600} size="sm">
+              GitHub tokens
             </Text>
-            <Group gap="sm">
-              <Anchor size="xs" href={CREATE_TOKEN_URL} target="_blank">
-                <Group gap={4}>
-                  Create a classic token
-                  <IconExternalLink size={12} />
-                </Group>
-              </Anchor>
-              <Anchor size="xs" href={CREATE_FINE_GRAINED_TOKEN_URL} target="_blank">
-                <Group gap={4}>
-                  Create a fine-grained token
-                  <IconExternalLink size={12} />
-                </Group>
-              </Anchor>
+            {!formOpen && (
+              <Button
+                size="xs"
+                variant="default"
+                leftSection={<IconPlus size={14} />}
+                onClick={() => openAddForm()}
+              >
+                Add token
+              </Button>
+            )}
+          </Group>
+          {tokens.length === 0 && !formOpen && (
+            <Text size="sm" c="dimmed">
+              No tokens stored yet.
+            </Text>
+          )}
+          {tokens.map((token) => (
+            <TokenRow
+              key={token.id}
+              token={token}
+              onEdit={() => openEditForm(token)}
+              onDelete={() => void handleDeleteToken(token.id)}
+            />
+          ))}
+        </Stack>
+
+        {/* --- Add/Edit form --------------------------------------------- */}
+        {formOpen && (
+          <Stack
+            component="form"
+            gap="xs"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSaveForm();
+            }}
+          >
+            <Text fw={600} size="sm">
+              {editingId === undefined ? "Add token" : "Edit token"}
+            </Text>
+            <TextInput
+              label="Label"
+              placeholder="e.g. ExaDev fine-grained"
+              value={formLabel}
+              onChange={(event) => setFormLabel(event.currentTarget.value)}
+            />
+            <SegmentedControl
+              fullWidth
+              value={formTokenType}
+              onChange={(value) => {
+                if (value === "classic" || value === "fine-grained") setFormTokenType(value);
+              }}
+              data={[
+                { value: "classic", label: "Classic" },
+                { value: "fine-grained", label: "Fine-grained" },
+              ]}
+            />
+            {formTokenType === "fine-grained" ? (
+              <TextInput
+                label="Resource owner"
+                description="A fine-grained token is restricted by GitHub to exactly one org or user."
+                placeholder="e.g. ExaDev"
+                value={formSingleOwner}
+                onChange={(event) => setFormSingleOwner(event.currentTarget.value)}
+              />
+            ) : (
+              <>
+                <SegmentedControl
+                  fullWidth
+                  value={formScopeKind}
+                  onChange={(value) => {
+                    if (value === "any" || value === "owner") setFormScopeKind(value);
+                  }}
+                  data={[
+                    { value: "any", label: "Any owner" },
+                    { value: "owner", label: "Specific owners" },
+                  ]}
+                />
+                {formScopeKind === "owner" && (
+                  <TagsInput
+                    label="Owners"
+                    placeholder="Add an org or user login"
+                    value={formOwners}
+                    onChange={setFormOwners}
+                  />
+                )}
+              </>
+            )}
+            <PasswordInput
+              label="Personal access token"
+              placeholder="ghp_… / github_pat_…"
+              leftSection={<IconKey size={16} />}
+              value={formTokenInput}
+              onChange={(event) => setFormTokenInput(event.currentTarget.value)}
+            />
+            <Stack gap={2}>
+              <Text size="xs" c="dimmed">
+                Classic token needs{" "}
+                {REQUIRED_CLASSIC_SCOPES.map((scope, index) => (
+                  <Fragment key={scope}>
+                    {index > 0 && ", "}
+                    <Code>{scope}</Code>
+                  </Fragment>
+                ))}
+                . Fine-grained needs{" "}
+                {Object.keys(FINE_GRAINED_PERMISSIONS).map((permission, index) => (
+                  <Fragment key={permission}>
+                    {index > 0 && ", "}
+                    <Code>{permission}</Code>
+                  </Fragment>
+                ))}{" "}
+                — but only for an org-owned project; a fine-grained token can't
+                read a personal account's own Projects boards, use a classic
+                token for those.
+              </Text>
+              <Group gap="sm">
+                <Anchor size="xs" href={CREATE_TOKEN_URL} target="_blank">
+                  <Group gap={4}>
+                    Create a classic token
+                    <IconExternalLink size={12} />
+                  </Group>
+                </Anchor>
+                <Anchor size="xs" href={CREATE_FINE_GRAINED_TOKEN_URL} target="_blank">
+                  <Group gap={4}>
+                    Create a fine-grained token
+                    <IconExternalLink size={12} />
+                  </Group>
+                </Anchor>
+              </Group>
+            </Stack>
+            <Group gap="xs">
+              <Button type="button" variant="default" onClick={() => setFormOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" leftSection={<IconShieldCheck size={16} />} loading={validating}>
+                Validate &amp; save
+              </Button>
             </Group>
           </Stack>
-          <Group gap="xs">
-            <Button type="button" variant="default" onClick={() => void handleSaveToken()}>
-              Save
-            </Button>
-            <Button type="submit" leftSection={<IconShieldCheck size={16} />} loading={validating}>
-              Validate
-            </Button>
-          </Group>
-          {viewer !== undefined && (
-            <Group gap="sm" align="center">
-              <Badge color="green" variant="light">
-                {viewer.login}
-              </Badge>
-              {rateLimit !== undefined && (
-                <Text size="xs" c="dimmed">
-                  {String(rateLimit.remaining)} calls left (resets{" "}
-                  {new Date(rateLimit.resetAt).toLocaleTimeString()})
-                </Text>
-              )}
-            </Group>
-          )}
-        </Stack>
+        )}
+
+        {/* --- Acting as ------------------------------------------------- */}
+        {tokens.length > 0 && (
+          <Stack gap={2}>
+            <Select
+              label="Acting as"
+              data={tokens.map((token) => ({ value: token.id, label: tokenSummary(token) }))}
+              value={actingAsId ?? null}
+              onChange={(value) => setActingAsId(value ?? undefined)}
+              allowDeselect={false}
+            />
+            {viewer !== undefined && (
+              <Group gap="sm" align="center">
+                <Badge color="green" variant="light">
+                  {viewer.login}
+                </Badge>
+                {rateLimit !== undefined && (
+                  <Text size="xs" c="dimmed">
+                    {String(rateLimit.remaining)} calls left (resets{" "}
+                    {new Date(rateLimit.resetAt).toLocaleTimeString()})
+                  </Text>
+                )}
+              </Group>
+            )}
+          </Stack>
+        )}
 
         {/* --- Browse / Search ---------------------------------------- */}
         {viewer !== undefined && (
@@ -1019,6 +1264,43 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
         )}
       </Stack>
     </Drawer>
+  );
+}
+
+/** A stored token row: label, type/scope badges, last-used, Edit/Delete. */
+function TokenRow({
+  token,
+  onEdit,
+  onDelete,
+}: {
+  token: StoredGithubToken;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Group justify="space-between" gap="xs" px="sm" py="xs">
+      <Stack gap={2} style={{ minWidth: 0 }}>
+        <Group gap={6}>
+          <Text fw={600}>{token.label}</Text>
+          <Badge size="xs" variant="light">
+            {token.tokenType}
+          </Badge>
+        </Group>
+        <Text size="xs" c="dimmed">
+          {token.scope.kind === "any" ? "Any owner" : token.scope.owners.join(", ")}
+          {token.lastUsedAt !== undefined &&
+            ` — last used ${new Date(token.lastUsedAt).toLocaleString()}`}
+        </Text>
+      </Stack>
+      <Group gap={4}>
+        <ActionIcon variant="subtle" aria-label={`Edit ${token.label}`} onClick={onEdit}>
+          <IconPencil size={16} />
+        </ActionIcon>
+        <ActionIcon variant="subtle" color="red" aria-label={`Delete ${token.label}`} onClick={onDelete}>
+          <IconTrash size={16} />
+        </ActionIcon>
+      </Group>
+    </Group>
   );
 }
 

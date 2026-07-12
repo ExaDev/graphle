@@ -226,12 +226,23 @@ interface GraphState {
    * caller's use case (e.g. resuming a pending GitHub Projects URL load).
    */
   pendingGitHubAction: ((client: GitHubClient) => void) | undefined;
+  /** The owner (org login or user login) the caller that opened the panel
+   *  was resolving a token for, or `undefined` when the panel was opened
+   *  for plain browsing. Lets `GitHubPanel` default its "acting as"
+   *  selector to a token already scoped to that owner, or jump straight to
+   *  the Add-token form with the owner pre-filled when none resolves. */
+  suggestedGithubOwner: string | undefined;
   /** Open the GitHub panel, optionally with a pending action to run once a
-   *  PAT is validated. Omit the argument for plain browsing. */
-  openGitHubPanel: (pendingAction?: (client: GitHubClient) => void) => void;
-  /** Close the GitHub panel. Always clears `pendingGitHubAction` too, so
-   *  cancelling without validating can never leave a stale callback to fire
-   *  on some later, unrelated validation. */
+   *  token is selected/validated, and/or the owner the caller was
+   *  resolving a token for. Omit both for plain browsing. */
+  openGitHubPanel: (options?: {
+    pendingAction?: (client: GitHubClient) => void;
+    suggestedOwner?: string;
+  }) => void;
+  /** Close the GitHub panel. Always clears `pendingGitHubAction` and
+   *  `suggestedGithubOwner` too, so cancelling without validating can never
+   *  leave a stale callback or hint to apply to some later, unrelated
+   *  validation. */
   closeGitHubPanel: () => void;
   /** A detected local/remote gist divergence awaiting resolution, or
    *  `undefined` when none is pending. Ephemeral — never persisted. */
@@ -395,10 +406,19 @@ export const useGraphStore = create<GraphState>()(
       setGistPicker: (gistPicker) => set({ gistPicker }),
       githubPanelOpened: false,
       pendingGitHubAction: undefined,
-      openGitHubPanel: (pendingAction) =>
-        set({ githubPanelOpened: true, pendingGitHubAction: pendingAction }),
+      suggestedGithubOwner: undefined,
+      openGitHubPanel: (options) =>
+        set({
+          githubPanelOpened: true,
+          pendingGitHubAction: options?.pendingAction,
+          suggestedGithubOwner: options?.suggestedOwner,
+        }),
       closeGitHubPanel: () =>
-        set({ githubPanelOpened: false, pendingGitHubAction: undefined }),
+        set({
+          githubPanelOpened: false,
+          pendingGitHubAction: undefined,
+          suggestedGithubOwner: undefined,
+        }),
       syncConflict: undefined,
       setSyncConflict: (syncConflict) => set({ syncConflict }),
       remoteGithubSource: undefined,

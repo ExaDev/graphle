@@ -64,7 +64,6 @@ import { useEffect } from "react";
 import { notifications } from "@mantine/notifications";
 
 import {
-  createGitHubClient,
   DEFAULT_REPO_ISSUES_FILTERS,
   DEFAULT_REPO_PULL_REQUESTS_FILTERS,
   GitHubError,
@@ -78,6 +77,8 @@ import {
   parseRepoIssuesUrl,
   parseRepoPullRequestsFilters,
   parseRepoPullRequestsUrl,
+  resolveGithubClient,
+  resolveGithubToken,
   type GitHubClient,
   type ParsedProjectUrl,
   type ParsedRepoListUrl,
@@ -99,8 +100,6 @@ import {
   writeDocumentToLocation,
   writeRemoteUrlToLocation,
 } from "@/sharing/url";
-import { db } from "@/storage/db";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 /** Debounce window before a document change is written to the URL fragment. */
@@ -251,22 +250,23 @@ export function useUrlSync(): void {
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
           if (token === undefined && isAuthShapedFailure(error)) {
-            openGitHubPanel(() => {
-              const secretStore = createSecretStore(db);
-              secretStore
-                .getGitHubToken(controller.signal)
-                .then((resumedToken) => {
-                  if (controller.signal.aborted || resumedToken === undefined) return;
-                  loadGithubFileWith(parsed, resumedToken);
-                  closeGitHubPanel();
-                })
-                .catch((tokenError: unknown) => {
-                  if (controller.signal.aborted) return;
-                  notifications.show({
-                    color: "red",
-                    message: `Could not read the stored GitHub token: ${describe(tokenError)}`,
+            openGitHubPanel({
+              suggestedOwner: parsed.owner,
+              pendingAction: () => {
+                resolveGithubToken(parsed.owner, controller.signal)
+                  .then((resolved) => {
+                    if (controller.signal.aborted || resolved === undefined) return;
+                    loadGithubFileWith(parsed, resolved.token);
+                    closeGitHubPanel();
+                  })
+                  .catch((tokenError: unknown) => {
+                    if (controller.signal.aborted) return;
+                    notifications.show({
+                      color: "red",
+                      message: `Could not resolve a GitHub token: ${describe(tokenError)}`,
+                    });
                   });
-                });
+              },
             });
             return;
           }
@@ -297,89 +297,88 @@ export function useUrlSync(): void {
             parsedRepoIssues === undefined ? parseRepoPullRequestsUrl(remoteUrl) : undefined;
           if (parsedProject !== undefined) {
             const searchText = parseProjectFilterQuery(remoteUrl);
-            const secretStore = createSecretStore(db);
-            secretStore
-              .getGitHubToken(controller.signal)
-              .then((token) => {
+            resolveGithubClient(parsedProject.login, controller.signal)
+              .then((client) => {
                 if (controller.signal.aborted) return;
-                if (token !== undefined) {
-                  loadProjectWith(parsedProject, searchText, createGitHubClient({ token }));
+                if (client !== undefined) {
+                  loadProjectWith(parsedProject, searchText, client);
                 } else {
-                  openGitHubPanel((client) =>
-                    loadProjectWith(parsedProject, searchText, client, closeGitHubPanel),
-                  );
+                  openGitHubPanel({
+                    suggestedOwner: parsedProject.login,
+                    pendingAction: (resumedClient) =>
+                      loadProjectWith(parsedProject, searchText, resumedClient, closeGitHubPanel),
+                  });
                 }
               })
               .catch((error: unknown) => {
                 if (controller.signal.aborted) return;
                 notifications.show({
                   color: "red",
-                  message: `Could not read the stored GitHub token: ${describe(error)}`,
+                  message: `Could not resolve a GitHub token: ${describe(error)}`,
                 });
               });
           } else if (parsedRepoIssues !== undefined) {
             const filters = parseRepoIssuesFilters(remoteUrl, DEFAULT_REPO_ISSUES_FILTERS);
-            const secretStore = createSecretStore(db);
-            secretStore
-              .getGitHubToken(controller.signal)
-              .then((token) => {
+            resolveGithubClient(parsedRepoIssues.owner, controller.signal)
+              .then((client) => {
                 if (controller.signal.aborted) return;
-                if (token !== undefined) {
-                  loadRepoIssuesWith(parsedRepoIssues, filters, createGitHubClient({ token }));
+                if (client !== undefined) {
+                  loadRepoIssuesWith(parsedRepoIssues, filters, client);
                 } else {
-                  openGitHubPanel((client) =>
-                    loadRepoIssuesWith(parsedRepoIssues, filters, client, closeGitHubPanel),
-                  );
+                  openGitHubPanel({
+                    suggestedOwner: parsedRepoIssues.owner,
+                    pendingAction: (resumedClient) =>
+                      loadRepoIssuesWith(parsedRepoIssues, filters, resumedClient, closeGitHubPanel),
+                  });
                 }
               })
               .catch((error: unknown) => {
                 if (controller.signal.aborted) return;
                 notifications.show({
                   color: "red",
-                  message: `Could not read the stored GitHub token: ${describe(error)}`,
+                  message: `Could not resolve a GitHub token: ${describe(error)}`,
                 });
               });
           } else if (parsedRepoPullRequests !== undefined) {
             const filters = parseRepoPullRequestsFilters(remoteUrl, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
-            const secretStore = createSecretStore(db);
-            secretStore
-              .getGitHubToken(controller.signal)
-              .then((token) => {
+            resolveGithubClient(parsedRepoPullRequests.owner, controller.signal)
+              .then((client) => {
                 if (controller.signal.aborted) return;
-                if (token !== undefined) {
-                  loadRepoPullRequestsWith(
-                    parsedRepoPullRequests,
-                    filters,
-                    createGitHubClient({ token }),
-                  );
+                if (client !== undefined) {
+                  loadRepoPullRequestsWith(parsedRepoPullRequests, filters, client);
                 } else {
-                  openGitHubPanel((client) =>
-                    loadRepoPullRequestsWith(parsedRepoPullRequests, filters, client, closeGitHubPanel),
-                  );
+                  openGitHubPanel({
+                    suggestedOwner: parsedRepoPullRequests.owner,
+                    pendingAction: (resumedClient) =>
+                      loadRepoPullRequestsWith(
+                        parsedRepoPullRequests,
+                        filters,
+                        resumedClient,
+                        closeGitHubPanel,
+                      ),
+                  });
                 }
               })
               .catch((error: unknown) => {
                 if (controller.signal.aborted) return;
                 notifications.show({
                   color: "red",
-                  message: `Could not read the stored GitHub token: ${describe(error)}`,
+                  message: `Could not resolve a GitHub token: ${describe(error)}`,
                 });
               });
           } else {
             const parsedGithubFile = parseGithubFileUrl(remoteUrl);
             if (parsedGithubFile !== undefined) {
-              const secretStore = createSecretStore(db);
-              secretStore
-                .getGitHubToken(controller.signal)
-                .then((token) => {
+              resolveGithubToken(parsedGithubFile.owner, controller.signal)
+                .then((resolved) => {
                   if (controller.signal.aborted) return;
-                  loadGithubFileWith(parsedGithubFile, token);
+                  loadGithubFileWith(parsedGithubFile, resolved?.token);
                 })
                 .catch((error: unknown) => {
                   if (controller.signal.aborted) return;
                   notifications.show({
                     color: "red",
-                    message: `Could not read the stored GitHub token: ${describe(error)}`,
+                    message: `Could not resolve a GitHub token: ${describe(error)}`,
                   });
                 });
             } else {

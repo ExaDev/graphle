@@ -35,12 +35,12 @@
 import { useEffect } from "react";
 import { notifications } from "@mantine/notifications";
 
+import { resolveGithubToken } from "@/github";
 import { listGistHistory, pushGistFile } from "@/sharing/gist";
 import { serialiseDocument } from "@/sharing/json";
 import type { GraphDocument, LinkedRemoteSource, StoredGraph } from "@/schema";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 /** Debounce window before a dirty document change triggers a gist push.
@@ -70,7 +70,6 @@ export function useGistAutoSync(): void {
 
     const controller = new AbortController();
     const graphStore = createGraphStore(db);
-    const secretStore = createSecretStore(db);
 
     let unsubscribeDocument: (() => void) | undefined;
     let pushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,6 +107,7 @@ export function useGistAutoSync(): void {
      *  panel once a resumed action completes. */
     async function attemptPush(
       currentDocument: GraphDocument,
+      tokenId: string,
       token: string,
       onSuccess?: () => void,
     ): Promise<void> {
@@ -144,6 +144,7 @@ export function useGistAutoSync(): void {
         ...remote,
         lastSyncedRevision: newSha,
         lastSyncedAt: new Date().toISOString(),
+        lastUsedTokenId: tokenId,
       };
       await graphStore.save({ ...stored, linkedRemote: syncedRemote }, controller.signal);
       onSuccess?.();
@@ -175,32 +176,37 @@ export function useGistAutoSync(): void {
      *  and resuming once validated when none is stored yet. */
     async function runPush(): Promise<void> {
       const currentDocument = useGraphStore.getState().document;
-      const token = await secretStore.getGitHubToken(controller.signal);
+      const active = await readActiveLinkedRemote();
+      if (controller.signal.aborted || active === undefined) return;
+      const pinnedTokenId = active.remote.lastUsedTokenId;
+      const resolved = await resolveGithubToken(undefined, controller.signal, pinnedTokenId);
       if (controller.signal.aborted) return;
 
-      if (token !== undefined) {
-        await attemptPush(currentDocument, token);
+      if (resolved !== undefined) {
+        await attemptPush(currentDocument, resolved.id, resolved.token);
         return;
       }
 
-      // No stored PAT: prompt via the shared drawer and resume once the user
-      // validates one, exactly like useUrlSync's pending GitHub Projects
-      // load. The panel only ever gives back a GitHubClient, which never
-      // exposes its own token (SECURITY, see GitHubPanel.tsx); pushGistFile
-      // needs the raw token, so the resumed callback re-reads it from the
-      // SecretStore rather than pulling it off the client.
-      openGitHubPanel(() => {
-        secretStore
-          .getGitHubToken(controller.signal)
-          .then((resumedToken) => {
-            if (controller.signal.aborted || resumedToken === undefined) return undefined;
-            return attemptPush(
-              useGraphStore.getState().document,
-              resumedToken,
-              closeGitHubPanel,
-            );
-          })
-          .catch(notifyFailure("Could not sync to gist"));
+      // No token resolves: prompt via the shared drawer and resume once the
+      // user validates one, exactly like useUrlSync's pending GitHub
+      // Projects load. The panel only ever gives back a GitHubClient, which
+      // never exposes its own token (SECURITY, see GitHubPanel.tsx);
+      // pushGistFile needs the raw token, so the resumed callback re-resolves
+      // it rather than pulling it off the client.
+      openGitHubPanel({
+        pendingAction: () => {
+          resolveGithubToken(undefined, controller.signal, pinnedTokenId)
+            .then((resumedResolved) => {
+              if (controller.signal.aborted || resumedResolved === undefined) return undefined;
+              return attemptPush(
+                useGraphStore.getState().document,
+                resumedResolved.id,
+                resumedResolved.token,
+                closeGitHubPanel,
+              );
+            })
+            .catch(notifyFailure("Could not sync to gist"));
+        },
       });
     }
 

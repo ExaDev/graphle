@@ -1,5 +1,6 @@
 import type {
   GraphRevision,
+  StoredGithubToken,
   StoredGraph,
   StoredGraphSummary,
   StoredTypeLibrary,
@@ -18,13 +19,17 @@ export interface GraphStore {
 }
 
 /**
- * Read/write contract for sensitive singletons (the GitHub PAT). Stored
- * separately from graph data and addressed by fixed keys rather than ids.
+ * Read/write contract for stored GitHub personal access tokens. Several
+ * tokens may coexist (classic and fine-grained, scoped to different
+ * owners), so unlike the old single-secret contract this is addressed by
+ * generated ids rather than a fixed key.
  */
-export interface SecretStore {
-  getGitHubToken(signal: AbortSignal): Promise<string | undefined>;
-  setGitHubToken(token: string, signal: AbortSignal): Promise<void>;
-  clearGitHubToken(signal: AbortSignal): Promise<void>;
+export interface GithubTokenStore {
+  list(signal: AbortSignal): Promise<StoredGithubToken[]>;
+  get(id: string, signal: AbortSignal): Promise<StoredGithubToken | undefined>;
+  save(token: StoredGithubToken, signal: AbortSignal): Promise<void>;
+  remove(id: string, signal: AbortSignal): Promise<void>;
+  touchLastUsed(id: string, signal: AbortSignal): Promise<void>;
 }
 
 /**

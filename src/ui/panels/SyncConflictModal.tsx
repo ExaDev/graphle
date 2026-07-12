@@ -22,6 +22,7 @@ import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconCloudDownload, IconCloudUpload } from "@tabler/icons-react";
 
+import { resolveGithubToken } from "@/github";
 import type { GraphDocument, LinkedRemoteSource } from "@/schema";
 import { fetchGistRevision, pushGistFile } from "@/sharing/gist";
 import { fetchGithubBlobRevision, fetchGithubFileSha, pushGithubFileContent } from "@/sharing/github-file";
@@ -29,7 +30,6 @@ import { serialiseDocument } from "@/sharing/json";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
 import { createRevisionStore } from "@/storage/revision-store-dexie";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 /** Render any thrown value as a message string. */
@@ -90,15 +90,16 @@ export function SyncConflictModal() {
     void withLinkedRemote(async (graphStore, remote) => {
       if (syncConflict === undefined) return;
       const controller = new AbortController();
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(controller.signal);
-      if (token === undefined) {
+      const owner = remote.provider === "githubFile" ? remote.owner : undefined;
+      const resolved = await resolveGithubToken(owner, controller.signal, remote.lastUsedTokenId);
+      if (resolved === undefined) {
         notifications.show({
           color: "red",
           message: "No GitHub token stored — open the GitHub panel to add one, then retry.",
         });
         return;
       }
+      const token = resolved.token;
 
       let newSha: string;
       let successMessage: string;
@@ -144,6 +145,7 @@ export function SyncConflictModal() {
         ...remote,
         lastSyncedRevision: newSha,
         lastSyncedAt: new Date().toISOString(),
+        lastUsedTokenId: resolved.id,
       };
       await graphStore.save({ ...stored, linkedRemote: syncedRemote }, controller.signal);
       notifications.show({ color: "green", message: successMessage });
@@ -158,13 +160,12 @@ export function SyncConflictModal() {
       let pulled: GraphDocument;
       let successMessage: string;
       if (remote.provider === "githubFile") {
-        const secretStore = createSecretStore(db);
-        const token = await secretStore.getGitHubToken(controller.signal);
+        const resolved = await resolveGithubToken(remote.owner, controller.signal, remote.lastUsedTokenId);
         pulled = await fetchGithubBlobRevision(
           remote.owner,
           remote.repo,
           syncConflict.remoteSha,
-          token,
+          resolved?.token,
           controller.signal,
         );
         successMessage = "Took the repo file's changes";

@@ -86,7 +86,6 @@ import {
 import { notifications } from "@mantine/notifications";
 
 import {
-  createGitHubClient,
   DEFAULT_REPO_ISSUES_FILTERS,
   DEFAULT_REPO_PULL_REQUESTS_FILTERS,
   GitHubError,
@@ -105,6 +104,8 @@ import {
   parseRepoIssuesUrl,
   parseRepoPullRequestsFilters,
   parseRepoPullRequestsUrl,
+  resolveGithubClient,
+  resolveGithubToken,
   type GitHubClient,
   type ParsedProjectUrl,
   type ParsedRepoListUrl,
@@ -132,7 +133,6 @@ import { type LinkedRemoteSource, type StoredGraphSummary } from "@/schema";
 import { db } from "@/storage/db";
 import { createGraphStore } from "@/storage/graph-store-dexie";
 import { createRevisionStore } from "@/storage/revision-store-dexie";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore, type RemoteGithubSource } from "@/ui/store/graph-store";
 
 import { graphRow, selectedGraphRow } from "./GraphsDrawer.css";
@@ -448,13 +448,16 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     if (draftSource === undefined) return;
     setFilterApplying(true);
     try {
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(new AbortController().signal);
-      if (token !== undefined) {
-        await applyGithubSourceWith(draftSource, createGitHubClient({ token }));
+      const owner = draftSource.kind === "project" ? draftSource.parsed.login : draftSource.parsed.owner;
+      const client = await resolveGithubClient(owner, new AbortController().signal);
+      if (client !== undefined) {
+        await applyGithubSourceWith(draftSource, client);
       } else {
-        openGitHubPanel((client) => {
-          void applyGithubSourceWith(draftSource, client).then(closeGitHubPanel);
+        openGitHubPanel({
+          suggestedOwner: owner,
+          pendingAction: (resumedClient) => {
+            void applyGithubSourceWith(draftSource, resumedClient).then(closeGitHubPanel);
+          },
         });
       }
     } finally {
@@ -476,8 +479,8 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
    * treated as auth-shaped here alongside `unauthorised`/`forbidden`.
    */
   async function loadGithubFile(parsed: ParsedGithubFileUrl): Promise<void> {
-    const secretStore = createSecretStore(db);
-    const token = await secretStore.getGitHubToken(new AbortController().signal);
+    const resolved = await resolveGithubToken(parsed.owner, new AbortController().signal);
+    const token = resolved?.token;
     try {
       const revision = await fetchGithubFileRevision(
         parsed.owner,
@@ -498,19 +501,21 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
           error.kind.type === "forbidden" ||
           error.kind.type === "notFound");
       if (token === undefined && authShaped) {
-        openGitHubPanel(() => {
-          secretStore
-            .getGitHubToken(new AbortController().signal)
-            .then((resumedToken) => {
-              if (resumedToken === undefined) return undefined;
-              return loadGithubFile(parsed).then(closeGitHubPanel);
-            })
-            .catch((tokenError: unknown) => {
-              notifications.show({
-                color: "red",
-                message: `Could not read the stored GitHub token: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        openGitHubPanel({
+          suggestedOwner: parsed.owner,
+          pendingAction: () => {
+            resolveGithubToken(parsed.owner, new AbortController().signal)
+              .then((resumedResolved) => {
+                if (resumedResolved === undefined) return undefined;
+                return loadGithubFile(parsed).then(closeGitHubPanel);
+              })
+              .catch((tokenError: unknown) => {
+                notifications.show({
+                  color: "red",
+                  message: `Could not resolve a GitHub token: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+                });
               });
-            });
+          },
         });
         return;
       }
@@ -526,13 +531,15 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
       const parsedProject = parseProjectUrl(trimmed);
       if (parsedProject !== undefined) {
         const searchText = parseProjectFilterQuery(trimmed);
-        const secretStore = createSecretStore(db);
-        const token = await secretStore.getGitHubToken(new AbortController().signal);
-        if (token !== undefined) {
-          await loadGitHubProject(parsedProject, searchText, createGitHubClient({ token }));
+        const client = await resolveGithubClient(parsedProject.login, new AbortController().signal);
+        if (client !== undefined) {
+          await loadGitHubProject(parsedProject, searchText, client);
         } else {
-          openGitHubPanel((client) => {
-            void loadGitHubProject(parsedProject, searchText, client).then(closeGitHubPanel);
+          openGitHubPanel({
+            suggestedOwner: parsedProject.login,
+            pendingAction: (resumedClient) => {
+              void loadGitHubProject(parsedProject, searchText, resumedClient).then(closeGitHubPanel);
+            },
           });
         }
         return;
@@ -543,28 +550,35 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
         parsedRepoIssues === undefined ? parseRepoPullRequestsUrl(trimmed) : undefined;
       if (parsedRepoIssues !== undefined) {
         const filters = parseRepoIssuesFilters(trimmed, DEFAULT_REPO_ISSUES_FILTERS);
-        const secretStore = createSecretStore(db);
-        const token = await secretStore.getGitHubToken(new AbortController().signal);
-        if (token !== undefined) {
-          await loadGitHubRepoIssues(parsedRepoIssues, filters, createGitHubClient({ token }));
+        const client = await resolveGithubClient(parsedRepoIssues.owner, new AbortController().signal);
+        if (client !== undefined) {
+          await loadGitHubRepoIssues(parsedRepoIssues, filters, client);
         } else {
-          openGitHubPanel((client) => {
-            void loadGitHubRepoIssues(parsedRepoIssues, filters, client).then(closeGitHubPanel);
+          openGitHubPanel({
+            suggestedOwner: parsedRepoIssues.owner,
+            pendingAction: (resumedClient) => {
+              void loadGitHubRepoIssues(parsedRepoIssues, filters, resumedClient).then(closeGitHubPanel);
+            },
           });
         }
         return;
       }
       if (parsedRepoPullRequests !== undefined) {
         const filters = parseRepoPullRequestsFilters(trimmed, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
-        const secretStore = createSecretStore(db);
-        const token = await secretStore.getGitHubToken(new AbortController().signal);
-        if (token !== undefined) {
-          await loadGitHubRepoPullRequests(parsedRepoPullRequests, filters, createGitHubClient({ token }));
+        const client = await resolveGithubClient(
+          parsedRepoPullRequests.owner,
+          new AbortController().signal,
+        );
+        if (client !== undefined) {
+          await loadGitHubRepoPullRequests(parsedRepoPullRequests, filters, client);
         } else {
-          openGitHubPanel((client) => {
-            void loadGitHubRepoPullRequests(parsedRepoPullRequests, filters, client).then(
-              closeGitHubPanel,
-            );
+          openGitHubPanel({
+            suggestedOwner: parsedRepoPullRequests.owner,
+            pendingAction: (resumedClient) => {
+              void loadGitHubRepoPullRequests(parsedRepoPullRequests, filters, resumedClient).then(
+                closeGitHubPanel,
+              );
+            },
           });
         }
         return;
@@ -606,7 +620,7 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
    * manual push must respect the same never-silently-overwrite invariant as
    * the automatic path.
    */
-  async function pushToGist(remote: GistLinkedRemote, token: string): Promise<void> {
+  async function pushToGist(remote: GistLinkedRemote, tokenId: string, token: string): Promise<void> {
     if (currentGraph === undefined) return;
     const controller = new AbortController();
     const history = await listGistHistory(remote.gistId, controller.signal);
@@ -635,6 +649,7 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
       ...remote,
       lastSyncedRevision: newSha,
       lastSyncedAt: new Date().toISOString(),
+      lastUsedTokenId: tokenId,
     };
     await store.save({ ...currentGraph, linkedRemote: syncedRemote }, controller.signal);
     notifications.show({ color: "green", message: "Pushed to gist" });
@@ -644,29 +659,35 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     if (linkedGist === undefined) return;
     setSyncLoading(true);
     try {
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(new AbortController().signal);
-      if (token !== undefined) {
-        await pushToGist(linkedGist, token);
+      const resolved = await resolveGithubToken(
+        undefined,
+        new AbortController().signal,
+        linkedGist.lastUsedTokenId,
+      );
+      if (resolved !== undefined) {
+        await pushToGist(linkedGist, resolved.id, resolved.token);
         return;
       }
-      // No stored PAT: the panel only ever gives back a GitHubClient, which
-      // never exposes its own token (SECURITY, see GitHubPanel.tsx); re-read
-      // the token from the SecretStore once validation has saved it, exactly
-      // as useGistAutoSync's runPush does for the automatic path.
-      openGitHubPanel(() => {
-        secretStore
-          .getGitHubToken(new AbortController().signal)
-          .then((resumedToken) => {
-            if (resumedToken === undefined) return undefined;
-            return pushToGist(linkedGist, resumedToken).then(closeGitHubPanel);
-          })
-          .catch((error: unknown) => {
-            notifications.show({
-              color: "red",
-              message: `Could not push to gist: ${error instanceof Error ? error.message : String(error)}`,
+      // No token resolves: the panel only ever gives back a GitHubClient,
+      // which never exposes its own token (SECURITY, see GitHubPanel.tsx);
+      // re-resolve once validation has saved a token, exactly as
+      // useGistAutoSync's runPush does for the automatic path.
+      openGitHubPanel({
+        pendingAction: () => {
+          resolveGithubToken(undefined, new AbortController().signal, linkedGist.lastUsedTokenId)
+            .then((resumedResolved) => {
+              if (resumedResolved === undefined) return undefined;
+              return pushToGist(linkedGist, resumedResolved.id, resumedResolved.token).then(
+                closeGitHubPanel,
+              );
+            })
+            .catch((error: unknown) => {
+              notifications.show({
+                color: "red",
+                message: `Could not push to gist: ${error instanceof Error ? error.message : String(error)}`,
+              });
             });
-          });
+        },
       });
     } catch (error) {
       notifications.show({
@@ -735,7 +756,11 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
    * instead of overwriting it — mirroring `pushToGist` and
    * `useGithubFileAutoSync`'s `attemptPush`.
    */
-  async function pushToGithubFile(remote: GithubFileLinkedRemote, token: string): Promise<void> {
+  async function pushToGithubFile(
+    remote: GithubFileLinkedRemote,
+    tokenId: string,
+    token: string,
+  ): Promise<void> {
     if (currentGraph === undefined) return;
     const controller = new AbortController();
     const currentSha = await fetchGithubFileSha(
@@ -770,6 +795,7 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
       ...remote,
       lastSyncedRevision: newSha,
       lastSyncedAt: new Date().toISOString(),
+      lastUsedTokenId: tokenId,
     };
     await store.save({ ...currentGraph, linkedRemote: syncedRemote }, controller.signal);
     notifications.show({ color: "green", message: "Pushed to repo file" });
@@ -779,25 +805,36 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     if (linkedGithubFile === undefined) return;
     setSyncLoading(true);
     try {
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(new AbortController().signal);
-      if (token !== undefined) {
-        await pushToGithubFile(linkedGithubFile, token);
+      const resolved = await resolveGithubToken(
+        linkedGithubFile.owner,
+        new AbortController().signal,
+        linkedGithubFile.lastUsedTokenId,
+      );
+      if (resolved !== undefined) {
+        await pushToGithubFile(linkedGithubFile, resolved.id, resolved.token);
         return;
       }
-      openGitHubPanel(() => {
-        secretStore
-          .getGitHubToken(new AbortController().signal)
-          .then((resumedToken) => {
-            if (resumedToken === undefined) return undefined;
-            return pushToGithubFile(linkedGithubFile, resumedToken).then(closeGitHubPanel);
-          })
-          .catch((error: unknown) => {
-            notifications.show({
-              color: "red",
-              message: `Could not push to the repo file: ${error instanceof Error ? error.message : String(error)}`,
+      openGitHubPanel({
+        suggestedOwner: linkedGithubFile.owner,
+        pendingAction: () => {
+          resolveGithubToken(
+            linkedGithubFile.owner,
+            new AbortController().signal,
+            linkedGithubFile.lastUsedTokenId,
+          )
+            .then((resumedResolved) => {
+              if (resumedResolved === undefined) return undefined;
+              return pushToGithubFile(linkedGithubFile, resumedResolved.id, resumedResolved.token).then(
+                closeGitHubPanel,
+              );
+            })
+            .catch((error: unknown) => {
+              notifications.show({
+                color: "red",
+                message: `Could not push to the repo file: ${error instanceof Error ? error.message : String(error)}`,
+              });
             });
-          });
+        },
       });
     } catch (error) {
       notifications.show({
@@ -814,14 +851,13 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     setSyncLoading(true);
     try {
       const controller = new AbortController();
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(controller.signal);
+      const resolved = await resolveGithubToken(linkedGithubFile.owner, controller.signal);
       const revision = await fetchGithubFileRevision(
         linkedGithubFile.owner,
         linkedGithubFile.repo,
         linkedGithubFile.branch,
         linkedGithubFile.path,
-        token,
+        resolved?.token,
         controller.signal,
       );
       replaceDocument(revision.document);
@@ -872,14 +908,13 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     }
     setHistoryLoading(true);
     try {
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(new AbortController().signal);
+      const resolved = await resolveGithubToken(linkedGithubFile.owner, new AbortController().signal);
       const history = await listGithubFileHistory(
         linkedGithubFile.owner,
         linkedGithubFile.repo,
         linkedGithubFile.branch,
         linkedGithubFile.path,
-        token,
+        resolved?.token,
         new AbortController().signal,
       );
       setFileHistory(history);
@@ -907,13 +942,12 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
     setSyncLoading(true);
     try {
       const controller = new AbortController();
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(controller.signal);
+      const resolved = await resolveGithubToken(linkedGithubFile.owner, controller.signal);
       const document = await fetchGithubBlobRevision(
         linkedGithubFile.owner,
         linkedGithubFile.repo,
         sha,
-        token,
+        resolved?.token,
         controller.signal,
       );
       replaceDocument(document);

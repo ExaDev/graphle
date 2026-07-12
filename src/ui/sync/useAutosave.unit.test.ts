@@ -96,7 +96,7 @@ describe("useAutosave", () => {
   let unmount: (() => void) | undefined;
 
   beforeEach(async () => {
-    await Promise.all([db.graphs.clear(), db.secrets.clear(), db.revisions.clear()]);
+    await Promise.all([db.graphs.clear(), db.revisions.clear()]);
     useGraphStore.setState({ document: emptyDocument("Untitled graph"), graphId: undefined });
     useGraphStore.getState().markSaved();
   });

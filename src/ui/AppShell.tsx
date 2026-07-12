@@ -335,7 +335,7 @@ export function AppShell() {
 
       <MantineAppShell.Aside p="xs">
         <MantineAppShell.Section grow>
-          <InspectorPanel onOpenGitHub={() => openGitHubPanel()} />
+          <InspectorPanel />
         </MantineAppShell.Section>
       </MantineAppShell.Aside>
 

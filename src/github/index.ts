@@ -40,6 +40,8 @@ export {
   tracksEdge,
 } from "./materialise";
 export { expansionsForType, type Expansion, type ExpansionResult } from "./expand";
+export { resolveGithubClient, resolveGithubToken } from "./resolve-client";
+export { resolveTokenForOwner } from "./token-resolution";
 export {
   canonicalProjectUrl,
   parseProjectFilterQuery,

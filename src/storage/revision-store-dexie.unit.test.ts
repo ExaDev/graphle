@@ -48,7 +48,7 @@ describe("createRevisionStore", () => {
     // A fresh connection to the shared named database, with all tables
     // cleared, isolates each test from writes by earlier tests.
     db = new GraphleDB();
-    await Promise.all([db.graphs.clear(), db.secrets.clear(), db.revisions.clear()]);
+    await Promise.all([db.graphs.clear(), db.revisions.clear()]);
   });
 
   it("records a revision and lists it back", async () => {

@@ -2,9 +2,9 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StoredTypeLibrary } from "@/schema";
+import type { StoredGithubToken, StoredTypeLibrary } from "@/schema";
 import { db } from "@/storage/db";
-import { createSecretStore } from "@/storage/secret-store-dexie";
+import { createGithubTokenStore } from "@/storage/github-token-store-dexie";
 import { createTypeLibraryStore } from "@/storage/type-library-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 import { useTypeLibraryStore } from "@/ui/store/type-library-store";
@@ -67,6 +67,18 @@ function makeStoredTypeLibrary(
   };
 }
 
+function makeToken(overrides: Partial<StoredGithubToken> = {}): StoredGithubToken {
+  return {
+    id: crypto.randomUUID(),
+    label: "Test token",
+    tokenType: "classic",
+    token: "test-token",
+    scope: { kind: "any" },
+    createdAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 /** Resets every store field this hook (or a test) touches, mirroring
  *  `useGistAutoSync.unit.test.ts`'s `resetStore` — both stores are
  *  process-wide singletons, so leftover state from one test would otherwise
@@ -75,6 +87,7 @@ function resetStores(): void {
   useGraphStore.setState({
     githubPanelOpened: false,
     pendingGitHubAction: undefined,
+    suggestedGithubOwner: undefined,
   });
   useTypeLibraryStore.setState({ syncConflict: undefined });
 }
@@ -104,7 +117,7 @@ describe("useTypeLibraryAutoSync", () => {
   let fetchMock: ReturnType<typeof vi.fn<FetchFn>>;
 
   beforeEach(async () => {
-    await Promise.all([db.typeLibrary.clear(), db.secrets.clear()]);
+    await Promise.all([db.typeLibrary.clear(), db.githubTokens.clear()]);
     resetStores();
 
     fetchMock = vi.fn<FetchFn>();
@@ -140,7 +153,7 @@ describe("useTypeLibraryAutoSync", () => {
       },
     });
     await createTypeLibraryStore(db).save(stored, freshSignal());
-    await createSecretStore(db).setGitHubToken("test-token", freshSignal());
+    await createGithubTokenStore(db).save(makeToken(), freshSignal());
 
     // The pre-flight read and the PATCH both hit the same endpoint; only the
     // PATCH response carries the new sha the push should record.
@@ -175,7 +188,7 @@ describe("useTypeLibraryAutoSync", () => {
       },
     });
     await createTypeLibraryStore(db).save(stored, freshSignal());
-    await createSecretStore(db).setGitHubToken("test-token", freshSignal());
+    await createGithubTokenStore(db).save(makeToken(), freshSignal());
 
     fetchMock.mockImplementation((input, init) => {
       expect(init?.method).not.toBe("PATCH");
@@ -211,7 +224,7 @@ describe("useTypeLibraryAutoSync", () => {
         },
       });
       await createTypeLibraryStore(db).save(stored, freshSignal());
-      await createSecretStore(db).setGitHubToken("test-token", freshSignal());
+      await createGithubTokenStore(db).save(makeToken(), freshSignal());
 
       fetchMock.mockImplementation(() =>
         Promise.resolve(jsonResponse(gistApiResponse(["sha-remote-moved"]))),

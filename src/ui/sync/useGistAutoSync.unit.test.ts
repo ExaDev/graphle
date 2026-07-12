@@ -3,10 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emptyDocument, type GraphOperation } from "@/domain";
-import { GraphNodeSchema, type StoredGraph } from "@/schema";
+import { GraphNodeSchema, type StoredGithubToken, type StoredGraph } from "@/schema";
 import { db } from "@/storage/db";
+import { createGithubTokenStore } from "@/storage/github-token-store-dexie";
 import { createGraphStore } from "@/storage/graph-store-dexie";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 import { useGistAutoSync } from "./useGistAutoSync";
@@ -80,6 +80,18 @@ function addNodeOp(label: string): GraphOperation {
   };
 }
 
+function makeToken(overrides: Partial<StoredGithubToken> = {}): StoredGithubToken {
+  return {
+    id: crypto.randomUUID(),
+    label: "Test token",
+    tokenType: "classic",
+    token: "test-token",
+    scope: { kind: "any" },
+    createdAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 /** Resets every store field this hook (or a test) touches, mirroring the
  *  full initial state `create<GraphState>()` seeds — the store is a
  *  process-wide singleton, so leftover state from one test would otherwise
@@ -96,6 +108,7 @@ function resetStore(): void {
     gistPicker: undefined,
     githubPanelOpened: false,
     pendingGitHubAction: undefined,
+    suggestedGithubOwner: undefined,
     syncConflict: undefined,
   });
 }
@@ -124,7 +137,7 @@ describe("useGistAutoSync", () => {
   let fetchMock: ReturnType<typeof vi.fn<FetchFn>>;
 
   beforeEach(async () => {
-    await Promise.all([db.graphs.clear(), db.secrets.clear(), db.revisions.clear()]);
+    await Promise.all([db.graphs.clear(), db.githubTokens.clear(), db.revisions.clear()]);
     resetStore();
 
     fetchMock = vi.fn<FetchFn>();
@@ -160,7 +173,7 @@ describe("useGistAutoSync", () => {
       },
     });
     await createGraphStore(db).save(stored, freshSignal());
-    await createSecretStore(db).setGitHubToken("test-token", freshSignal());
+    await createGithubTokenStore(db).save(makeToken(), freshSignal());
 
     // Every read (the mount-time conflict check and the push's own
     // pre-flight check) sees the same, still-matching HEAD; only the PATCH
@@ -205,7 +218,7 @@ describe("useGistAutoSync", () => {
       },
     });
     await createGraphStore(db).save(stored, freshSignal());
-    await createSecretStore(db).setGitHubToken("test-token", freshSignal());
+    await createGithubTokenStore(db).save(makeToken(), freshSignal());
 
     // Starts matching so the mount-time conflict check passes cleanly; the
     // remote is nudged forward only once the push's own pre-flight check runs.
@@ -255,7 +268,7 @@ describe("useGistAutoSync", () => {
         },
       });
       await createGraphStore(db).save(stored, freshSignal());
-      await createSecretStore(db).setGitHubToken("test-token", freshSignal());
+      await createGithubTokenStore(db).save(makeToken(), freshSignal());
 
       fetchMock.mockImplementation(() =>
         Promise.resolve(jsonResponse(gistApiResponse(["sha-remote-moved"]))),
@@ -289,7 +302,7 @@ describe("useGistAutoSync", () => {
       },
     });
     await createGraphStore(db).save(stored, freshSignal());
-    await createSecretStore(db).setGitHubToken("test-token", freshSignal());
+    await createGithubTokenStore(db).save(makeToken(), freshSignal());
 
     let remoteHead = "sha-1";
     fetchMock.mockImplementation((input, init) => {

@@ -54,6 +54,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 
+import { resolveGithubToken } from "@/github";
 import {
   type EdgeTypeDefinition,
   type LinkedRemoteSource,
@@ -69,7 +70,6 @@ import {
 } from "@/sharing/type-library-sync";
 import { serialiseTypeLibrary } from "@/sharing/type-library-json";
 import { db } from "@/storage/db";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { createTypeLibraryStore } from "@/storage/type-library-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 import { useTypeLibraryStore } from "@/ui/store/type-library-store";
@@ -326,7 +326,7 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
    * that moved since the last recorded sync by reporting a conflict instead
    * of overwriting it — mirrors `GraphsDrawer`'s `pushToGist`.
    */
-  async function pushToGist(remote: GistLinkedRemote, token: string): Promise<void> {
+  async function pushToGist(remote: GistLinkedRemote, tokenId: string, token: string): Promise<void> {
     if (stored === undefined) return;
     const controller = new AbortController();
     const history = await listGistHistory(remote.gistId, controller.signal);
@@ -355,6 +355,7 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
       ...remote,
       lastSyncedRevision: newSha,
       lastSyncedAt: new Date().toISOString(),
+      lastUsedTokenId: tokenId,
     };
     await store.save({ ...stored, linkedRemote: syncedRemote }, controller.signal);
     notifications.show({ color: "green", message: "Pushed to gist" });
@@ -364,25 +365,31 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
     if (linkedGist === undefined) return;
     setSyncLoading(true);
     try {
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(new AbortController().signal);
-      if (token !== undefined) {
-        await pushToGist(linkedGist, token);
+      const resolved = await resolveGithubToken(
+        undefined,
+        new AbortController().signal,
+        linkedGist.lastUsedTokenId,
+      );
+      if (resolved !== undefined) {
+        await pushToGist(linkedGist, resolved.id, resolved.token);
         return;
       }
-      openGitHubPanel(() => {
-        secretStore
-          .getGitHubToken(new AbortController().signal)
-          .then((resumedToken) => {
-            if (resumedToken === undefined) return undefined;
-            return pushToGist(linkedGist, resumedToken).then(closeGitHubPanel);
-          })
-          .catch((error: unknown) => {
-            notifications.show({
-              color: "red",
-              message: `Could not push to gist: ${describe(error)}`,
+      openGitHubPanel({
+        pendingAction: () => {
+          resolveGithubToken(undefined, new AbortController().signal, linkedGist.lastUsedTokenId)
+            .then((resumedResolved) => {
+              if (resumedResolved === undefined) return undefined;
+              return pushToGist(linkedGist, resumedResolved.id, resumedResolved.token).then(
+                closeGitHubPanel,
+              );
+            })
+            .catch((error: unknown) => {
+              notifications.show({
+                color: "red",
+                message: `Could not push to gist: ${describe(error)}`,
+              });
             });
-          });
+        },
       });
     } catch (error) {
       notifications.show({
@@ -435,7 +442,11 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
    * remote that moved since the last recorded sync by reporting a conflict
    * instead of overwriting it — mirrors `GraphsDrawer`'s `pushToGithubFile`.
    */
-  async function pushToGithubFile(remote: GithubFileLinkedRemote, token: string): Promise<void> {
+  async function pushToGithubFile(
+    remote: GithubFileLinkedRemote,
+    tokenId: string,
+    token: string,
+  ): Promise<void> {
     if (stored === undefined) return;
     const controller = new AbortController();
     const currentSha = await fetchGithubFileSha(
@@ -467,6 +478,7 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
       ...remote,
       lastSyncedRevision: newSha,
       lastSyncedAt: new Date().toISOString(),
+      lastUsedTokenId: tokenId,
     };
     await store.save({ ...stored, linkedRemote: syncedRemote }, controller.signal);
     notifications.show({ color: "green", message: "Pushed to repo file" });
@@ -476,25 +488,36 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
     if (linkedGithubFile === undefined) return;
     setSyncLoading(true);
     try {
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(new AbortController().signal);
-      if (token !== undefined) {
-        await pushToGithubFile(linkedGithubFile, token);
+      const resolved = await resolveGithubToken(
+        linkedGithubFile.owner,
+        new AbortController().signal,
+        linkedGithubFile.lastUsedTokenId,
+      );
+      if (resolved !== undefined) {
+        await pushToGithubFile(linkedGithubFile, resolved.id, resolved.token);
         return;
       }
-      openGitHubPanel(() => {
-        secretStore
-          .getGitHubToken(new AbortController().signal)
-          .then((resumedToken) => {
-            if (resumedToken === undefined) return undefined;
-            return pushToGithubFile(linkedGithubFile, resumedToken).then(closeGitHubPanel);
-          })
-          .catch((error: unknown) => {
-            notifications.show({
-              color: "red",
-              message: `Could not push to the repo file: ${describe(error)}`,
+      openGitHubPanel({
+        suggestedOwner: linkedGithubFile.owner,
+        pendingAction: () => {
+          resolveGithubToken(
+            linkedGithubFile.owner,
+            new AbortController().signal,
+            linkedGithubFile.lastUsedTokenId,
+          )
+            .then((resumedResolved) => {
+              if (resumedResolved === undefined) return undefined;
+              return pushToGithubFile(linkedGithubFile, resumedResolved.id, resumedResolved.token).then(
+                closeGitHubPanel,
+              );
+            })
+            .catch((error: unknown) => {
+              notifications.show({
+                color: "red",
+                message: `Could not push to the repo file: ${describe(error)}`,
+              });
             });
-          });
+        },
       });
     } catch (error) {
       notifications.show({
@@ -511,21 +534,20 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
     setSyncLoading(true);
     try {
       const controller = new AbortController();
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(controller.signal);
+      const resolved = await resolveGithubToken(linkedGithubFile.owner, controller.signal);
       const remoteHead = await fetchGithubFileSha(
         linkedGithubFile.owner,
         linkedGithubFile.repo,
         linkedGithubFile.branch,
         linkedGithubFile.path,
-        token,
+        resolved?.token,
         controller.signal,
       );
       const pulled = await fetchGithubBlobTypeLibraryRevision(
         linkedGithubFile.owner,
         linkedGithubFile.repo,
         remoteHead,
-        token,
+        resolved?.token,
         controller.signal,
       );
       const syncedRemote: GithubFileLinkedRemote = {
@@ -581,15 +603,16 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
     void withLinkedRemote(async (remote) => {
       if (typeLibrarySyncConflict === undefined) return;
       const controller = new AbortController();
-      const secretStore = createSecretStore(db);
-      const token = await secretStore.getGitHubToken(controller.signal);
-      if (token === undefined) {
+      const owner = remote.provider === "githubFile" ? remote.owner : undefined;
+      const resolved = await resolveGithubToken(owner, controller.signal, remote.lastUsedTokenId);
+      if (resolved === undefined) {
         notifications.show({
           color: "red",
           message: "No GitHub token stored — open the GitHub panel to add one, then retry.",
         });
         return;
       }
+      const token = resolved.token;
 
       let newSha: string;
       let successMessage: string;
@@ -630,6 +653,7 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
         ...remote,
         lastSyncedRevision: newSha,
         lastSyncedAt: new Date().toISOString(),
+        lastUsedTokenId: resolved.id,
       };
       await store.save({ ...freshStored, linkedRemote: syncedRemote }, controller.signal);
       notifications.show({ color: "green", message: successMessage });
@@ -644,13 +668,12 @@ export function TypesDrawer({ opened, onClose }: TypesDrawerProps) {
       let pulled: TypeLibraryDocument;
       let successMessage: string;
       if (remote.provider === "githubFile") {
-        const secretStore = createSecretStore(db);
-        const token = await secretStore.getGitHubToken(controller.signal);
+        const resolved = await resolveGithubToken(remote.owner, controller.signal, remote.lastUsedTokenId);
         pulled = await fetchGithubBlobTypeLibraryRevision(
           remote.owner,
           remote.repo,
           typeLibrarySyncConflict.remoteSha,
-          token,
+          resolved?.token,
           controller.signal,
         );
         successMessage = "Took the repo file's changes";

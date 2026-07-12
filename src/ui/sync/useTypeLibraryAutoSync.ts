@@ -35,12 +35,12 @@
 import { useEffect } from "react";
 import { notifications } from "@mantine/notifications";
 
+import { resolveGithubToken } from "@/github";
 import { fetchGithubFileSha, pushGithubFileContent } from "@/sharing/github-file";
 import { listGistHistory, pushGistFile } from "@/sharing/gist";
 import { serialiseTypeLibrary } from "@/sharing/type-library-json";
 import type { LinkedRemoteSource, StoredTypeLibrary } from "@/schema";
 import { db } from "@/storage/db";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { createTypeLibraryStore } from "@/storage/type-library-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 import { useTypeLibraryStore } from "@/ui/store/type-library-store";
@@ -111,7 +111,6 @@ export function useTypeLibraryAutoSync(): void {
   useEffect(() => {
     const controller = new AbortController();
     const typeLibraryStore = createTypeLibraryStore(db);
-    const secretStore = createSecretStore(db);
 
     let handleVisibilityChange: (() => void) | undefined;
 
@@ -144,7 +143,7 @@ export function useTypeLibraryAutoSync(): void {
      *  the whole of "automatic" mode for the type library -- see the module
      *  doc for why there is no separate debounced-on-edit push the way the
      *  graph hooks have one. */
-    async function attemptSync(token: string, onSuccess?: () => void): Promise<void> {
+    async function attemptSync(tokenId: string, token: string, onSuccess?: () => void): Promise<void> {
       const active = await readActiveLinkedRemote();
       if (active === undefined) return;
       const { stored, remote } = active;
@@ -170,6 +169,7 @@ export function useTypeLibraryAutoSync(): void {
         ...remote,
         lastSyncedRevision: newSha,
         lastSyncedAt: new Date().toISOString(),
+        lastUsedTokenId: tokenId,
       };
       await typeLibraryStore.save({ ...stored, linkedRemote: syncedRemote }, controller.signal);
       onSuccess?.();
@@ -178,24 +178,30 @@ export function useTypeLibraryAutoSync(): void {
     /** Sync now, prompting for a PAT via the GitHub panel and resuming once
      *  validated when none is stored yet. */
     async function runSync(): Promise<void> {
-      const token = await secretStore.getGitHubToken(controller.signal);
+      const active = await readActiveLinkedRemote();
+      if (controller.signal.aborted || active === undefined) return;
+      const owner = active.remote.provider === "githubFile" ? active.remote.owner : undefined;
+      const pinnedTokenId = active.remote.lastUsedTokenId;
+      const resolved = await resolveGithubToken(owner, controller.signal, pinnedTokenId);
       if (controller.signal.aborted) return;
 
-      if (token !== undefined) {
-        await attemptSync(token);
+      if (resolved !== undefined) {
+        await attemptSync(resolved.id, resolved.token);
         return;
       }
 
-      // No stored PAT: prompt via the shared drawer and resume once the user
-      // validates one, mirroring useGistAutoSync's identical fallback.
-      openGitHubPanel(() => {
-        secretStore
-          .getGitHubToken(controller.signal)
-          .then((resumedToken) => {
-            if (controller.signal.aborted || resumedToken === undefined) return undefined;
-            return attemptSync(resumedToken, closeGitHubPanel);
-          })
-          .catch(notifyFailure("Could not sync the type library"));
+      // No token resolves: prompt via the shared drawer and resume once the
+      // user validates one, mirroring useGistAutoSync's identical fallback.
+      openGitHubPanel({
+        ...(owner === undefined ? {} : { suggestedOwner: owner }),
+        pendingAction: () => {
+          resolveGithubToken(owner, controller.signal, pinnedTokenId)
+            .then((resumedResolved) => {
+              if (controller.signal.aborted || resumedResolved === undefined) return undefined;
+              return attemptSync(resumedResolved.id, resumedResolved.token, closeGitHubPanel);
+            })
+            .catch(notifyFailure("Could not sync the type library"));
+        },
       });
     }
 

@@ -59,12 +59,7 @@ function defaultDataForEdgeType(typeDef: EdgeTypeDefinition): EdgeData {
   return data;
 }
 
-export interface InspectorPanelProps {
-  /** Opens the GitHub panel; passed to {@link ExpandMenu} for the no-PAT case. */
-  onOpenGitHub: () => void;
-}
-
-export function InspectorPanel({ onOpenGitHub }: InspectorPanelProps) {
+export function InspectorPanel() {
   const document = useGraphStore((state) => state.document);
   const apply = useGraphStore((state) => state.apply);
   const setSelection = useGraphStore((state) => state.setSelection);
@@ -103,7 +98,7 @@ export function InspectorPanel({ onOpenGitHub }: InspectorPanelProps) {
             This node's type is not defined in this graph.
           </Text>
         )}
-        <ExpandMenu node={node} onOpenGitHub={onOpenGitHub} />
+        <ExpandMenu node={node} />
         <Divider />
         <Button
           variant="light"

@@ -43,7 +43,7 @@ describe("createGraphStore", () => {
     // A fresh connection to the shared named database, with all tables
     // cleared, isolates each test from writes by earlier tests.
     db = new GraphleDB();
-    await Promise.all([db.graphs.clear(), db.secrets.clear()]);
+    await db.graphs.clear();
   });
 
   it("round-trips a graph through save and get", async () => {

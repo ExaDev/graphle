@@ -1,22 +1,24 @@
 /**
  * Expansion menu for the currently selected node. Reads the available
  * expansions for the node's type ({@link expansionsForType}) and renders one
- * item per expansion. Selecting one builds a client from the stored PAT, runs the
+ * item per expansion. Selecting one resolves the best-matching stored GitHub
+ * token for the node's owner ({@link resolveGithubClient}), runs the
  * expansion, folds the resulting delta into the document via
  * `store.mergeDelta`, and reports how many nodes were added. Pagination tails
  * are tracked per expansion so a "Load more" item appears while the connection
  * has a next page.
  *
- * The GitHub client is created on demand from the PAT held in the SecretStore
- * (never in component state as a string the UI could leak). When no PAT is
- * stored, the menu offers a single item that opens the GitHub panel rather
- * than silently failing. Each run carries an AbortSignal that is aborted when a
- * new run starts or the selected node changes, so a stale fetch can never
- * resolve into the wrong node.
+ * A token is resolved fresh on every click (a cheap Dexie read) rather than
+ * cached in component state, so a token added or edited after the menu first
+ * rendered is picked up on the very next click. When no token resolves for
+ * the node's owner, the menu opens the GitHub panel with that owner
+ * pre-suggested and the triggering expansion queued as the panel's pending
+ * action, so validating a token there resumes the exact expansion the user
+ * clicked.
  *
- * SECURITY: like {@link GitHubPanel}, the PAT lives only in the SecretStore and
- * the Authorization header. It is read here solely to build a client; it is
- * never rendered, logged, or stored in component state.
+ * SECURITY: like {@link GitHubPanel}, a token lives only in the token store
+ * and the Authorization header. It is resolved here solely to build a
+ * client; it is never rendered, logged, or stored in component state.
  */
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Button, Menu } from "@mantine/core";
@@ -24,29 +26,20 @@ import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconPlaylistAdd } from "@tabler/icons-react";
 
 import {
-  createGitHubClient,
   expansionsForType,
   GitHubError,
   githubErrorMessage,
+  resolveGithubClient,
   type Expansion,
+  type GitHubClient,
 } from "@/github";
 import type { GraphNode } from "@/schema";
-import { db } from "@/storage/db";
-import { createSecretStore } from "@/storage/secret-store-dexie";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 export interface ExpandMenuProps {
   /** The node whose expansions are offered. Its type selects the expansion set. */
   node: GraphNode;
-  /** Opens the GitHub panel so the user can supply a PAT when none is stored. */
-  onOpenGitHub: () => void;
 }
-
-/** Discriminator for the asynchronous PAT load: loading, absent, or ready. */
-type TokenState =
-  | { status: "loading" }
-  | { status: "absent" }
-  | { status: "ready"; token: string };
 
 /** The pagination tail remembered per expansion id, for "Load more". */
 interface ExpansionTail {
@@ -54,12 +47,33 @@ interface ExpansionTail {
   hasNextPage: boolean;
 }
 
-export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
+/** Derives the GitHub owner (org or user login) a node belongs to, for token
+ *  resolution — org nodes store it under `login`, every other expandable
+ *  node type stores it under `owner`. */
+function ownerForNode(node: GraphNode): string | undefined {
+  switch (node.type) {
+    case "org": {
+      const login = node.data["login"];
+      return typeof login === "string" ? login : undefined;
+    }
+    case "repo":
+    case "issue":
+    case "pullRequest":
+    case "project": {
+      const owner = node.data["owner"];
+      return typeof owner === "string" ? owner : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+export function ExpandMenu({ node }: ExpandMenuProps) {
   const expansions = expansionsForType(node.type);
 
   const mergeDelta = useGraphStore((state) => state.mergeDelta);
+  const openGitHubPanel = useGraphStore((state) => state.openGitHubPanel);
 
-  const [tokenState, setTokenState] = useState<TokenState>({ status: "loading" });
   /** Per-expansion pagination tails, keyed by expansion id. */
   const [tails, setTails] = useState<Record<string, ExpansionTail>>({});
   const [runningId, setRunningId] = useState<string | undefined>(undefined);
@@ -67,28 +81,6 @@ export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
   // The in-flight run's AbortController; aborted when a new run starts or the
   // selected node changes, so a slow fetch cannot write into a different node.
   const abortRef = useRef<AbortController | undefined>(undefined);
-
-  // Load the stored PAT once. The SecretStore is created on demand; the token
-  // is read into a discriminated state so the menu can distinguish "still
-  // loading" from "no token" rather than treating both as absent.
-  useEffect(() => {
-    const secretStore = createSecretStore(db);
-    const controller = new AbortController();
-    void secretStore
-      .getGitHubToken(controller.signal)
-      .then((token) => {
-        if (controller.signal.aborted) return;
-        setTokenState(token === undefined ? { status: "absent" } : { status: "ready", token });
-      })
-      // withAbort rejects with AbortError when the menu unmounts mid-read
-      // (expected control flow -> no-op); a non-abort read failure degrades
-      // to "absent" so the menu can still prompt for a PAT.
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setTokenState({ status: "absent" });
-      });
-    return () => controller.abort();
-  }, []);
 
   // Remember the node id the current tails belong to. When the selection moves
   // to a different node, reset tails DURING RENDER (the React-recommended
@@ -114,13 +106,11 @@ export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
     };
   }, [node.id]);
 
-  async function runExpansion(expansion: Expansion, loadMore: boolean): Promise<void> {
-    // No stored PAT: hand the user to the GitHub panel rather than running a
-    // request that would just fail as unauthorised.
-    if (tokenState.status !== "ready") {
-      onOpenGitHub();
-      return;
-    }
+  async function runExpansionWith(
+    expansion: Expansion,
+    loadMore: boolean,
+    client: GitHubClient,
+  ): Promise<void> {
     const tail = tails[expansion.id];
     const cursor = loadMore && tail !== undefined ? tail.cursor : undefined;
 
@@ -129,7 +119,6 @@ export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
     abortRef.current = controller;
     setRunningId(expansion.id);
     try {
-      const client = createGitHubClient({ token: tokenState.token });
       const result = await expansion.run(node, client, cursor, controller.signal);
       const added = mergeDelta(result.delta);
       const count = added.length;
@@ -162,11 +151,23 @@ export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
     }
   }
 
+  async function runExpansion(expansion: Expansion, loadMore: boolean): Promise<void> {
+    const owner = ownerForNode(node);
+    const client = await resolveGithubClient(owner, new AbortController().signal);
+    if (client === undefined) {
+      openGitHubPanel({
+        ...(owner === undefined ? {} : { suggestedOwner: owner }),
+        pendingAction: (resumedClient) => void runExpansionWith(expansion, loadMore, resumedClient),
+      });
+      return;
+    }
+    await runExpansionWith(expansion, loadMore, client);
+  }
+
   // Issue and freeform nodes have nothing to expand into; render nothing so the
   // inspector does not show an empty menu.
   if (expansions.length === 0) return null;
 
-  const disabled = tokenState.status === "loading";
   const running = runningId !== undefined;
 
   return (
@@ -178,34 +179,27 @@ export function ExpandMenu({ node, onOpenGitHub }: ExpandMenuProps) {
           leftSection={<IconPlaylistAdd size={14} />}
           rightSection={<IconChevronDown size={14} />}
           loading={running}
-          disabled={disabled}
         >
           Expand
         </Button>
       </Menu.Target>
       <Menu.Dropdown>
-        {tokenState.status === "absent" && (
-          <Menu.Item onClick={onOpenGitHub}>
-            Connect GitHub to expand…
-          </Menu.Item>
-        )}
-        {tokenState.status === "ready" &&
-          expansions.map((expansion) => {
-            const tail = tails[expansion.id];
-            const more = tail !== undefined && tail.hasNextPage;
-            return (
-              <Fragment key={expansion.id}>
-                <Menu.Item onClick={() => void runExpansion(expansion, false)}>
-                  {expansion.label}
+        {expansions.map((expansion) => {
+          const tail = tails[expansion.id];
+          const more = tail !== undefined && tail.hasNextPage;
+          return (
+            <Fragment key={expansion.id}>
+              <Menu.Item onClick={() => void runExpansion(expansion, false)}>
+                {expansion.label}
+              </Menu.Item>
+              {more && (
+                <Menu.Item onClick={() => void runExpansion(expansion, true)}>
+                  Load more {expansion.label.toLowerCase()}
                 </Menu.Item>
-                {more && (
-                  <Menu.Item onClick={() => void runExpansion(expansion, true)}>
-                    Load more {expansion.label.toLowerCase()}
-                  </Menu.Item>
-                )}
-              </Fragment>
-            );
-          })}
+              )}
+            </Fragment>
+          );
+        })}
       </Menu.Dropdown>
     </Menu>
   );
