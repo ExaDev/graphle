@@ -18,6 +18,10 @@ export const LinkedRemoteSource = z.discriminatedUnion("provider", [
     syncMode: z.enum(["off", "manual", "automatic"]),
     lastSyncedRevision: z.string().optional(),
     lastSyncedAt: IsoTimestamp.optional(),
+    // Which stored GitHub token last synced this link successfully — pins
+    // resolution to the same identity on later syncs rather than drifting
+    // to whatever token was most recently used elsewhere.
+    lastUsedTokenId: z.string().optional(),
   }),
   z.object({
     provider: z.literal("githubFile"),
@@ -28,6 +32,7 @@ export const LinkedRemoteSource = z.discriminatedUnion("provider", [
     syncMode: z.enum(["off", "manual", "automatic"]),
     lastSyncedRevision: z.string().optional(),
     lastSyncedAt: IsoTimestamp.optional(),
+    lastUsedTokenId: z.string().optional(),
   }),
 ]);
 export type LinkedRemoteSource = z.infer<typeof LinkedRemoteSource>;
