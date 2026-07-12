@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { NodeId, Position } from "./primitives";
+import { IsoTimestamp, NodeId, Position } from "./primitives";
 
 /**
  * A single graph node. `type` names the node-type definition (built-in or
@@ -21,6 +21,14 @@ import { NodeId, Position } from "./primitives";
  * `src/domain/hierarchy.ts` for the traversal helpers and
  * `src/ui/flow/to-flow.ts` for how a collapsed node's descendants are hidden
  * from the canvas and their boundary-crossing edges rerouted.
+ *
+ * `fetchedAt` is set only for GitHub-sourced nodes — stamped when a GitHub
+ * expansion delta is merged — and never for manually-created nodes. A node
+ * with `fetchedAt !== undefined` is how later features (a "stale" badge, a
+ * "refresh" action) distinguish GitHub-sourced nodes from manual ones.
+ * Optional for the same reason as `parentId`/`collapsed` above: a document
+ * with it absent is unchanged from before this field existed, so no
+ * `GRAPH_DOCUMENT_VERSION` bump was needed to add it either.
  */
 export const GraphNodeSchema = z.object({
   id: NodeId,
@@ -29,6 +37,7 @@ export const GraphNodeSchema = z.object({
   data: z.record(z.string(), z.unknown()),
   parentId: NodeId.optional(),
   collapsed: z.boolean().optional(),
+  fetchedAt: IsoTimestamp.optional(),
 });
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
 
