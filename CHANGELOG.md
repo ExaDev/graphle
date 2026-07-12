@@ -1,3 +1,10 @@
+# [1.23.0](https://github.com/ExaDev/graphle/compare/v1.22.0...v1.23.0) (2026-07-12)
+
+
+### Features
+
+* **ui:** add GitHub expand actions and select-all to the canvas ([cd2c515](https://github.com/ExaDev/graphle/commit/cd2c5157229509bac458d242c0b6bbb62fa406cc))
+
 # [1.22.0](https://github.com/ExaDev/graphle/compare/v1.21.0...v1.22.0) (2026-07-12)
 
 
