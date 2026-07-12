@@ -1,3 +1,23 @@
+# [1.25.0](https://github.com/ExaDev/graphle/compare/v1.24.0...v1.25.0) (2026-07-12)
+
+
+### Bug Fixes
+
+* **canvas:** resync the canvas when a non-drag position commit lands ([38c5032](https://github.com/ExaDev/graphle/commit/38c5032b4c03c9961fbf5522484ec7a9174e3eeb))
+* **ui:** sync store selection back onto the canvas ([fb2b56c](https://github.com/ExaDev/graphle/commit/fb2b56c80927faafcacbb6eba2d71b748ca9ba23))
+
+
+### Features
+
+* **canvas:** add align and distribute to the multi-select context menu ([edf95a4](https://github.com/ExaDev/graphle/commit/edf95a456d33d9963704473c6b98ca14b9d8bd1d))
+* **canvas:** add alt-drag to subtract from marquee selection ([ea4efb9](https://github.com/ExaDev/graphle/commit/ea4efb9d0003b3e07b8aa7dc8c415f57cb4a2b21))
+* **canvas:** add select orphan nodes to pane context menu ([f2d0d74](https://github.com/ExaDev/graphle/commit/f2d0d7451d616c6082475257986be6512ab80bf4))
+* **canvas:** add select-connected to the single-node context menu ([371a920](https://github.com/ExaDev/graphle/commit/371a920c635767a6adaac85c8e922eedb2623a93))
+* **canvas:** add snap-to-grid toggle to the Controls panel ([a2eaf08](https://github.com/ExaDev/graphle/commit/a2eaf086266f38c0eb2c0c65a464feae09aad28a))
+* **domain:** add alignNodes and distributeNodes helpers ([ad9e992](https://github.com/ExaDev/graphle/commit/ad9e9922dd1a451c11d5750be10b398b642d5cab))
+* **domain:** add bidirectional edge-reachability BFS ([66e0648](https://github.com/ExaDev/graphle/commit/66e06486fa0cc21bb3e060c0e61be56b571a0cc2))
+* **domain:** add schema drift detection ([cea341a](https://github.com/ExaDev/graphle/commit/cea341a3e2edd2f4850b01df2b0a9a70bc9aea45))
+
 # [1.24.0](https://github.com/ExaDev/graphle/compare/v1.23.0...v1.24.0) (2026-07-12)
 
 
