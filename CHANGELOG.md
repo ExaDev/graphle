@@ -1,3 +1,20 @@
+# [1.27.0](https://github.com/ExaDev/graphle/compare/v1.26.0...v1.27.0) (2026-07-12)
+
+
+### Bug Fixes
+
+* **flow:** use React Flow's hook-bound getNodesBounds for PNG/SVG export ([cf1cebd](https://github.com/ExaDev/graphle/commit/cf1cebd77d33c2e540bf9c56700205a16990e728))
+
+
+### Features
+
+* **flow:** add PNG/SVG canvas snapshot export ([34d2a10](https://github.com/ExaDev/graphle/commit/34d2a109a953b108ee6341c79fea19e25539e50a))
+* **sharing:** add CSV adjacency-list import ([a8b8614](https://github.com/ExaDev/graphle/commit/a8b861410a0927a460acc38e957d47579a40031f))
+* **sharing:** add Graphviz DOT export ([83a9843](https://github.com/ExaDev/graphle/commit/83a98434a589d0c165ba7c115a65481e67c81efd))
+* **sharing:** add Mermaid flowchart export ([7d4b847](https://github.com/ExaDev/graphle/commit/7d4b847232f3135fe07a33ed114354d4ac651c2e))
+* **ui:** add CSV import to the Graphs drawer ([9265f93](https://github.com/ExaDev/graphle/commit/9265f932b515125060526ff03f5fc35dd86f8c29))
+* **ui:** add unified Export menu to the header ([1d2d33e](https://github.com/ExaDev/graphle/commit/1d2d33e3155217ba95607119ede59e06e008e6e9))
+
 # [1.26.0](https://github.com/ExaDev/graphle/compare/v1.25.0...v1.26.0) (2026-07-12)
 
 
