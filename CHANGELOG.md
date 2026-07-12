@@ -1,3 +1,18 @@
+# [1.26.0](https://github.com/ExaDev/graphle/compare/v1.25.0...v1.26.0) (2026-07-12)
+
+
+### Features
+
+* **domain:** add overwrite mode to applyDelta for refresh ([894dc25](https://github.com/ExaDev/graphle/commit/894dc257e010792610342ca86a9ff7b826fb9f45))
+* **github:** stamp fetchedAt on expansion nodes, add silent/onExistingMatch options ([9457355](https://github.com/ExaDev/graphle/commit/9457355b959a523be5dc4feb3d81508ee347c47a))
+* **github:** thread rate-limit budget into the graph store ([77d8820](https://github.com/ExaDev/graphle/commit/77d8820116eae6dba230860aebbd9c61edc1b90c))
+* **schema:** add optional fetchedAt to GraphNode ([635d6c6](https://github.com/ExaDev/graphle/commit/635d6c6335e209e529ef044f40125dabf4f9a853))
+* **ui:** add context-menu refresh for GitHub-sourced nodes ([e235bbb](https://github.com/ExaDev/graphle/commit/e235bbbc322e9d0fb4f1a6a8853bb5e58df0a37c))
+* **ui:** add schema drift report drawer ([e7cce7c](https://github.com/ExaDev/graphle/commit/e7cce7cd5b06498959848238772d3f29e96acd5f))
+* **ui:** bulk GitHub expand across a multi-selection ([9e45252](https://github.com/ExaDev/graphle/commit/9e45252fe3444312acb2030bf6683fdd3d764b38))
+* **ui:** show a stale badge on ageing GitHub-sourced nodes ([2ec9d05](https://github.com/ExaDev/graphle/commit/2ec9d059005426b6d500946165e6adc9ed4bc381))
+* **ui:** surface GitHub rate limit in the header, share state via the store ([f8acb1c](https://github.com/ExaDev/graphle/commit/f8acb1c763c70be549042f6a9934c69bc0614e6f))
+
 # [1.25.0](https://github.com/ExaDev/graphle/compare/v1.24.0...v1.25.0) (2026-07-12)
 
 
