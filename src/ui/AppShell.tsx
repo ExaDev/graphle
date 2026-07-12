@@ -41,10 +41,10 @@ import {
   IconTemplate,
 } from "@tabler/icons-react";
 import { ReactFlowProvider } from "@xyflow/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { alignNodes, connectedNodeIds, distributeNodes, type AlignEdge, type DistributeAxis } from "@/domain";
-import { expansionsForType } from "@/github";
+import { expansionsForType, type Expansion } from "@/github";
 import { type Position } from "@/schema";
 import { buildShareUrl } from "@/sharing/url";
 import { useGraphStore } from "@/ui/store/graph-store";
@@ -125,6 +125,24 @@ export function AppShell() {
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [addHerePos, setAddHerePos] = useState<Position | undefined>(undefined);
 
+  /** The expansions valid to run across the whole multi-selection: the
+   *  intersection, by `Expansion.id`, of `expansionsForType` across every
+   *  distinct type among the selected nodes. Expansions rarely share an id
+   *  across different node types (a repo's "Issues" and an org's
+   *  "Repositories" are different ids), so a heterogeneous selection
+   *  typically intersects to nothing — correct, since there's nothing valid
+   *  to run in bulk across mixed types. */
+  const commonSelectionExpansions = useMemo<Expansion[]>(() => {
+    const selectedNodes = document.nodes.filter((node) => selectedNodeIds.includes(node.id));
+    const distinctTypes = [...new Set(selectedNodes.map((node) => node.type))];
+    const [firstType, ...restTypes] = distinctTypes;
+    if (firstType === undefined) return [];
+    const restExpansionSets = restTypes.map((type) => expansionsForType(type));
+    return expansionsForType(firstType).filter((expansion) =>
+      restExpansionSets.every((expansions) => expansions.some((e) => e.id === expansion.id)),
+    );
+  }, [document.nodes, selectedNodeIds]);
+
   function closeAdd(): void {
     closeAddDisclosure();
     setAddHerePos(undefined);
@@ -171,6 +189,43 @@ export function AppShell() {
     const expansion = expansionsForType(node.type).find((e) => e.id === expansionId);
     if (expansion === undefined) return;
     void runNodeExpansion(node, expansion, undefined, new AbortController().signal);
+  }
+
+  /** Runs one GitHub expansion (identified by `expansionId`, drawn from
+   *  `commonSelectionExpansions`) across every node in `nodeIds` that has a
+   *  matching expansion for its type. Calls run sequentially — never in
+   *  parallel — so at most one GitHub-panel token-escalation prompt is ever
+   *  pending at a time; running several owners' fetches in parallel could
+   *  each independently find no token and stack several prompts. Each run is
+   *  silent (no per-node toast); a single summary notification covers the
+   *  whole batch once every node has been attempted. */
+  async function handleExpandSelection(nodeIds: string[], expansionId: string): Promise<void> {
+    let addedTotal = 0;
+    let ranCount = 0;
+    for (const nodeId of nodeIds) {
+      const node = document.nodes.find((n) => n.id === nodeId);
+      if (node === undefined) continue;
+      const expansion = expansionsForType(node.type).find((e) => e.id === expansionId);
+      if (expansion === undefined) continue;
+      const result = await runNodeExpansion(
+        node,
+        expansion,
+        undefined,
+        new AbortController().signal,
+        undefined,
+        { silent: true },
+      );
+      if (result === undefined) continue;
+      addedTotal += result.addedCount;
+      ranCount += 1;
+    }
+    notifications.show({
+      color: "green",
+      message:
+        addedTotal === 0
+          ? "Nothing new to add"
+          : `Added ${String(addedTotal)} node${addedTotal === 1 ? "" : "s"} across ${String(ranCount)} selected node${ranCount === 1 ? "" : "s"}`,
+    });
   }
 
   /** Removing a `"group"` node clears its children's `parentId` (see
@@ -486,9 +541,11 @@ export function AppShell() {
         onDeleteSelection={handleDeleteSelection}
         onAlignSelection={handleAlignSelection}
         onDistributeSelection={handleDistributeSelection}
+        commonSelectionExpansions={commonSelectionExpansions}
         onToggleCollapse={handleToggleCollapse}
         onUngroup={handleUngroup}
         onExpand={handleExpandNode}
+        onExpandSelection={(nodeIds, expansionId) => void handleExpandSelection(nodeIds, expansionId)}
       />
     </MantineAppShell>
   );

@@ -19,6 +19,14 @@ import {
 import type { GraphNode } from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
 
+/** An {@link ExpansionResult} plus the count of nodes actually merged into
+ *  the document (post-dedup, via `mergeDelta`'s returned array) — a caller
+ *  that reports how many nodes an expansion added (e.g. a bulk-expand
+ *  summary across several nodes) needs this rather than `delta.nodes.length`,
+ *  which counts nodes fetched from GitHub before dedup against the existing
+ *  document. */
+export type RunNodeExpansionResult = ExpansionResult & { addedCount: number };
+
 /** Derives the GitHub owner (org or user login) a node belongs to, for token
  *  resolution — org nodes store it under `login`, every other expandable
  *  node type stores it under `owner`. */
@@ -48,7 +56,7 @@ async function runWithClient(
   signal: AbortSignal,
   onResult?: (result: ExpansionResult) => void,
   opts?: { silent?: boolean; onExistingMatch?: "keep" | "overwrite" },
-): Promise<ExpansionResult | undefined> {
+): Promise<RunNodeExpansionResult | undefined> {
   try {
     const result = await expansion.run(node, client, cursor, signal);
     const stampedDelta = {
@@ -72,7 +80,7 @@ async function runWithClient(
       });
     }
     onResult?.(result);
-    return result;
+    return { ...result, addedCount: count };
   } catch (error) {
     if (signal.aborted) return undefined;
     const message =
@@ -108,7 +116,7 @@ export async function runNodeExpansion(
   signal: AbortSignal,
   onResult?: (result: ExpansionResult) => void,
   opts?: { silent?: boolean; onExistingMatch?: "keep" | "overwrite" },
-): Promise<ExpansionResult | undefined> {
+): Promise<RunNodeExpansionResult | undefined> {
   const owner = ownerForNode(node);
   const client = await resolveGithubClient(owner, signal);
   if (client === undefined) {

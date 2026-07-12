@@ -4,9 +4,12 @@
  * "Add node here" for the pane) — plus subgraph actions: right-clicking a
  * node that's part of a 2+ multi-selection (`selectedNodeIds`) shows
  * "Group"/"Duplicate"/"Delete N nodes" instead of the normal single-node
- * menu; a node whose type has GitHub expansions (`expansionsForType`, e.g. a
- * repo's Issues/Pull requests/Projects) gets one entry per expansion,
- * mirroring the inspector's `ExpandMenu`; a node with children
+ * menu, plus one entry per expansion common to every distinct type in the
+ * selection (`commonSelectionExpansions`, computed by {@link AppShell} — this
+ * component has no document access of its own); a node whose type has GitHub
+ * expansions (`expansionsForType`, e.g. a repo's Issues/Pull requests/
+ * Projects) gets one entry per expansion, mirroring the inspector's
+ * `ExpandMenu`; a node with children
  * (`state.nodeChildCount > 0` — see `GraphNode.parentId`/`collapsed` in
  * `src/schema/node.ts`) gets a Collapse/Expand entry; a `"group"`-typed node
  * additionally gets "Ungroup".
@@ -46,7 +49,7 @@ import {
 import type { CSSProperties } from "react";
 
 import type { AlignEdge, DistributeAxis } from "@/domain";
-import { expansionsForType } from "@/github";
+import { expansionsForType, type Expansion } from "@/github";
 import type { Position } from "@/schema";
 
 import { invisibleTarget } from "./ContextMenu.css";
@@ -121,6 +124,13 @@ export interface ContextMenuProps {
   /** Space every id in `nodeIds` evenly along one axis in one undo step
    *  (see `distributeNodes` in `align.ts`). */
   onDistributeSelection: (nodeIds: string[], axis: DistributeAxis) => void;
+  /** The expansions available to run across the entire multi-selection: the
+   *  intersection, by `Expansion.id`, of `expansionsForType` across every
+   *  distinct type present in `selectedNodeIds` — computed by the owner
+   *  since this component has no document access. Empty for a heterogeneous
+   *  selection whose types share no expansion id, which is correct: there is
+   *  nothing valid to run in bulk. */
+  commonSelectionExpansions: Expansion[];
   /** Toggle a node's `collapsed` state. */
   onToggleCollapse: (nodeId: string) => void;
   /** Remove a `"group"`-typed node, promoting its children back to
@@ -129,6 +139,9 @@ export interface ContextMenuProps {
   /** Run one of the node's available GitHub expansions (see
    *  `expansionsForType`), identified by its `Expansion.id`. */
   onExpand: (nodeId: string, expansionId: string) => void;
+  /** Run one of `commonSelectionExpansions`, identified by its `Expansion.id`,
+   *  across every id in `nodeIds`. */
+  onExpandSelection: (nodeIds: string[], expansionId: string) => void;
 }
 
 export function ContextMenu({
@@ -148,9 +161,11 @@ export function ContextMenu({
   onDeleteSelection,
   onAlignSelection,
   onDistributeSelection,
+  commonSelectionExpansions,
   onToggleCollapse,
   onUngroup,
   onExpand,
+  onExpandSelection,
 }: ContextMenuProps) {
   // The anchor is only positioned when the menu is open; when closed, no
   // inline coordinates are applied (the 1px box is invisible and pointer-none,
@@ -226,6 +241,20 @@ export function ContextMenu({
               >
                 Distribute vertically
               </Menu.Item>
+              {commonSelectionExpansions.length > 0 && (
+                <>
+                  <Divider />
+                  {commonSelectionExpansions.map((expansion) => (
+                    <Menu.Item
+                      key={expansion.id}
+                      leftSection={<IconPlaylistAdd size={14} />}
+                      onClick={() => onExpandSelection(selectedNodeIds, expansion.id)}
+                    >
+                      {expansion.label} for {selectedNodeIds.length} nodes
+                    </Menu.Item>
+                  ))}
+                </>
+              )}
               <Divider />
               <Menu.Item
                 color="red"
