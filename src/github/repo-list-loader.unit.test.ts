@@ -30,7 +30,7 @@ function pullRequest(number: number, title: string): GitHubPullRequest {
     url: `https://github.com/exadev/graphle/pull/${String(number)}`,
     baseRefName: "main",
     headRefName: `feature-${String(number)}`,
-    isCrossRepository: false,
+    headRepository: { name: repo.name, owner: repo.owner },
   };
 }
 

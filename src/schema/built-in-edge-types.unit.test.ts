@@ -9,7 +9,8 @@ const EXPECTED_NAMES = [
   "references",
   "custom",
   "blocks",
-  "stackedOn",
+  "headBranch",
+  "baseBranch",
 ] as const;
 
 /** Expected colour + strokeStyle pairing per built-in edge type, per the plan. */
@@ -23,7 +24,8 @@ const EXPECTED_PRESENTATION: Record<
   references: { color: "gray", strokeStyle: "dotted" },
   custom: { color: "gray", strokeStyle: "solid" },
   blocks: { color: "red", strokeStyle: "dashed" },
-  stackedOn: { color: "violet", strokeStyle: "dashed" },
+  headBranch: { color: "cyan", strokeStyle: "solid" },
+  baseBranch: { color: "indigo", strokeStyle: "dashed" },
 };
 
 describe("BUILT_IN_EDGE_TYPES", () => {

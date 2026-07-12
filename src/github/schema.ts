@@ -125,12 +125,11 @@ export type GitHubIssueWithRepo = z.infer<typeof GitHubIssueWithRepo>;
 
 /**
  * A GitHub pull request. State adds "merged" alongside an issue's open/closed.
- * `baseRefName`/`headRefName` are the branch names GitHub exposes no direct
- * "which PR is this based on" field for — stacking is inferred client-side by
- * matching one PR's `baseRefName` against another's `headRefName`.
- * `isCrossRepository` marks a fork PR, whose `headRefName` names a branch in
- * the fork rather than this repo, so it can never legitimately be another
- * PR's `baseRefName` here.
+ * `baseRefName`/`headRefName` are the branch names; `baseRefName` always
+ * names a branch in this repo, but `headRefName` may name a branch in a fork
+ * — `headRepository` is the repo that branch actually lives in (equal to
+ * this repo for a same-repo PR), `null` when the fork has since been
+ * deleted, in which case the head branch can no longer be materialised.
  */
 export const GitHubPullRequest = z.object({
   number: z.number().int(),
@@ -139,7 +138,10 @@ export const GitHubPullRequest = z.object({
   url: z.string(),
   baseRefName: z.string(),
   headRefName: z.string(),
-  isCrossRepository: z.boolean(),
+  headRepository: z
+    .object({ name: z.string(), owner: z.object({ login: z.string() }) })
+    .nullable()
+    .transform((value) => value ?? undefined),
 });
 export type GitHubPullRequest = z.infer<typeof GitHubPullRequest>;
 

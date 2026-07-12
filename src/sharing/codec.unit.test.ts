@@ -428,7 +428,8 @@ describe("share codec", () => {
         "references",
         "custom",
         "blocks",
-        "stackedOn",
+        "headBranch",
+        "baseBranch",
       ]);
     });
   });
@@ -467,7 +468,8 @@ describe("share codec", () => {
         "references",
         "custom",
         "blocks",
-        "stackedOn",
+        "headBranch",
+        "baseBranch",
       ]);
     });
   });

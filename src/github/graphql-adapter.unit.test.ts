@@ -238,7 +238,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
                       url: "pr1",
                       baseRefName: "main",
                       headRefName: "feature-1",
-                      isCrossRepository: false,
+                      headRepository: { name: "graphle", owner: { login: "exadev" } },
                     },
                   ],
                   pageInfo: { hasNextPage: false, endCursor: null },
@@ -262,7 +262,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
     expect(pullRequests.items[0]?.state).toBe("open");
     expect(pullRequests.items[0]?.baseRefName).toBe("main");
     expect(pullRequests.items[0]?.headRefName).toBe("feature-1");
-    expect(pullRequests.items[0]?.isCrossRepository).toBe(false);
+    expect(pullRequests.items[0]?.headRepository).toEqual({ name: "graphle", owner: { login: "exadev" } });
     expect(pullRequests.hasNextPage).toBe(false);
     expect(pullRequests.endCursor).toBeUndefined();
     expect(client.lastRateLimit).toEqual(RATE);
@@ -286,7 +286,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
                       url: "pr1",
                       baseRefName: "main",
                       headRefName: "feature-1",
-                      isCrossRepository: false,
+                      headRepository: { name: "graphle", owner: { login: "exadev" } },
                     },
                   ],
                   pageInfo: { hasNextPage: true, endCursor: "CURSOR1" },
@@ -300,7 +300,7 @@ describe("createGitHubClient - listRepoPullRequests", () => {
                       url: "pr2",
                       baseRefName: "main",
                       headRefName: "feature-2",
-                      isCrossRepository: false,
+                      headRepository: { name: "graphle", owner: { login: "exadev" } },
                     },
                   ],
                   pageInfo: { hasNextPage: false, endCursor: null },
@@ -752,7 +752,7 @@ describe("createGitHubClient - search", () => {
                     url: "pu4",
                     baseRefName: "main",
                     headRefName: "feature",
-                    isCrossRepository: false,
+                    headRepository: { name: "graphle", owner: { login: "exadev" } },
                     repository: { name: "graphle", owner: { login: "exadev" } },
                   },
                 ],

@@ -8,6 +8,7 @@ const EXPECTED_NAMES = [
   "repo",
   "issue",
   "pullRequest",
+  "branch",
   "project",
   "service",
   "person",
@@ -20,7 +21,7 @@ const EXPECTED_NAMES = [
 ] as const;
 
 describe("BUILT_IN_TYPES", () => {
-  it("registers exactly the fourteen expected types in order", () => {
+  it("registers exactly the fifteen expected types in order", () => {
     expect(BUILT_IN_TYPES.map((t) => t.name)).toEqual([...EXPECTED_NAMES]);
   });
 

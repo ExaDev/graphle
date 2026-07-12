@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import { nodeIdentityKey } from "../domain";
 import { BUILT_IN_TYPES } from "../schema";
 import {
+  baseBranchEdge,
   blocksEdge,
+  branchToNode,
   containsEdge,
+  headBranchEdge,
   issueToNode,
   issueWithRepoToNode,
   orgToNode,
@@ -13,7 +16,6 @@ import {
   pullRequestToNode,
   pullRequestWithRepoToNode,
   repoToNode,
-  stackedOnEdge,
   tracksEdge,
 } from "./materialise";
 import type {
@@ -42,7 +44,7 @@ const pullRequest: GitHubPullRequest = {
   url: "https://github.com/ExaDev/graphle/pull/4",
   baseRefName: "main",
   headRefName: "feature",
-  isCrossRepository: false,
+  headRepository: { name: "graphle", owner: { login: "ExaDev" } },
 };
 const project: GitHubProject = { id: "PVT_1", number: 1, title: "Board", url: "https://github.com/orgs/ExaDev/projects/1" };
 const pullRequestWithRepo: GitHubPullRequestWithRepo = {
@@ -72,6 +74,7 @@ describe("materialise - deterministic node ids", () => {
       { node: pullRequestToNode("ExaDev", "graphle", pullRequest, position), label: "pullRequest" },
       { node: pullRequestWithRepoToNode(pullRequestWithRepo, position), label: "pullRequest (with-repo)" },
       { node: projectToNode("ExaDev", project, position), label: "project" },
+      { node: branchToNode("ExaDev", "graphle", "main", position), label: "branch" },
     ];
     for (const { node, label } of cases) {
       expect(node.id, label).toBe(nodeIdentityKey(node, BUILT_IN_TYPES));
@@ -96,8 +99,8 @@ describe("materialise - deterministic edge ids", () => {
 
   it("gives different edge types between the same two nodes different ids", () => {
     const blocks = blocksEdge("pr-a", "pr-b");
-    const stacked = stackedOnEdge("pr-a", "pr-b");
-    expect(blocks.id).not.toBe(stacked.id);
+    const head = headBranchEdge("pr-a", "pr-b");
+    expect(blocks.id).not.toBe(head.id);
   });
 
   it("gives opposite directions between the same two nodes different ids", () => {
@@ -111,15 +114,41 @@ describe("materialise - deterministic edge ids", () => {
     expect(containsEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "contains" });
     expect(tracksEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "tracks" });
     expect(blocksEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "blocks" });
+    expect(headBranchEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "headBranch" });
+    expect(baseBranchEdge("a", "b")).toMatchObject({ source: "a", target: "b", type: "baseBranch" });
   });
 });
 
-describe("stackedOnEdge", () => {
-  it("points from the dependent (stacked) PR to the PR it's based on", () => {
-    const edge = stackedOnEdge("dependent-pr", "base-pr");
-    expect(edge.source).toBe("dependent-pr");
-    expect(edge.target).toBe("base-pr");
-    expect(edge.type).toBe("stackedOn");
+describe("branchToNode", () => {
+  it("gives the same branch the same id across two independent calls", () => {
+    const first = branchToNode("ExaDev", "graphle", "main", position);
+    const second = branchToNode("ExaDev", "graphle", "main", { x: 99, y: 99 });
+    expect(first.id).toBe(second.id);
+  });
+
+  it("gives branches of the same name in different repos different ids", () => {
+    const a = branchToNode("ExaDev", "graphle", "main", position);
+    const b = branchToNode("SomeoneElse", "graphle-fork", "main", position);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  it("carries owner/repo/branchName into node data", () => {
+    const node = branchToNode("ExaDev", "graphle", "main", position);
+    expect(node.data).toEqual({ owner: "ExaDev", repo: "graphle", branchName: "main" });
+  });
+});
+
+describe("headBranchEdge / baseBranchEdge", () => {
+  it("both point from the pull request to the branch", () => {
+    const head = headBranchEdge("pr-1", "branch-1");
+    expect(head.source).toBe("pr-1");
+    expect(head.target).toBe("branch-1");
+    expect(head.type).toBe("headBranch");
+
+    const base = baseBranchEdge("pr-1", "branch-2");
+    expect(base.source).toBe("pr-1");
+    expect(base.target).toBe("branch-2");
+    expect(base.type).toBe("baseBranch");
   });
 });
 

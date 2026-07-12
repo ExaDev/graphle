@@ -56,6 +56,15 @@ const pullRequestDataSchema = z.object({
   headRefName: z.string().optional(),
 });
 
+/** A GitHub repo branch, scoped to the repo it actually lives in — for a
+ *  pull request's head branch this may be a fork, not the repo the PR was
+ *  opened against. */
+const branchDataSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  branchName: z.string().min(1),
+});
+
 /** GitHub Projects v2 project. */
 const projectDataSchema = z.object({
   owner: z.string().min(1),
@@ -127,9 +136,10 @@ const groupDataSchema = z.object({
 });
 
 /**
- * Every built-in node type, in a stable order. The six GitHub-flavoured types
- * come first (the five original ones, matching the pre-dynamic `NodeKind`
- * order, plus `pullRequest`) followed by the seven generic types.
+ * Every built-in node type, in a stable order. The seven GitHub-flavoured
+ * types come first (the five original ones, matching the pre-dynamic
+ * `NodeKind` order, plus `pullRequest` and `branch`) followed by the seven
+ * generic types.
  */
 export const BUILT_IN_TYPES: RuntimeNodeType[] = [
   defineBuiltInType({
@@ -176,6 +186,15 @@ export const BUILT_IN_TYPES: RuntimeNodeType[] = [
     labelField: "title",
     identityFields: ["owner", "repo", "number"],
     schema: pullRequestDataSchema,
+  }),
+  defineBuiltInType({
+    name: "branch",
+    label: "Branch",
+    color: "lime",
+    icon: "IconGitBranch",
+    labelField: "branchName",
+    identityFields: ["owner", "repo", "branchName"],
+    schema: branchDataSchema,
   }),
   defineBuiltInType({
     name: "project",

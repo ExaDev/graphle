@@ -184,6 +184,26 @@ export function pullRequestWithRepoToNode(
 }
 
 /**
+ * Materialises a repo branch, scoped to the repo it actually lives in — a
+ * pull request's base branch is always in the repo the PR was opened
+ * against, but its head branch may be in a fork, so callers pass whichever
+ * owner/repo the branch was resolved to (see `expand.ts`'s `repoPullRequests`).
+ */
+export function branchToNode(
+  owner: string,
+  repo: string,
+  branchName: string,
+  position: Position,
+): GraphNode {
+  return {
+    id: githubNodeId("branch", [owner, repo, branchName]),
+    type: "branch",
+    position,
+    data: { owner, repo, branchName },
+  };
+}
+
+/**
  * Materialises a project item's `Issue` content. Unlike {@link issueToNode} the
  * owner and repo come from the item's nested `repository`, and `state` is
  * optional in this payload, so it is spread conditionally.
@@ -273,17 +293,22 @@ export function blocksEdge(blockingIssueId: string, blockedIssueId: string): Gra
   };
 }
 
-/**
- * `source` is always the dependent ("stacked") PR and `target` the PR its
- * base branch points at, so the arrow reads "stacked PR -> its base",
- * regardless of which PR in the pair was the expansion's own source node.
- */
-export function stackedOnEdge(dependentPrId: string, basePrId: string): GraphEdge {
+export function headBranchEdge(pullRequestId: string, branchId: string): GraphEdge {
   return {
-    id: githubEdgeId("stackedOn", dependentPrId, basePrId),
-    source: dependentPrId,
-    target: basePrId,
-    type: "stackedOn",
+    id: githubEdgeId("headBranch", pullRequestId, branchId),
+    source: pullRequestId,
+    target: branchId,
+    type: "headBranch",
+    data: {},
+  };
+}
+
+export function baseBranchEdge(pullRequestId: string, branchId: string): GraphEdge {
+  return {
+    id: githubEdgeId("baseBranch", pullRequestId, branchId),
+    source: pullRequestId,
+    target: branchId,
+    type: "baseBranch",
     data: {},
   };
 }

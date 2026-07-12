@@ -64,7 +64,7 @@ const REPO_ISSUES_QUERY = `query RepoIssues($owner:String!,$name:String!,$first:
 // (confirmed via schema introspection), even though a distinct
 // `PullRequestOrderField` enum exists elsewhere in the schema and is not what
 // this argument accepts.
-const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url baseRefName headRefName isCrossRepository } } } rateLimit{remaining resetAt} }`;
+const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url baseRefName headRefName headRepository{name owner{login}} } } } rateLimit{remaining resetAt} }`;
 
 const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:String){ organization(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
@@ -110,7 +110,7 @@ const SEARCH_REPOSITORIES_QUERY = `query SearchRepositories($query:String!,$firs
 
 const SEARCH_ISSUES_QUERY = `query SearchIssues($query:String!,$first:Int!,$after:String){ search(query:$query,type:ISSUE,first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ __typename ... on Issue{ number title state url repository{name owner{login}} } } } rateLimit{remaining resetAt} }`;
 
-const SEARCH_PULL_REQUESTS_QUERY = `query SearchPullRequests($query:String!,$first:Int!,$after:String){ search(query:$query,type:ISSUE,first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ __typename ... on PullRequest{ number title state url baseRefName headRefName isCrossRepository repository{name owner{login}} } } } rateLimit{remaining resetAt} }`;
+const SEARCH_PULL_REQUESTS_QUERY = `query SearchPullRequests($query:String!,$first:Int!,$after:String){ search(query:$query,type:ISSUE,first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ __typename ... on PullRequest{ number title state url baseRefName headRefName headRepository{name owner{login}} repository{name owner{login}} } } } rateLimit{remaining resetAt} }`;
 
 // User and Organization results are both selected via the same field names
 // (login/name/avatarUrl/url), so GraphQL flattens either match onto the same

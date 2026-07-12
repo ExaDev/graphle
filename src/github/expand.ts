@@ -3,9 +3,12 @@ import type { GraphEdge, GraphNode, Position } from "../schema";
 import type { GitHubClient } from "./contract";
 import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
 import {
+  baseBranchEdge,
   blocksEdge,
+  branchToNode,
   buildDelta,
   containsEdge,
+  headBranchEdge,
   issueToNode,
   issueWithRepoToNode,
   ownsEdge,
@@ -13,7 +16,6 @@ import {
   projectToNode,
   pullRequestToNode,
   repoToNode,
-  stackedOnEdge,
   tracksEdge,
 } from "./materialise";
 
@@ -193,30 +195,79 @@ const repoPullRequests: Expansion = {
       parentId: source.id,
     }));
     const containsEdges = nodes.map((node) => containsEdge(source.id, node.id));
-    // GitHub has no "which PR is this based on" field, so stacking is
-    // inferred by matching one PR's baseRefName against another's
-    // headRefName within this same fetched page (see repoPullRequests'
-    // module-level doc comment for the page-local limitation this implies).
-    // A cross-repository PR's headRefName names a branch in its fork, not
-    // this repo, so it can never legitimately be another PR's baseRefName
-    // here.
-    const nodeByHeadRef = new Map<string, GraphNode>();
+
+    // Every PR's base and head branch becomes a real node rather than an
+    // inferred direct PR->PR edge: two PRs sharing a branch (one's base
+    // equals another's head) converge on that same branch node once both
+    // are in the document, which is how "stacked" now reads visually. A
+    // branch is deduplicated within this call via `branchNodes` (two PRs on
+    // this page can share a branch, and `githubNodeId` gives them the exact
+    // same id, which a single delta cannot carry twice); dedup against
+    // branches from an earlier page/fetch is handled by `applyDelta`'s
+    // identity index, so this is no longer limited to same-page matches the
+    // way the old direct-edge inference was.
+    const branchNodes = new Map<string, GraphNode>();
+    const branchEdges: GraphEdge[] = [];
+    const branchContainsEdges: GraphEdge[] = [];
+
+    function branchNodeFor(
+      branchOwner: string,
+      branchRepo: string,
+      branchName: string,
+      near: Position,
+    ): { node: GraphNode; isNew: boolean } {
+      const candidate = branchToNode(branchOwner, branchRepo, branchName, near);
+      const existing = branchNodes.get(candidate.id);
+      if (existing !== undefined) return { node: existing, isNew: false };
+      branchNodes.set(candidate.id, candidate);
+      return { node: candidate, isNew: true };
+    }
+
     page.items.forEach((pullRequest, i) => {
-      if (!pullRequest.isCrossRepository) {
-        const node = nodes[i];
-        if (node !== undefined) nodeByHeadRef.set(pullRequest.headRefName, node);
+      const prNode = nodes[i];
+      if (prNode === undefined) return;
+
+      // The base branch always belongs to the repo being expanded.
+      const { node: baseBranch, isNew: baseIsNew } = branchNodeFor(
+        owner,
+        name,
+        pullRequest.baseRefName,
+        prNode.position,
+      );
+      branchEdges.push(baseBranchEdge(prNode.id, baseBranch.id));
+      if (baseIsNew) {
+        baseBranch.parentId = source.id;
+        branchContainsEdges.push(containsEdge(source.id, baseBranch.id));
+      }
+
+      // The head branch may live in a fork; `headRepository` names the repo
+      // it actually lives in (undefined when that fork has been deleted, in
+      // which case the branch can no longer be materialised).
+      if (pullRequest.headRepository !== undefined) {
+        const { node: headBranch, isNew: headIsNew } = branchNodeFor(
+          pullRequest.headRepository.owner.login,
+          pullRequest.headRepository.name,
+          pullRequest.headRefName,
+          prNode.position,
+        );
+        branchEdges.push(headBranchEdge(prNode.id, headBranch.id));
+        // Only stamp repo-containment when the head branch actually belongs
+        // to the repo being expanded — a fork's branch has no node for its
+        // own repo in this graph to be contained by.
+        const headBranchIsInSourceRepo =
+          pullRequest.headRepository.owner.login === owner && pullRequest.headRepository.name === name;
+        if (headIsNew && headBranchIsInSourceRepo) {
+          headBranch.parentId = source.id;
+          branchContainsEdges.push(containsEdge(source.id, headBranch.id));
+        }
       }
     });
-    const stackEdges = page.items.flatMap((pullRequest, i) => {
-      const dependentNode = nodes[i];
-      const baseNode = nodeByHeadRef.get(pullRequest.baseRefName);
-      if (dependentNode === undefined || baseNode === undefined || baseNode.id === dependentNode.id) {
-        return [];
-      }
-      return [stackedOnEdge(dependentNode.id, baseNode.id)];
-    });
+
     return {
-      delta: buildDelta(nodes, [...containsEdges, ...stackEdges]),
+      delta: buildDelta(
+        [...nodes, ...branchNodes.values()],
+        [...containsEdges, ...branchEdges, ...branchContainsEdges],
+      ),
       endCursor: page.endCursor,
       hasNextPage: page.hasNextPage,
     };

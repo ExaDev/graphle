@@ -210,7 +210,10 @@ describe.skipIf(PRIVATE_TOKEN_TYPES.length === 0)("GitHub API integration - priv
         const stacked = page.items.find((item) => item.number === stackedPr);
         if (base === undefined || stacked === undefined) throw new Error("fixture: both PRs must exist");
         expect(stacked.baseRefName).toBe(base.headRefName);
-        expect(stacked.isCrossRepository).toBe(false);
+        // Neither fixture PR is from a fork, so headRepository resolves to
+        // this same repo — the field that scopes a head branch node to the
+        // repo it actually lives in (src/github/expand.ts's repoPullRequests).
+        expect(stacked.headRepository).toEqual({ name: repo, owner: { login: owner } });
       },
     );
 

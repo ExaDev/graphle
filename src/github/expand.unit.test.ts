@@ -180,7 +180,7 @@ type PullRequestFixture = {
   url: string;
   baseRefName: string;
   headRefName: string;
-  isCrossRepository: boolean;
+  headRepository: { name: string; owner: { login: string } } | undefined;
 };
 
 /** Builds a client whose listRepoPullRequests returns a fixed canned page,
@@ -223,7 +223,7 @@ function findPullRequestsExpansion() {
 }
 
 describe("expansionsForType - repo-pull-requests", () => {
-  it("builds pull request nodes and contains edges from the source repo", async () => {
+  it("builds a PR node, its base and head branch nodes, and the edges between them", async () => {
     const source = repoSource();
     const client = clientWithPullRequests({
       items: [
@@ -234,7 +234,7 @@ describe("expansionsForType - repo-pull-requests", () => {
           url: "https://github.com/exadev/graphle/pull/1",
           baseRefName: "main",
           headRefName: "feature-1",
-          isCrossRepository: false,
+          headRepository: { name: "graphle", owner: { login: "exadev" } },
         },
       ],
       endCursor: undefined,
@@ -248,15 +248,27 @@ describe("expansionsForType - repo-pull-requests", () => {
       new AbortController().signal,
     );
 
-    expect(delta.nodes).toHaveLength(1);
-    expect(delta.nodes[0]?.type).toBe("pullRequest");
-    expect(delta.nodes[0]?.parentId).toBe(source.id);
-    expect(delta.edges).toHaveLength(1);
-    expect(delta.edges[0]?.type).toBe("contains");
-    expect(delta.edges[0]?.source).toBe(source.id);
+    const prNode = delta.nodes.find((n) => n.type === "pullRequest");
+    const branchNodes = delta.nodes.filter((n) => n.type === "branch");
+    if (prNode === undefined) throw new Error("fixture: PR node must exist");
+    expect(prNode.parentId).toBe(source.id);
+    expect(branchNodes.map((n) => n.data.branchName).sort()).toEqual(["feature-1", "main"]);
+    // Both branches belong to the repo being expanded, so both are parented
+    // under it and get a contains edge, same as the PR node.
+    expect(branchNodes.every((n) => n.parentId === source.id)).toBe(true);
+
+    const prContainsEdge = delta.edges.find((e) => e.type === "contains" && e.target === prNode.id);
+    expect(prContainsEdge?.source).toBe(source.id);
+    expect(delta.edges.filter((e) => e.type === "contains" && e.source === source.id && e.target !== prNode.id)).toHaveLength(2);
+
+    const baseBranch = branchNodes.find((n) => n.data.branchName === "main");
+    const headBranch = branchNodes.find((n) => n.data.branchName === "feature-1");
+    if (baseBranch === undefined || headBranch === undefined) throw new Error("fixture: both branch nodes must exist");
+    expect(delta.edges).toContainEqual(expect.objectContaining({ type: "baseBranch", source: prNode.id, target: baseBranch.id }));
+    expect(delta.edges).toContainEqual(expect.objectContaining({ type: "headBranch", source: prNode.id, target: headBranch.id }));
   });
 
-  it("adds a stackedOn edge when one PR's baseRefName matches another's headRefName", async () => {
+  it("converges two PRs that share a branch onto the same branch node", async () => {
     const source = repoSource();
     const client = clientWithPullRequests({
       items: [
@@ -267,7 +279,7 @@ describe("expansionsForType - repo-pull-requests", () => {
           url: "https://github.com/exadev/graphle/pull/1",
           baseRefName: "main",
           headRefName: "feature-base",
-          isCrossRepository: false,
+          headRepository: { name: "graphle", owner: { login: "exadev" } },
         },
         {
           number: 2,
@@ -276,7 +288,7 @@ describe("expansionsForType - repo-pull-requests", () => {
           url: "https://github.com/exadev/graphle/pull/2",
           baseRefName: "feature-base",
           headRefName: "feature-stacked",
-          isCrossRepository: false,
+          headRepository: { name: "graphle", owner: { login: "exadev" } },
         },
       ],
       endCursor: undefined,
@@ -290,45 +302,24 @@ describe("expansionsForType - repo-pull-requests", () => {
       new AbortController().signal,
     );
 
-    const baseNode = delta.nodes.find((n) => n.data.number === 1);
-    const stackedNode = delta.nodes.find((n) => n.data.number === 2);
-    if (baseNode === undefined || stackedNode === undefined) throw new Error("fixture: both PR nodes must exist");
+    const pr1 = delta.nodes.find((n) => n.data.number === 1);
+    const pr2 = delta.nodes.find((n) => n.data.number === 2);
+    if (pr1 === undefined || pr2 === undefined) throw new Error("fixture: both PR nodes must exist");
 
-    const stackEdges = delta.edges.filter((e) => e.type === "stackedOn");
-    expect(stackEdges).toHaveLength(1);
-    expect(stackEdges[0]?.source).toBe(stackedNode.id);
-    expect(stackEdges[0]?.target).toBe(baseNode.id);
+    const featureBaseBranches = delta.nodes.filter((n) => n.type === "branch" && n.data.branchName === "feature-base");
+    expect(featureBaseBranches).toHaveLength(1);
+    const sharedBranch = featureBaseBranches[0];
+    if (sharedBranch === undefined) throw new Error("fixture: shared branch node must exist");
+
+    // PR #1's head and PR #2's base both point at the one shared branch node
+    // — no direct PR-to-PR edge exists any more.
+    expect(delta.edges).toContainEqual(expect.objectContaining({ type: "headBranch", source: pr1.id, target: sharedBranch.id }));
+    expect(delta.edges).toContainEqual(expect.objectContaining({ type: "baseBranch", source: pr2.id, target: sharedBranch.id }));
+    expect(delta.edges.some((e) => e.source === pr1.id && e.target === pr2.id)).toBe(false);
+    expect(delta.edges.some((e) => e.source === pr2.id && e.target === pr1.id)).toBe(false);
   });
 
-  it("does not add a stackedOn edge for a PR based on the repo's default branch", async () => {
-    const source = repoSource();
-    const client = clientWithPullRequests({
-      items: [
-        {
-          number: 1,
-          title: "Ordinary PR",
-          state: "open",
-          url: "https://github.com/exadev/graphle/pull/1",
-          baseRefName: "main",
-          headRefName: "feature-1",
-          isCrossRepository: false,
-        },
-      ],
-      endCursor: undefined,
-      hasNextPage: false,
-    });
-
-    const { delta } = await findPullRequestsExpansion().run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
-    );
-
-    expect(delta.edges.filter((e) => e.type === "stackedOn")).toHaveLength(0);
-  });
-
-  it("ignores a headRefName match from a cross-repository (fork) PR", async () => {
+  it("scopes a fork PR's head branch to the fork, not the base repo", async () => {
     const source = repoSource();
     const client = clientWithPullRequests({
       items: [
@@ -339,16 +330,16 @@ describe("expansionsForType - repo-pull-requests", () => {
           url: "https://github.com/exadev/graphle/pull/1",
           baseRefName: "main",
           headRefName: "feature-base",
-          isCrossRepository: true,
+          headRepository: { name: "graphle", owner: { login: "someone-else" } },
         },
         {
           number: 2,
-          title: "Unrelated PR",
+          title: "Unrelated same-repo PR based on a branch of the same name",
           state: "open",
           url: "https://github.com/exadev/graphle/pull/2",
           baseRefName: "feature-base",
           headRefName: "feature-2",
-          isCrossRepository: false,
+          headRepository: { name: "graphle", owner: { login: "exadev" } },
         },
       ],
       endCursor: undefined,
@@ -362,7 +353,52 @@ describe("expansionsForType - repo-pull-requests", () => {
       new AbortController().signal,
     );
 
-    expect(delta.edges.filter((e) => e.type === "stackedOn")).toHaveLength(0);
+    const branchNodes = delta.nodes.filter((n) => n.type === "branch" && n.data.branchName === "feature-base");
+    // The fork's "feature-base" and the base repo's own "feature-base" are
+    // distinct nodes, scoped by owner/repo — they never collide.
+    expect(branchNodes).toHaveLength(2);
+    const forkBranch = branchNodes.find((n) => n.data.owner === "someone-else");
+    const baseRepoBranch = branchNodes.find((n) => n.data.owner === "exadev");
+    if (forkBranch === undefined || baseRepoBranch === undefined) {
+      throw new Error("fixture: both the fork's and the base repo's branch nodes must exist");
+    }
+
+    // The fork's branch isn't owned by the repo being expanded, so it gets
+    // no contains edge/parentId from it — unlike the base repo's own branch.
+    expect(forkBranch.parentId).toBeUndefined();
+    expect(delta.edges.some((e) => e.type === "contains" && e.target === forkBranch.id)).toBe(false);
+    expect(baseRepoBranch.parentId).toBe(source.id);
+    expect(delta.edges).toContainEqual(expect.objectContaining({ type: "contains", source: source.id, target: baseRepoBranch.id }));
+  });
+
+  it("creates no head branch node or edge when the PR's fork has been deleted", async () => {
+    const source = repoSource();
+    const client = clientWithPullRequests({
+      items: [
+        {
+          number: 1,
+          title: "PR from a since-deleted fork",
+          state: "open",
+          url: "https://github.com/exadev/graphle/pull/1",
+          baseRefName: "main",
+          headRefName: "feature-1",
+          headRepository: undefined,
+        },
+      ],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const { delta } = await findPullRequestsExpansion().run(
+      source,
+      client,
+      undefined,
+      new AbortController().signal,
+    );
+
+    const branchNodes = delta.nodes.filter((n) => n.type === "branch");
+    expect(branchNodes.map((n) => n.data.branchName)).toEqual(["main"]);
+    expect(delta.edges.some((e) => e.type === "headBranch")).toBe(false);
   });
 });
 
