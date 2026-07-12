@@ -1,3 +1,10 @@
+## [1.19.1](https://github.com/ExaDev/graphle/compare/v1.19.0...v1.19.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **github:** run searchAccounts integration coverage against public tokens ([54440c0](https://github.com/ExaDev/graphle/commit/54440c08d7fd3d8d3f0d4683fe081b8e0b53a0fd))
+
 # [1.19.0](https://github.com/ExaDev/graphle/compare/v1.18.0...v1.19.0) (2026-07-12)
 
 
