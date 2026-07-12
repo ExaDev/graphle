@@ -338,7 +338,11 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
         const resolved = resolveTokenForOwner(list, suggestedGithubOwner);
         if (resolved !== undefined) {
           setActingAsId(resolved.id);
-        } else if (suggestedGithubOwner !== undefined) {
+        } else if (suggestedGithubOwner !== undefined || list.length === 0) {
+          // Nothing resolves: either a caller was resolving a specific owner
+          // and found nothing, or the store is empty and there is nothing
+          // else to show. Either way, jump straight to Add rather than an
+          // empty list the user has to click through.
           openAddForm(suggestedGithubOwner);
         }
       })
@@ -448,10 +452,6 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
   async function handleSaveForm(): Promise<void> {
     const sig = signal();
     if (sig === undefined) return;
-    if (formLabel.trim() === "") {
-      notifications.show({ color: "red", message: "Enter a label first" });
-      return;
-    }
     if (formTokenInput === "") {
       notifications.show({ color: "red", message: "Enter a token first" });
       return;
@@ -468,9 +468,10 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
     if (result === undefined) return;
 
     const id = editingId ?? crypto.randomUUID();
+    const label = formLabel.trim() === "" ? `${result.login} (${formTokenType})` : formLabel.trim();
     const stored: StoredGithubToken = {
       id,
-      label: formLabel.trim(),
+      label,
       tokenType: formTokenType,
       token: formTokenInput,
       scope,
@@ -748,6 +749,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
             </Text>
             <TextInput
               label="Label"
+              description="Optional — defaults to the signed-in account and token type"
               placeholder="e.g. ExaDev fine-grained"
               value={formLabel}
               onChange={(event) => setFormLabel(event.currentTarget.value)}
