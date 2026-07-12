@@ -74,6 +74,38 @@ describe("applyOperation - addNode", () => {
   });
 });
 
+describe("applyOperation - addNodes", () => {
+  it("adds every node to the document in one operation", () => {
+    const doc = documentWith([]);
+    const a = makeFreeform("A");
+    const b = makeFreeform("B");
+    const next = applyOperation(doc, { type: "addNodes", nodes: [a, b] });
+    expect(next.nodes).toEqual([a, b]);
+  });
+
+  it("throws GraphOperationError when a node id already exists in the document", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    expect(() =>
+      applyOperation(doc, { type: "addNodes", nodes: [makeFreeform("B"), a] }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("throws GraphOperationError when the batch itself repeats an id", () => {
+    const doc = documentWith([]);
+    const a = makeFreeform("A");
+    expect(() =>
+      applyOperation(doc, { type: "addNodes", nodes: [a, { ...a }] }),
+    ).toThrow(GraphOperationError);
+  });
+
+  it("does not mutate the input document", () => {
+    const doc = documentWith([]);
+    applyOperation(doc, { type: "addNodes", nodes: [makeFreeform("A")] });
+    expect(doc.nodes).toEqual([]);
+  });
+});
+
 describe("applyOperation - updateNodeData", () => {
   it("replaces a node's data when the data matches the node type", () => {
     const node = makeFreeform("A");
@@ -191,6 +223,59 @@ describe("applyOperation - removeNode", () => {
     expect(next.nodes).toHaveLength(1);
     expect(next.nodes[0]?.id).toBe(child.id);
     expect(next.nodes[0]?.parentId).toBeUndefined();
+  });
+});
+
+describe("applyOperation - removeNodes", () => {
+  it("removes every node with a listed id in one operation", () => {
+    const a = makeFreeform("A");
+    const b = makeFreeform("B");
+    const c = makeFreeform("C");
+    const doc = documentWith([a, b, c]);
+    const next = applyOperation(doc, { type: "removeNodes", ids: [a.id, c.id] });
+    expect(next.nodes).toEqual([b]);
+  });
+
+  it("cascades: removes every edge touching a removed id", () => {
+    const a = makeFreeform("A");
+    const b = makeFreeform("B");
+    const c = makeFreeform("C");
+    const edgeAB = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: a.id,
+      target: b.id,
+      type: "references",
+      data: {},
+    });
+    const edgeBC = GraphEdge.parse({
+      id: crypto.randomUUID(),
+      source: b.id,
+      target: c.id,
+      type: "references",
+      data: {},
+    });
+    const doc = documentWith([a, b, c], [edgeAB, edgeBC]);
+    const next = applyOperation(doc, { type: "removeNodes", ids: [a.id, b.id] });
+    expect(next.nodes).toEqual([c]);
+    expect(next.edges).toEqual([]);
+  });
+
+  it("clears parentId on children of removed nodes, orphaning rather than cascade-removing them", () => {
+    const parent = makeFreeform("Parent");
+    const child = { ...makeFreeform("Child"), parentId: parent.id };
+    const other = makeFreeform("Other");
+    const doc = documentWith([parent, child, other]);
+    const next = applyOperation(doc, { type: "removeNodes", ids: [parent.id, other.id] });
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0]?.id).toBe(child.id);
+    expect(next.nodes[0]?.parentId).toBeUndefined();
+  });
+
+  it("is a no-op when none of the ids are present", () => {
+    const a = makeFreeform("A");
+    const doc = documentWith([a]);
+    const next = applyOperation(doc, { type: "removeNodes", ids: ["missing"] });
+    expect(next.nodes).toEqual([a]);
   });
 });
 

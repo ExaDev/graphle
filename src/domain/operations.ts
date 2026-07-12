@@ -48,12 +48,19 @@ export class GraphOperationError extends Error {
  * There is no separate `ungroupNodes` — `removeNode` already clears
  * `parentId` on any node that pointed at the removed id (see below), so
  * removing a group node *is* ungrouping it.
+ *
+ * `addNodes`/`removeNodes` are the same "one undo step for many nodes"
+ * pattern applied to bulk add/remove — a right-click "Duplicate N nodes" or
+ * "Delete N nodes" on a multi-selection composes to one of these rather than
+ * N×`addNode`/`removeNode`, so a single Ctrl+Z reverts the whole bulk action.
  */
 export type GraphOperation =
   | { type: "addNode"; node: GraphNode }
+  | { type: "addNodes"; nodes: GraphNode[] }
   | { type: "updateNodeData"; id: string; nodeType: string; data: NodeData }
   | { type: "moveNodes"; moves: Array<{ id: string; position: Position }> }
   | { type: "removeNode"; id: string }
+  | { type: "removeNodes"; ids: string[] }
   | { type: "addEdge"; edge: GraphEdge }
   | { type: "updateEdge"; id: string; edgeType: string; data: EdgeData }
   | { type: "removeEdge"; id: string }
@@ -137,7 +144,8 @@ function replaceEdgeData(
  * `op` applied. The input document is never mutated.
  *
  * Invariant failures throw {@link GraphOperationError}:
- * - `addNode` with an id that already exists in the document.
+ * - `addNode`/`addNodes` with an id that already exists in the document (or,
+ *   for `addNodes`, is repeated within the same batch).
  * - `addEdge` whose `source` or `target` id is not present as a node.
  * - `updateNodeData` whose `nodeType` cannot be resolved, or whose `data` fails
  *   the resolved type's schema.
@@ -147,13 +155,13 @@ function replaceEdgeData(
  *   node id, or would make a node its own ancestor (see `hierarchy.ts`'s
  *   `wouldCreateCycle`).
  *
- * `removeNode` also removes every edge whose `source` or `target` is the removed
- * id, so the document never holds a dangling edge — and clears `parentId` on
- * every node that pointed at the removed id, so removing a node (a `"group"`
- * or otherwise) never leaves its children pointing at a node that no longer
- * exists; they're promoted back to top-level rather than cascade-removed.
- * Operations that target an id not present (`updateNodeData`, `moveNodes`,
- * `updateEdge`, `setCollapsed`) are no-ops.
+ * `removeNode`/`removeNodes` also remove every edge whose `source` or `target`
+ * is a removed id, so the document never holds a dangling edge — and clear
+ * `parentId` on every node that pointed at a removed id, so removing a node (a
+ * `"group"` or otherwise) never leaves its children pointing at a node that no
+ * longer exists; they're promoted back to top-level rather than
+ * cascade-removed. Operations that target an id not present (`updateNodeData`,
+ * `moveNodes`, `updateEdge`, `setCollapsed`) are no-ops.
  */
 export function applyOperation(
   doc: GraphDocument,
@@ -167,6 +175,20 @@ export function applyOperation(
         );
       }
       return { ...doc, nodes: [...doc.nodes, op.node] };
+    }
+
+    case "addNodes": {
+      const existingIds = new Set(doc.nodes.map((node) => node.id));
+      const seenIds = new Set<string>();
+      for (const node of op.nodes) {
+        if (existingIds.has(node.id) || seenIds.has(node.id)) {
+          throw new GraphOperationError(
+            `A node with id "${node.id}" already exists`,
+          );
+        }
+        seenIds.add(node.id);
+      }
+      return { ...doc, nodes: [...doc.nodes, ...op.nodes] };
     }
 
     case "updateNodeData": {
@@ -203,6 +225,21 @@ export function applyOperation(
         .map((node): GraphNode => (node.parentId === op.id ? { ...node, parentId: undefined } : node));
       const edges = doc.edges.filter(
         (edge) => edge.source !== op.id && edge.target !== op.id,
+      );
+      return { ...doc, nodes, edges };
+    }
+
+    case "removeNodes": {
+      const removedIds = new Set(op.ids);
+      const nodes = doc.nodes
+        .filter((node) => !removedIds.has(node.id))
+        .map((node): GraphNode =>
+          node.parentId !== undefined && removedIds.has(node.parentId)
+            ? { ...node, parentId: undefined }
+            : node,
+        );
+      const edges = doc.edges.filter(
+        (edge) => !removedIds.has(edge.source) && !removedIds.has(edge.target),
       );
       return { ...doc, nodes, edges };
     }

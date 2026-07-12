@@ -328,6 +328,25 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
             ...(node.data.collapsed !== undefined ? { nodeCollapsed: node.data.collapsed } : {}),
           });
         }}
+        onSelectionContextMenu={(event, selectedNodes) => {
+          // React Flow draws a `nodesselection-rect` overlay on top of a 2+
+          // multi-selection (to drag the whole group at once), which
+          // intercepts the right-click before it ever reaches an individual
+          // node — so `onNodeContextMenu` never fires for a multi-selected
+          // node. This dedicated callback is the only way to catch that
+          // right-click; the target id only needs to be a member of
+          // `selectedNodeIds` for ContextMenu's multi-select branch to
+          // render, so the first selected node stands in for the whole group.
+          event.preventDefault();
+          const first = selectedNodes[0];
+          if (first === undefined) return;
+          onContextMenu({
+            kind: "node",
+            x: event.clientX,
+            y: event.clientY,
+            nodeId: first.id,
+          });
+        }}
         onEdgeContextMenu={(event, edge) => {
           event.preventDefault();
           setSelection({ nodeId: undefined, edgeId: edge.id });

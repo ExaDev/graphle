@@ -88,6 +88,7 @@ export function AppShell() {
   const apply = useGraphStore((state) => state.apply);
   const setSelection = useGraphStore((state) => state.setSelection);
   const selectedNodeIds = useGraphStore((state) => state.selectedNodeIds);
+  const setSelectedNodeIds = useGraphStore((state) => state.setSelectedNodeIds);
   const undo = useGraphStore((state) => state.undo);
   const redo = useGraphStore((state) => state.redo);
   useHotkeys([
@@ -174,6 +175,35 @@ export function AppShell() {
    *  ungrouping, no separate operation needed. */
   function handleUngroup(nodeId: string): void {
     apply({ type: "removeNode", id: nodeId });
+  }
+
+  /** Duplicates every node in a multi-selection in one undo step (see
+   *  `addNodes` in `operations.ts`), offsetting each copy the same way as
+   *  a single-node `handleDuplicate`. */
+  function handleDuplicateSelection(nodeIds: string[]): void {
+    const nodes = document.nodes.filter((n) => nodeIds.includes(n.id));
+    if (nodes.length === 0) return;
+    apply({
+      type: "addNodes",
+      nodes: nodes.map((node) => ({
+        ...node,
+        id: crypto.randomUUID(),
+        position: {
+          x: node.position.x + DUPLICATE_OFFSET_PX,
+          y: node.position.y + DUPLICATE_OFFSET_PX,
+        },
+      })),
+    });
+  }
+
+  /** Deletes every node in a multi-selection in one undo step (see
+   *  `removeNodes` in `operations.ts`) and clears both the single-item
+   *  selection and the multi-select list, since none of those ids remain
+   *  in the document. */
+  function handleDeleteSelection(nodeIds: string[]): void {
+    apply({ type: "removeNodes", ids: nodeIds });
+    setSelection({ nodeId: undefined, edgeId: undefined });
+    setSelectedNodeIds([]);
   }
 
   function handleGroupSelection(nodeIds: string[]): void {
@@ -398,6 +428,8 @@ export function AppShell() {
         onAddHere={handleAddHere}
         selectedNodeIds={selectedNodeIds}
         onGroupSelection={handleGroupSelection}
+        onDuplicateSelection={handleDuplicateSelection}
+        onDeleteSelection={handleDeleteSelection}
         onToggleCollapse={handleToggleCollapse}
         onUngroup={handleUngroup}
         onExpand={handleExpandNode}

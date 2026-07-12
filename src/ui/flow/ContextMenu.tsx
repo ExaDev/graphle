@@ -2,13 +2,14 @@
  * Right-click context menu for the React Flow canvas, offering per-target
  * actions (duplicate/select/delete for nodes, select/delete for edges, and
  * "Add node here" for the pane) — plus subgraph actions: right-clicking a
- * node that's part of a 2+ multi-selection (`selectedNodeIds`) shows "Group
- * N nodes" instead of the normal single-node menu; a node whose type has
- * GitHub expansions (`expansionsForType`, e.g. a repo's Issues/Pull
- * requests/Projects) gets one entry per expansion, mirroring the inspector's
- * `ExpandMenu`; a node with children (`state.nodeChildCount > 0` — see
- * `GraphNode.parentId`/`collapsed` in `src/schema/node.ts`) gets a
- * Collapse/Expand entry; a `"group"`-typed node additionally gets "Ungroup".
+ * node that's part of a 2+ multi-selection (`selectedNodeIds`) shows
+ * "Group"/"Duplicate"/"Delete N nodes" instead of the normal single-node
+ * menu; a node whose type has GitHub expansions (`expansionsForType`, e.g. a
+ * repo's Issues/Pull requests/Projects) gets one entry per expansion,
+ * mirroring the inspector's `ExpandMenu`; a node with children
+ * (`state.nodeChildCount > 0` — see `GraphNode.parentId`/`collapsed` in
+ * `src/schema/node.ts`) gets a Collapse/Expand entry; a `"group"`-typed node
+ * additionally gets "Ungroup".
  *
  * The menu is CONTROLLED: {@link AppShell} owns the {@link ContextMenuState}
  * and renders this component with `state` set when a context-menu event fires.
@@ -91,10 +92,15 @@ export interface ContextMenuProps {
   /** Open the add-node modal seeded with the pane click's flow position. */
   onAddHere: () => void;
   /** The canvas's current multi-selected node ids — read-only here, used
-   *  only to decide whether right-clicking shows "Group N nodes". */
+   *  only to decide whether right-clicking shows the bulk
+   *  Group/Duplicate/Delete entries instead of the normal single-node menu. */
   selectedNodeIds: string[];
   /** Group every id in `nodeIds` under a new `"group"` node. */
   onGroupSelection: (nodeIds: string[]) => void;
+  /** Duplicate every id in `nodeIds` in one undo step. */
+  onDuplicateSelection: (nodeIds: string[]) => void;
+  /** Delete every id in `nodeIds` in one undo step. */
+  onDeleteSelection: (nodeIds: string[]) => void;
   /** Toggle a node's `collapsed` state. */
   onToggleCollapse: (nodeId: string) => void;
   /** Remove a `"group"`-typed node, promoting its children back to
@@ -116,6 +122,8 @@ export function ContextMenu({
   onAddHere,
   selectedNodeIds,
   onGroupSelection,
+  onDuplicateSelection,
+  onDeleteSelection,
   onToggleCollapse,
   onUngroup,
   onExpand,
@@ -144,12 +152,28 @@ export function ContextMenu({
           state.nodeId !== undefined &&
           selectedNodeIds.length >= 2 &&
           selectedNodeIds.includes(state.nodeId) && (
-            <Menu.Item
-              leftSection={<IconStack2 size={14} />}
-              onClick={() => onGroupSelection(selectedNodeIds)}
-            >
-              Group {selectedNodeIds.length} nodes
-            </Menu.Item>
+            <>
+              <Menu.Item
+                leftSection={<IconStack2 size={14} />}
+                onClick={() => onGroupSelection(selectedNodeIds)}
+              >
+                Group {selectedNodeIds.length} nodes
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconCopy size={14} />}
+                onClick={() => onDuplicateSelection(selectedNodeIds)}
+              >
+                Duplicate {selectedNodeIds.length} nodes
+              </Menu.Item>
+              <Divider />
+              <Menu.Item
+                color="red"
+                leftSection={<IconTrash size={14} />}
+                onClick={() => onDeleteSelection(selectedNodeIds)}
+              >
+                Delete {selectedNodeIds.length} nodes
+              </Menu.Item>
+            </>
           )}
         {state?.kind === "node" &&
           state.nodeId !== undefined &&
