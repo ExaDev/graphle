@@ -1,3 +1,10 @@
+## [1.20.1](https://github.com/ExaDev/graphle/compare/v1.20.0...v1.20.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **github:** auto-open the Add-token form when no tokens are stored ([606535c](https://github.com/ExaDev/graphle/commit/606535c3fa9d435ff822768bfef48977cef3c127))
+
 # [1.20.0](https://github.com/ExaDev/graphle/compare/v1.19.2...v1.20.0) (2026-07-12)
 
 
