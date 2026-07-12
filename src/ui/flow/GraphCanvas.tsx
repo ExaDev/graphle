@@ -93,17 +93,27 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
   // shared via the URL.
   const [snapEnabled, setSnapEnabled] = useState(false);
 
-  // Re-sync React Flow from the store when the STRUCTURE or the node/edge DATA
-  // changes — an add, remove, inspector data edit, external document load, or
-  // a subgraph change (setParent/setCollapsed/groupNodes, see hierarchy.ts) —
-  // but never on position-only commits, so a drag-stop does not blow away
-  // React Flow's live state. Positions are deliberately excluded from the
-  // fingerprint; ids, types, data, parentId, collapsed, relation and label
-  // are included, so edits made in the inspector (or a collapse toggle)
-  // reach the canvas without re-syncing mid-drag. The
-  // previous fingerprint is kept in a ref and compared inside the effect (refs
-  // must not be mutated during render).
+  // Re-sync React Flow from the store when the document changes — an add,
+  // remove, inspector data edit, external document load, a subgraph change
+  // (setParent/setCollapsed/groupNodes, see hierarchy.ts), or a position
+  // commit from anything OTHER than an in-progress drag (auto-layout,
+  // align/distribute, undo/redo, a future feature). Position IS part of the
+  // fingerprint below, but the effect bails out early while `dragActiveRef`
+  // is true, so a live drag's own local state is never fought mid-gesture —
+  // once the drag settles (`handleNodesChange` flips the ref back to false
+  // on the final non-dragging position change), the next run picks up
+  // whatever the drag committed and reconciles harmlessly (the positions
+  // already match). Without including position at all, any non-drag
+  // `apply({ type: "moveNodes" })` call — auto-layout already had this bug
+  // before align/distribute exposed it — would silently never reach the
+  // canvas: the store's document would hold the new positions but React
+  // Flow's own local `nodes` state, the only thing actually rendered,
+  // would never be told to update.
   const prevStructureRef = useRef("");
+  // True from the first `dragging: true` position change to the final
+  // `dragging: false` one — see the resync effect above and
+  // `handleNodesChange` below, the only place this is written.
+  const dragActiveRef = useRef(false);
   // One-shot "fit the view to the content" flag. The `fitView` prop covers
   // nodes present at init; this covers a shared graph loaded via the URL after
   // mount (the common `#g=` case).
@@ -115,8 +125,12 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
     hasFitRef.current = false;
   }, [graphId]);
   useEffect(() => {
+    if (dragActiveRef.current) return;
     const nodeSignature = graphDocument.nodes
-      .map((n) => `${n.id}:${n.type}:${String(n.parentId)}:${String(n.collapsed)}:${JSON.stringify(n.data)}`)
+      .map(
+        (n) =>
+          `${n.id}:${n.type}:${String(n.parentId)}:${String(n.collapsed)}:${JSON.stringify(n.data)}:${n.position.x}:${n.position.y}`,
+      )
       .join("\n");
     const edgeSignature = graphDocument.edges
       .map((e) => `${e.id}:${e.type}:${JSON.stringify(e.data)}`)
@@ -168,6 +182,15 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
       for (const change of changes) {
         if (change.type === "remove") {
           apply({ type: "removeNode", id: change.id });
+        }
+        // Tracks whether a drag is currently in flight, for the resync effect
+        // above: `dragging: true` fires on every tick of an active drag,
+        // `dragging: false` on the final settling change — mirrored here so
+        // the effect can tell "position changed because of a live drag I
+        // already have correct in local state" from "position changed for
+        // any other reason, please resync."
+        if (change.type === "position") {
+          dragActiveRef.current = change.dragging === true;
         }
       }
     },
