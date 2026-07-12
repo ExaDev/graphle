@@ -3,10 +3,12 @@
  * actions (duplicate/select/delete for nodes, select/delete for edges, and
  * "Add node here" for the pane) — plus subgraph actions: right-clicking a
  * node that's part of a 2+ multi-selection (`selectedNodeIds`) shows "Group
- * N nodes" instead of the normal single-node menu; a node with children
- * (`state.nodeChildCount > 0` — see `GraphNode.parentId`/`collapsed` in
- * `src/schema/node.ts`) gets a Collapse/Expand entry; a `"group"`-typed node
- * additionally gets "Ungroup".
+ * N nodes" instead of the normal single-node menu; a node whose type has
+ * GitHub expansions (`expansionsForType`, e.g. a repo's Issues/Pull
+ * requests/Projects) gets one entry per expansion, mirroring the inspector's
+ * `ExpandMenu`; a node with children (`state.nodeChildCount > 0` — see
+ * `GraphNode.parentId`/`collapsed` in `src/schema/node.ts`) gets a
+ * Collapse/Expand entry; a `"group"`-typed node additionally gets "Ungroup".
  *
  * The menu is CONTROLLED: {@link AppShell} owns the {@link ContextMenuState}
  * and renders this component with `state` set when a context-menu event fires.
@@ -27,12 +29,14 @@ import {
   IconCopy,
   IconFolderOpen,
   IconPencil,
+  IconPlaylistAdd,
   IconPlus,
   IconStack2,
   IconTrash,
 } from "@tabler/icons-react";
 import type { CSSProperties } from "react";
 
+import { expansionsForType } from "@/github";
 import type { Position } from "@/schema";
 
 import { invisibleTarget } from "./ContextMenu.css";
@@ -96,6 +100,9 @@ export interface ContextMenuProps {
   /** Remove a `"group"`-typed node, promoting its children back to
    *  top-level rather than deleting them. */
   onUngroup: (nodeId: string) => void;
+  /** Run one of the node's available GitHub expansions (see
+   *  `expansionsForType`), identified by its `Expansion.id`. */
+  onExpand: (nodeId: string, expansionId: string) => void;
 }
 
 export function ContextMenu({
@@ -111,6 +118,7 @@ export function ContextMenu({
   onGroupSelection,
   onToggleCollapse,
   onUngroup,
+  onExpand,
 }: ContextMenuProps) {
   // The anchor is only positioned when the menu is open; when closed, no
   // inline coordinates are applied (the 1px box is invisible and pointer-none,
@@ -163,6 +171,18 @@ export function ContextMenu({
               >
                 Select
               </Menu.Item>
+              {state.nodeType !== undefined &&
+                expansionsForType(state.nodeType).map((expansion) => (
+                  <Menu.Item
+                    key={expansion.id}
+                    leftSection={<IconPlaylistAdd size={14} />}
+                    onClick={() => {
+                      if (state.nodeId !== undefined) onExpand(state.nodeId, expansion.id);
+                    }}
+                  >
+                    {expansion.label}
+                  </Menu.Item>
+                ))}
               {state.nodeChildCount !== undefined && state.nodeChildCount > 0 && (
                 <Menu.Item
                   leftSection={

@@ -19,6 +19,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMantineColorScheme } from "@mantine/core";
+import { useHotkeys } from "@mantine/hooks";
 import { IconArrowAutofitDown, IconArrowAutofitRight } from "@tabler/icons-react";
 import {
   Background,
@@ -285,6 +286,22 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
     },
     [setSelection, setSelectedNodeIds],
   );
+
+  // Selects every currently visible node — `nodes` is already the
+  // post-documentToFlow visible set, so a node hidden by a collapsed
+  // ancestor is correctly excluded, matching what's selectable by hand.
+  // Flips React Flow's own local `selected` flag (for the visual highlight)
+  // alongside the store mirrors `handleSelectionChange` also updates.
+  useHotkeys([
+    [
+      "mod+A",
+      () => {
+        setNodes((prev) => prev.map((node) => ({ ...node, selected: true })));
+        setSelectedNodeIds(nodes.map((node) => node.id));
+        setSelection({ nodeId: nodes[0]?.id, edgeId: undefined });
+      },
+    ],
+  ]);
 
   return (
     <div style={{ height: "100%", width: "100%" }}>

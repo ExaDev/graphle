@@ -42,6 +42,7 @@ import {
 import { ReactFlowProvider } from "@xyflow/react";
 import { useState } from "react";
 
+import { expansionsForType } from "@/github";
 import { type Position } from "@/schema";
 import { buildShareUrl } from "@/sharing/url";
 import { useGraphStore } from "@/ui/store/graph-store";
@@ -49,6 +50,7 @@ import { useGraphStore } from "@/ui/store/graph-store";
 import { buildMeta } from "./buildMeta";
 import { ContextMenu, type ContextMenuState } from "./flow/ContextMenu";
 import { GraphCanvas } from "./flow/GraphCanvas";
+import { runNodeExpansion } from "./flow/run-node-expansion";
 import { AddNodeMenu } from "./panels/AddNodeMenu";
 import { EdgeTypeEditorModal } from "./panels/EdgeTypeEditorModal";
 import { GistPickerModal } from "./panels/GistPickerModal";
@@ -154,6 +156,17 @@ export function AppShell() {
     const node = document.nodes.find((n) => n.id === nodeId);
     if (node === undefined) return;
     apply({ type: "setCollapsed", id: nodeId, collapsed: node.collapsed !== true });
+  }
+
+  /** Runs one of a node's GitHub expansions from the context menu — a
+   *  one-shot fetch (no pagination tracking, unlike `ExpandMenu`'s own
+   *  "Load more"), mirroring the inspector's Expand dropdown. */
+  function handleExpandNode(nodeId: string, expansionId: string): void {
+    const node = document.nodes.find((n) => n.id === nodeId);
+    if (node === undefined) return;
+    const expansion = expansionsForType(node.type).find((e) => e.id === expansionId);
+    if (expansion === undefined) return;
+    void runNodeExpansion(node, expansion, undefined, new AbortController().signal);
   }
 
   /** Removing a `"group"` node clears its children's `parentId` (see
@@ -387,6 +400,7 @@ export function AppShell() {
         onGroupSelection={handleGroupSelection}
         onToggleCollapse={handleToggleCollapse}
         onUngroup={handleUngroup}
+        onExpand={handleExpandNode}
       />
     </MantineAppShell>
   );

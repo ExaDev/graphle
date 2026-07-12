@@ -1,40 +1,24 @@
 /**
  * Expansion menu for the currently selected node. Reads the available
  * expansions for the node's type ({@link expansionsForType}) and renders one
- * item per expansion. Selecting one resolves the best-matching stored GitHub
- * token for the node's owner ({@link resolveGithubClient}), runs the
- * expansion, folds the resulting delta into the document via
- * `store.mergeDelta`, and reports how many nodes were added. Pagination tails
- * are tracked per expansion so a "Load more" item appears while the connection
- * has a next page.
- *
- * A token is resolved fresh on every click (a cheap Dexie read) rather than
- * cached in component state, so a token added or edited after the menu first
- * rendered is picked up on the very next click. When no token resolves for
- * the node's owner, the menu opens the GitHub panel with that owner
- * pre-suggested and the triggering expansion queued as the panel's pending
- * action, so validating a token there resumes the exact expansion the user
- * clicked.
+ * item per expansion. Selecting one runs {@link runNodeExpansion} (token
+ * resolution/escalation, the fetch, merging the delta, and notifying) and
+ * records the returned pagination cursor so a "Load more" item appears
+ * while the connection has a next page.
  *
  * SECURITY: like {@link GitHubPanel}, a token lives only in the token store
- * and the Authorization header. It is resolved here solely to build a
- * client; it is never rendered, logged, or stored in component state.
+ * and the Authorization header — never rendered, logged, or stored in
+ * component state. See {@link runNodeExpansion}'s own doc comment for how
+ * it's resolved.
  */
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Button, Menu } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconPlaylistAdd } from "@tabler/icons-react";
 
-import {
-  expansionsForType,
-  GitHubError,
-  githubErrorMessage,
-  resolveGithubClient,
-  type Expansion,
-  type GitHubClient,
-} from "@/github";
+import { expansionsForType, type Expansion } from "@/github";
 import type { GraphNode } from "@/schema";
-import { useGraphStore } from "@/ui/store/graph-store";
+
+import { runNodeExpansion } from "./run-node-expansion";
 
 export interface ExpandMenuProps {
   /** The node whose expansions are offered. Its type selects the expansion set. */
@@ -47,32 +31,8 @@ interface ExpansionTail {
   hasNextPage: boolean;
 }
 
-/** Derives the GitHub owner (org or user login) a node belongs to, for token
- *  resolution — org nodes store it under `login`, every other expandable
- *  node type stores it under `owner`. */
-function ownerForNode(node: GraphNode): string | undefined {
-  switch (node.type) {
-    case "org": {
-      const login = node.data["login"];
-      return typeof login === "string" ? login : undefined;
-    }
-    case "repo":
-    case "issue":
-    case "pullRequest":
-    case "project": {
-      const owner = node.data["owner"];
-      return typeof owner === "string" ? owner : undefined;
-    }
-    default:
-      return undefined;
-  }
-}
-
 export function ExpandMenu({ node }: ExpandMenuProps) {
   const expansions = expansionsForType(node.type);
-
-  const mergeDelta = useGraphStore((state) => state.mergeDelta);
-  const openGitHubPanel = useGraphStore((state) => state.openGitHubPanel);
 
   /** Per-expansion pagination tails, keyed by expansion id. */
   const [tails, setTails] = useState<Record<string, ExpansionTail>>({});
@@ -106,11 +66,7 @@ export function ExpandMenu({ node }: ExpandMenuProps) {
     };
   }, [node.id]);
 
-  async function runExpansionWith(
-    expansion: Expansion,
-    loadMore: boolean,
-    client: GitHubClient,
-  ): Promise<void> {
+  async function runExpansion(expansion: Expansion, loadMore: boolean): Promise<void> {
     const tail = tails[expansion.id];
     const cursor = loadMore && tail !== undefined ? tail.cursor : undefined;
 
@@ -119,29 +75,12 @@ export function ExpandMenu({ node }: ExpandMenuProps) {
     abortRef.current = controller;
     setRunningId(expansion.id);
     try {
-      const result = await expansion.run(node, client, cursor, controller.signal);
-      const added = mergeDelta(result.delta);
-      const count = added.length;
-      notifications.show({
-        color: "green",
-        message:
-          count === 0
-            ? "Nothing new to add"
-            : `Added ${String(count)} node${count === 1 ? "" : "s"}`,
+      await runNodeExpansion(node, expansion, cursor, controller.signal, (result) => {
+        setTails((prev) => ({
+          ...prev,
+          [expansion.id]: { cursor: result.endCursor, hasNextPage: result.hasNextPage },
+        }));
       });
-      setTails((prev) => ({
-        ...prev,
-        [expansion.id]: { cursor: result.endCursor, hasNextPage: result.hasNextPage },
-      }));
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      const message =
-        error instanceof GitHubError
-          ? githubErrorMessage(error)
-          : error instanceof Error
-            ? error.message
-            : String(error);
-      notifications.show({ color: "red", message });
     } finally {
       // Only clear the running flag if this run is still the active one; a
       // newer run may have since started and owns the indicator.
@@ -149,19 +88,6 @@ export function ExpandMenu({ node }: ExpandMenuProps) {
         setRunningId(undefined);
       }
     }
-  }
-
-  async function runExpansion(expansion: Expansion, loadMore: boolean): Promise<void> {
-    const owner = ownerForNode(node);
-    const client = await resolveGithubClient(owner, new AbortController().signal);
-    if (client === undefined) {
-      openGitHubPanel({
-        ...(owner === undefined ? {} : { suggestedOwner: owner }),
-        pendingAction: (resumedClient) => void runExpansionWith(expansion, loadMore, resumedClient),
-      });
-      return;
-    }
-    await runExpansionWith(expansion, loadMore, client);
   }
 
   // Issue and freeform nodes have nothing to expand into; render nothing so the
