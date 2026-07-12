@@ -41,7 +41,7 @@ import { useGraphStore } from "@/ui/store/graph-store";
 
 import { computeAutoLayout, type NodeSize } from "./auto-layout";
 import { type ContextMenuState } from "./ContextMenu";
-import { snapToggleActive } from "./GraphCanvas.css.ts";
+import { snapToggleActive } from "./GraphCanvas.css";
 import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
 import { nodeTypes } from "./type-presentation";
 
