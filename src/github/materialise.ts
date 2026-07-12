@@ -15,9 +15,15 @@ import type {
 
 /**
  * Pure mappers that turn parsed GitHub entities into graph {@link GraphNode}s
- * and {@link GraphEdge}s. Every node and edge gets a fresh {@link crypto.randomUUID}
- * so each materialisation is independent; the merge layer is responsible for
- * collapsing nodes that represent the same external entity.
+ * and {@link GraphEdge}s. Every node and edge gets a deterministic id derived
+ * from its GitHub identity via {@link githubNodeId}/{@link githubEdgeId}, so
+ * two independent fetches of the same entity or relationship produce the
+ * literally-identical id up front. This is purely additive, not a migration:
+ * `src/domain/merge.ts`'s `applyDelta` identity-key dedup remains unchanged
+ * and still does the real work of reconciling a freshly-fetched node against
+ * one already in the document from before this scheme existed (still
+ * carrying its original random UUID) — old and new ids coexist in the same
+ * document with no compatibility shim required.
  *
  * Optional fields are spread conditionally rather than set to `undefined`, to
  * respect `exactOptionalPropertyTypes` — a node data field marked optional must
@@ -27,9 +33,28 @@ import type {
 /** The `Issue` arm of {@link GitHubProjectItem}, narrowed from the discriminator. */
 type ProjectIssueItem = Extract<GitHubProjectItem, { __typename: "Issue" }>;
 
+/**
+ * Mirrors `nodeIdentityKey`'s format (`src/domain/identity.ts`) exactly, so a
+ * freshly materialised node's id already equals what identity-based dedup
+ * would compute for it — `parts` must be supplied in the same order as that
+ * type's `identityFields` (`src/schema/built-in-types.ts`).
+ */
+function githubNodeId(typeName: string, parts: ReadonlyArray<string | number>): string {
+  return `${typeName}:${parts.join("/")}`.toLowerCase();
+}
+
+/**
+ * Mirrors `edgeTripleKey`'s format (`src/domain/merge.ts`); unlike node ids,
+ * edge type is not lower-cased here, matching that function's existing
+ * case-sensitive comparison.
+ */
+function githubEdgeId(type: string, source: string, target: string): string {
+  return `${type}:${source}->${target}`;
+}
+
 export function orgToNode(org: GitHubOrg, position: Position): GraphNode {
   return {
-    id: crypto.randomUUID(),
+    id: githubNodeId("org", [org.login]),
     type: "org",
     position,
     data: {
@@ -43,7 +68,7 @@ export function orgToNode(org: GitHubOrg, position: Position): GraphNode {
 
 export function repoToNode(repo: GitHubRepo, position: Position): GraphNode {
   return {
-    id: crypto.randomUUID(),
+    id: githubNodeId("repo", [repo.owner.login, repo.name]),
     type: "repo",
     position,
     data: {
@@ -63,7 +88,7 @@ export function issueToNode(
   position: Position,
 ): GraphNode {
   return {
-    id: crypto.randomUUID(),
+    id: githubNodeId("issue", [repoOwner, repoName, issue.number]),
     type: "issue",
     position,
     data: {
@@ -89,7 +114,7 @@ export function issueWithRepoToNode(
   position: Position,
 ): GraphNode {
   return {
-    id: crypto.randomUUID(),
+    id: githubNodeId("issue", [issue.repository.owner.login, issue.repository.name, issue.number]),
     type: "issue",
     position,
     data: {
@@ -110,7 +135,7 @@ export function pullRequestToNode(
   position: Position,
 ): GraphNode {
   return {
-    id: crypto.randomUUID(),
+    id: githubNodeId("pullRequest", [repoOwner, repoName, pullRequest.number]),
     type: "pullRequest",
     position,
     data: {
@@ -134,7 +159,7 @@ export function projectIssueItemToNode(
   position: Position,
 ): GraphNode {
   return {
-    id: crypto.randomUUID(),
+    id: githubNodeId("issue", [content.repository.owner.login, content.repository.name, content.number]),
     type: "issue",
     position,
     data: {
@@ -154,7 +179,7 @@ export function projectToNode(
   position: Position,
 ): GraphNode {
   return {
-    id: crypto.randomUUID(),
+    id: githubNodeId("project", [ownerLogin, project.number]),
     type: "project",
     position,
     data: {
@@ -171,7 +196,7 @@ export function projectToNode(
 
 export function ownsEdge(parentId: string, childId: string): GraphEdge {
   return {
-    id: crypto.randomUUID(),
+    id: githubEdgeId("owns", parentId, childId),
     source: parentId,
     target: childId,
     type: "owns",
@@ -181,7 +206,7 @@ export function ownsEdge(parentId: string, childId: string): GraphEdge {
 
 export function containsEdge(parentId: string, childId: string): GraphEdge {
   return {
-    id: crypto.randomUUID(),
+    id: githubEdgeId("contains", parentId, childId),
     source: parentId,
     target: childId,
     type: "contains",
@@ -191,7 +216,7 @@ export function containsEdge(parentId: string, childId: string): GraphEdge {
 
 export function tracksEdge(projectId: string, issueId: string): GraphEdge {
   return {
-    id: crypto.randomUUID(),
+    id: githubEdgeId("tracks", projectId, issueId),
     source: projectId,
     target: issueId,
     type: "tracks",
@@ -206,7 +231,7 @@ export function tracksEdge(projectId: string, issueId: string): GraphEdge {
  */
 export function blocksEdge(blockingIssueId: string, blockedIssueId: string): GraphEdge {
   return {
-    id: crypto.randomUUID(),
+    id: githubEdgeId("blocks", blockingIssueId, blockedIssueId),
     source: blockingIssueId,
     target: blockedIssueId,
     type: "blocks",
