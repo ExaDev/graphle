@@ -23,6 +23,7 @@ import type {
   GitHubClient,
   ParsedProjectUrl,
   ParsedRepoListUrl,
+  RateLimit,
   RepoIssuesFilters,
   RepoPullRequestsFilters,
 } from "@/github";
@@ -262,6 +263,12 @@ interface GraphState {
    *  every document-mutating commit already clears it unconditionally, so
    *  only a successful GitHub load ever needs to set it. */
   setRemoteGithubSource: (source: RemoteGithubSource | undefined) => void;
+  /** The most recent GitHub client's rate-limit budget, or `undefined` before
+   *  any GitHub call has completed. Ephemeral, like `selection` — never
+   *  persisted or written to the URL/document. */
+  rateLimit: RateLimit | undefined;
+  /** Set or clear the current rate-limit reading. */
+  setRateLimit: (rateLimit: RateLimit | undefined) => void;
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -428,6 +435,8 @@ export const useGraphStore = create<GraphState>()(
       setSyncConflict: (syncConflict) => set({ syncConflict }),
       remoteGithubSource: undefined,
       setRemoteGithubSource: (remoteGithubSource) => set({ remoteGithubSource }),
+      rateLimit: undefined,
+      setRateLimit: (rateLimit) => set({ rateLimit }),
     };
   }),
 );

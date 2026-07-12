@@ -85,6 +85,8 @@ async function runWithClient(
       notifications.show({ color: "red", message });
     }
     return undefined;
+  } finally {
+    useGraphStore.getState().setRateLimit(client.lastRateLimit);
   }
 }
 
