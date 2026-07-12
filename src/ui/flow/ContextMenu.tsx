@@ -30,6 +30,7 @@ import {
   IconChevronRight,
   IconCopy,
   IconFolderOpen,
+  IconGhost2,
   IconLayoutAlignBottom,
   IconLayoutAlignLeft,
   IconLayoutAlignRight,
@@ -102,6 +103,8 @@ export interface ContextMenuProps {
   onSelectConnected: (nodeId: string) => void;
   /** Open the add-node modal seeded with the pane click's flow position. */
   onAddHere: () => void;
+  /** Select every node with no edge touching it. */
+  onSelectOrphans: () => void;
   /** The canvas's current multi-selected node ids — read-only here, used
    *  only to decide whether right-clicking shows the bulk
    *  Group/Duplicate/Delete entries instead of the normal single-node menu. */
@@ -138,6 +141,7 @@ export function ContextMenu({
   onSelectEdge,
   onSelectConnected,
   onAddHere,
+  onSelectOrphans,
   selectedNodeIds,
   onGroupSelection,
   onDuplicateSelection,
@@ -333,9 +337,15 @@ export function ContextMenu({
           </>
         )}
         {state?.kind === "pane" && (
-          <Menu.Item leftSection={<IconPlus size={14} />} onClick={onAddHere}>
-            Add node here
-          </Menu.Item>
+          <>
+            <Menu.Item leftSection={<IconPlus size={14} />} onClick={onAddHere}>
+              Add node here
+            </Menu.Item>
+            <Divider />
+            <Menu.Item leftSection={<IconGhost2 size={14} />} onClick={onSelectOrphans}>
+              Select orphan nodes
+            </Menu.Item>
+          </>
         )}
       </Menu.Dropdown>
     </Menu>

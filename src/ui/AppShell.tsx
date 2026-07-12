@@ -253,6 +253,22 @@ export function AppShell() {
     openAdd();
   }
 
+  /** Selects every node with no edge touching it — neither its source nor
+   *  target matches any edge in the document. The canvas's selection-sync
+   *  effect applies the visual highlight from `selectedNodeIds`, so no React
+   *  Flow state needs touching here. */
+  function handleSelectOrphans(): void {
+    const touchedNodeIds = new Set<string>();
+    for (const edge of document.edges) {
+      touchedNodeIds.add(edge.source);
+      touchedNodeIds.add(edge.target);
+    }
+    const orphanIds = document.nodes
+      .filter((node) => !touchedNodeIds.has(node.id))
+      .map((node) => node.id);
+    setSelectedNodeIds(orphanIds);
+  }
+
   async function handleCopyShareUrl(): Promise<void> {
     try {
       await navigator.clipboard.writeText(buildShareUrl(document));
@@ -452,6 +468,7 @@ export function AppShell() {
         }
         onSelectConnected={handleSelectConnected}
         onAddHere={handleAddHere}
+        onSelectOrphans={handleSelectOrphans}
         selectedNodeIds={selectedNodeIds}
         onGroupSelection={handleGroupSelection}
         onDuplicateSelection={handleDuplicateSelection}
