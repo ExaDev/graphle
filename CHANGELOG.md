@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/ExaDev/graphle/compare/v1.27.0...v1.28.0) (2026-07-12)
+
+
+### Features
+
+* **ui:** add mod+K command palette to jump to a node ([c0faa4b](https://github.com/ExaDev/graphle/commit/c0faa4b5f9209aca6aab0d260389ed92f847149c))
+
 # [1.27.0](https://github.com/ExaDev/graphle/compare/v1.26.0...v1.27.0) (2026-07-12)
 
 
