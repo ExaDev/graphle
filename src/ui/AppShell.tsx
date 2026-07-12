@@ -143,6 +143,18 @@ export function AppShell() {
     );
   }, [document.nodes, selectedNodeIds]);
 
+  /** Whether at least one selected node is GitHub-sourced
+   *  (`GraphNode.fetchedAt !== undefined`) — gates the multi-select
+   *  context-menu's "Refresh" entry, mirroring how
+   *  `commonSelectionExpansions` gates the bulk-expand entries. */
+  const selectionHasFetchedNode = useMemo(
+    () =>
+      document.nodes.some(
+        (node) => selectedNodeIds.includes(node.id) && node.fetchedAt !== undefined,
+      ),
+    [document.nodes, selectedNodeIds],
+  );
+
   function closeAdd(): void {
     closeAddDisclosure();
     setAddHerePos(undefined);
@@ -225,6 +237,44 @@ export function AppShell() {
         addedTotal === 0
           ? "Nothing new to add"
           : `Added ${String(addedTotal)} node${addedTotal === 1 ? "" : "s"} across ${String(ranCount)} selected node${ranCount === 1 ? "" : "s"}`,
+    });
+  }
+
+  /** Re-fetches every GitHub expansion for each GitHub-sourced node
+   *  (`GraphNode.fetchedAt !== undefined`) in `nodeIds`, overwriting its
+   *  existing children with the freshly-fetched data (`onExistingMatch:
+   *  "overwrite"`, see `applyDelta` in `merge.ts`) rather than merging
+   *  alongside them. Serves both the single-node "Refresh" entry (a
+   *  1-element array) and the multi-select one. Runs sequentially, like
+   *  `handleExpandSelection`, so at most one GitHub-panel token-escalation
+   *  prompt is ever pending at a time; each run is silent, with a single
+   *  summary notification once every node has been attempted. */
+  async function handleRefresh(nodeIds: string[]): Promise<void> {
+    let addedTotal = 0;
+    let refreshedCount = 0;
+    for (const nodeId of nodeIds) {
+      const node = document.nodes.find((n) => n.id === nodeId);
+      if (node === undefined || node.fetchedAt === undefined) continue;
+      for (const expansion of expansionsForType(node.type)) {
+        const result = await runNodeExpansion(
+          node,
+          expansion,
+          undefined,
+          new AbortController().signal,
+          undefined,
+          { silent: true, onExistingMatch: "overwrite" },
+        );
+        if (result === undefined) continue;
+        addedTotal += result.addedCount;
+      }
+      refreshedCount += 1;
+    }
+    notifications.show({
+      color: "green",
+      message:
+        refreshedCount === 0
+          ? "Nothing to refresh"
+          : `Refreshed ${String(refreshedCount)} node${refreshedCount === 1 ? "" : "s"}, added ${String(addedTotal)} node${addedTotal === 1 ? "" : "s"}`,
     });
   }
 
@@ -546,6 +596,8 @@ export function AppShell() {
         onUngroup={handleUngroup}
         onExpand={handleExpandNode}
         onExpandSelection={(nodeIds, expansionId) => void handleExpandSelection(nodeIds, expansionId)}
+        selectionHasFetchedNode={selectionHasFetchedNode}
+        onRefresh={(nodeIds) => void handleRefresh(nodeIds)}
       />
     </MantineAppShell>
   );

@@ -449,6 +449,7 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
             nodeChildCount: node.data.childCount,
             nodeType: node.data.type,
             ...(node.data.collapsed !== undefined ? { nodeCollapsed: node.data.collapsed } : {}),
+            ...(node.data.fetchedAt !== undefined ? { nodeFetchedAt: node.data.fetchedAt } : {}),
           });
         }}
         onSelectionContextMenu={(event, selectedNodes) => {

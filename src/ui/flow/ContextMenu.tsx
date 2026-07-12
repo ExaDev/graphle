@@ -9,7 +9,11 @@
  * component has no document access of its own); a node whose type has GitHub
  * expansions (`expansionsForType`, e.g. a repo's Issues/Pull requests/
  * Projects) gets one entry per expansion, mirroring the inspector's
- * `ExpandMenu`; a node with children
+ * `ExpandMenu`; a GitHub-sourced node (`GraphNode.fetchedAt !== undefined`)
+ * additionally gets "Refresh", which re-runs every one of its expansions and
+ * overwrites its existing children — the multi-select branch offers the same
+ * entry across the whole selection when at least one selected node
+ * qualifies; a node with children
  * (`state.nodeChildCount > 0` — see `GraphNode.parentId`/`collapsed` in
  * `src/schema/node.ts`) gets a Collapse/Expand entry; a `"group"`-typed node
  * additionally gets "Ungroup".
@@ -43,6 +47,7 @@ import {
   IconPencil,
   IconPlaylistAdd,
   IconPlus,
+  IconRefresh,
   IconStack2,
   IconTrash,
 } from "@tabler/icons-react";
@@ -89,6 +94,12 @@ export interface ContextMenuState {
   /** Present only when `kind === "node"`: its graphle type name, so a
    *  `"group"` node can additionally offer "Ungroup". */
   nodeType?: string;
+  /** Present only when `kind === "node"` and the node is GitHub-sourced
+   *  (`GraphNode.fetchedAt !== undefined`, see `src/schema/node.ts`): the
+   *  ISO timestamp it was last fetched at, so the single-node menu can offer
+   *  "Refresh". Manually-created nodes never carry this, so they never get
+   *  the entry. */
+  nodeFetchedAt?: string;
 }
 
 export interface ContextMenuProps {
@@ -142,6 +153,18 @@ export interface ContextMenuProps {
   /** Run one of `commonSelectionExpansions`, identified by its `Expansion.id`,
    *  across every id in `nodeIds`. */
   onExpandSelection: (nodeIds: string[], expansionId: string) => void;
+  /** Whether at least one node in `selectedNodeIds` is GitHub-sourced
+   *  (`GraphNode.fetchedAt !== undefined`) — computed by the owner, since
+   *  this component has no document access. Gates the multi-select menu's
+   *  "Refresh" entry the same way `commonSelectionExpansions.length > 0`
+   *  gates the bulk-expand entries. */
+  selectionHasFetchedNode: boolean;
+  /** Re-runs every GitHub expansion available for each id in `nodeIds` that
+   *  is GitHub-sourced (`GraphNode.fetchedAt !== undefined`), overwriting
+   *  its existing children with the freshly-fetched data. Serves both the
+   *  single-node "Refresh" entry (a 1-element array) and the multi-select
+   *  one. */
+  onRefresh: (nodeIds: string[]) => void;
 }
 
 export function ContextMenu({
@@ -166,6 +189,8 @@ export function ContextMenu({
   onUngroup,
   onExpand,
   onExpandSelection,
+  selectionHasFetchedNode,
+  onRefresh,
 }: ContextMenuProps) {
   // The anchor is only positioned when the menu is open; when closed, no
   // inline coordinates are applied (the 1px box is invisible and pointer-none,
@@ -255,6 +280,17 @@ export function ContextMenu({
                   ))}
                 </>
               )}
+              {selectionHasFetchedNode && (
+                <>
+                  <Divider />
+                  <Menu.Item
+                    leftSection={<IconRefresh size={14} />}
+                    onClick={() => onRefresh(selectedNodeIds)}
+                  >
+                    Refresh {selectedNodeIds.length} nodes
+                  </Menu.Item>
+                </>
+              )}
               <Divider />
               <Menu.Item
                 color="red"
@@ -305,6 +341,16 @@ export function ContextMenu({
                     {expansion.label}
                   </Menu.Item>
                 ))}
+              {state.nodeFetchedAt !== undefined && (
+                <Menu.Item
+                  leftSection={<IconRefresh size={14} />}
+                  onClick={() => {
+                    if (state.nodeId !== undefined) onRefresh([state.nodeId]);
+                  }}
+                >
+                  Refresh
+                </Menu.Item>
+              )}
               {state.nodeChildCount !== undefined && state.nodeChildCount > 0 && (
                 <Menu.Item
                   leftSection={
