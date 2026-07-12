@@ -231,9 +231,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
   const [formTokenInput, setFormTokenInput] = useState("");
 
   const [viewer, setViewer] = useState<GitHubViewer | undefined>(undefined);
-  const [rateLimit, setRateLimit] = useState<
-    { remaining: number; resetAt: string } | undefined
-  >(undefined);
+  const rateLimit = useGraphStore((state) => state.rateLimit);
 
   const [orgs, setOrgs] = useState<GitHubOrg[]>([]);
   const [orgsPage, setOrgsPage] = useState<PageTail>(NO_PAGE);
@@ -367,7 +365,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
         if (controller.signal.aborted || result === undefined) return;
         clientRef.current = client;
         setViewer(result);
-        setRateLimit(client.lastRateLimit);
+        useGraphStore.getState().setRateLimit(client.lastRateLimit);
         setSelectedAccount(undefined);
         setRepos([]);
         setReposPage(NO_PAGE);
@@ -515,7 +513,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
       if (next === undefined) {
         clientRef.current = undefined;
         setViewer(undefined);
-        setRateLimit(undefined);
+        useGraphStore.getState().setRateLimit(undefined);
       }
     }
   }

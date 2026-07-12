@@ -23,6 +23,7 @@ import {
   Box,
   Button,
   Group,
+  Text,
   TextInput,
   Tooltip,
 } from "@mantine/core";
@@ -103,6 +104,7 @@ export function AppShell() {
   const githubPanelOpened = useGraphStore((state) => state.githubPanelOpened);
   const openGitHubPanel = useGraphStore((state) => state.openGitHubPanel);
   const closeGitHubPanel = useGraphStore((state) => state.closeGitHubPanel);
+  const rateLimit = useGraphStore((state) => state.rateLimit);
 
   const [addOpened, { open: openAdd, close: closeAddDisclosure }] =
     useDisclosure(false);
@@ -376,6 +378,15 @@ export function AppShell() {
           >
             <IconBrandGithub size={16} />
           </ActionIcon>
+
+          {rateLimit !== undefined && (
+            <Box component="span" visibleFrom="sm">
+              <Text size="xs" c="dimmed">
+                {String(rateLimit.remaining)} calls left (resets{" "}
+                {new Date(rateLimit.resetAt).toLocaleTimeString()})
+              </Text>
+            </Box>
+          )}
 
           <ActionIcon
             variant="default"
