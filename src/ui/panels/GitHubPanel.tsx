@@ -44,9 +44,11 @@ import {
   Group,
   PasswordInput,
   ScrollArea,
+  SegmentedControl,
   Stack,
   Tabs,
   Text,
+  TextInput,
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -55,6 +57,7 @@ import {
   IconExternalLink,
   IconKey,
   IconRefresh,
+  IconSearch,
   IconShieldCheck,
 } from "@tabler/icons-react";
 
@@ -63,13 +66,18 @@ import {
   createGitHubClient,
   GitHubError,
   githubErrorMessage,
+  issueWithRepoToNode,
   orgToNode,
   projectToNode,
+  pullRequestWithRepoToNode,
   repoToNode,
   type GitHubClient,
+  type GitHubIssueWithRepo,
   type GitHubOrg,
   type GitHubProject,
+  type GitHubPullRequestWithRepo,
   type GitHubRepo,
+  type GitHubSearchAccount,
   type GitHubViewer,
 } from "@/github";
 import type { GraphNode } from "@/schema";
@@ -90,6 +98,31 @@ interface PageTail {
 }
 
 const NO_PAGE: PageTail = { cursor: undefined, hasNextPage: false };
+
+/**
+ * A selected account to browse the repos/projects of. `kind` routes
+ * `loadRepos`/`loadProjects` to `listOrgRepos`/`listOrgProjects` (an
+ * `organization`) or `listUserRepos`/`listUserProjects` (a `user`) — GitHub
+ * has no single query that resolves either kind by login (the same split
+ * `getOrgProject`/`getUserProject` already have).
+ */
+interface AccountRef {
+  login: string;
+  kind: "organization" | "user";
+}
+
+/** Which of the four `search*` client methods the Search tab is currently
+ *  driving. */
+type SearchResourceType = "repositories" | "issues" | "pullRequests" | "accounts";
+
+function isSearchResourceType(value: string): value is SearchResourceType {
+  return (
+    value === "repositories" ||
+    value === "issues" ||
+    value === "pullRequests" ||
+    value === "accounts"
+  );
+}
 
 /** Classic scopes graphle's GraphQL queries need — kept as the single source
  *  for both the help text and {@link CREATE_TOKEN_URL} so they can't drift. */
@@ -165,7 +198,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
 
   const [orgs, setOrgs] = useState<GitHubOrg[]>([]);
   const [orgsPage, setOrgsPage] = useState<PageTail>(NO_PAGE);
-  const [selectedOrgLogin, setSelectedOrgLogin] = useState<string | undefined>(
+  const [selectedAccount, setSelectedAccount] = useState<AccountRef | undefined>(
     undefined,
   );
 
@@ -174,15 +207,39 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
   const [projects, setProjects] = useState<GitHubProject[]>([]);
   const [projectsPage, setProjectsPage] = useState<PageTail>(NO_PAGE);
 
+  const [browseMode, setBrowseMode] = useState<"browse" | "search">("browse");
+  const [searchType, setSearchType] = useState<SearchResourceType>("repositories");
+  const [searchInput, setSearchInput] = useState("");
+  const [lastSubmittedQuery, setLastSubmittedQuery] = useState<string | undefined>(undefined);
+
+  const [searchedRepos, setSearchedRepos] = useState<GitHubRepo[]>([]);
+  const [searchedReposPage, setSearchedReposPage] = useState<PageTail>(NO_PAGE);
+  const [searchedIssues, setSearchedIssues] = useState<GitHubIssueWithRepo[]>([]);
+  const [searchedIssuesPage, setSearchedIssuesPage] = useState<PageTail>(NO_PAGE);
+  const [searchedPullRequests, setSearchedPullRequests] = useState<GitHubPullRequestWithRepo[]>([]);
+  const [searchedPullRequestsPage, setSearchedPullRequestsPage] = useState<PageTail>(NO_PAGE);
+  const [searchedAccounts, setSearchedAccounts] = useState<GitHubSearchAccount[]>([]);
+  const [searchedAccountsPage, setSearchedAccountsPage] = useState<PageTail>(NO_PAGE);
+
   const [validating, setValidating] = useState(false);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingSearch, setLoadingSearch] = useState(false);
 
   // The validated client, kept for browse fetches. Held in a ref rather than
   // state because its identity is irrelevant to rendering — only its methods
   // are called from handlers.
   const clientRef = useRef<GitHubClient | undefined>(undefined);
+
+  // Bumped by every user-initiated search action (submit or a resource-type
+  // change re-running the last query) — never by a "Load more" page fetch,
+  // which continues the same series. `runSearch` stamps each in-flight
+  // request with the generation active when it started and discards its
+  // result if a newer one has started by the time it resolves, so an
+  // in-flight resource-type-change search (still using the previous query)
+  // can never clobber a freshly submitted one that happens to resolve first.
+  const searchGenerationRef = useRef(0);
 
   // One AbortController for the whole open lifetime, aborted on close so every
   // in-flight fetch rejects promptly and its rejection is suppressed (see
@@ -307,7 +364,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
     }
 
     // Reset browse state for the freshly authenticated viewer, then load orgs.
-    setSelectedOrgLogin(undefined);
+    setSelectedAccount(undefined);
     setRepos([]);
     setReposPage(NO_PAGE);
     setProjects([]);
@@ -327,14 +384,20 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
   }
 
   async function loadRepos(
-    login: string,
+    account: AccountRef,
     cursor: string | undefined,
     sig: AbortSignal,
   ): Promise<void> {
     const client = clientRef.current;
     if (client === undefined) return;
     setLoadingRepos(true);
-    const result = await runWith(() => client.listOrgRepos(login, cursor, sig), sig);
+    const result = await runWith(
+      () =>
+        account.kind === "organization"
+          ? client.listOrgRepos(account.login, cursor, sig)
+          : client.listUserRepos(account.login, cursor, sig),
+      sig,
+    );
     setLoadingRepos(false);
     if (result === undefined) return;
     setRepos((prev) => (cursor === undefined ? result.items : [...prev, ...result.items]));
@@ -342,14 +405,20 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
   }
 
   async function loadProjects(
-    login: string,
+    account: AccountRef,
     cursor: string | undefined,
     sig: AbortSignal,
   ): Promise<void> {
     const client = clientRef.current;
     if (client === undefined) return;
     setLoadingProjects(true);
-    const result = await runWith(() => client.listOrgProjects(login, cursor, sig), sig);
+    const result = await runWith(
+      () =>
+        account.kind === "organization"
+          ? client.listOrgProjects(account.login, cursor, sig)
+          : client.listUserProjects(account.login, cursor, sig),
+      sig,
+    );
     setLoadingProjects(false);
     if (result === undefined) return;
     setProjects((prev) =>
@@ -358,16 +427,122 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
     setProjectsPage({ cursor: result.endCursor, hasNextPage: result.hasNextPage });
   }
 
-  function handleSelectOrg(login: string): void {
+  function handleSelectAccount(account: AccountRef): void {
     const sig = signal();
     if (sig === undefined) return;
-    setSelectedOrgLogin(login);
+    setSelectedAccount(account);
     setRepos([]);
     setReposPage(NO_PAGE);
     setProjects([]);
     setProjectsPage(NO_PAGE);
-    void loadRepos(login, undefined, sig);
-    void loadProjects(login, undefined, sig);
+    void loadRepos(account, undefined, sig);
+    void loadProjects(account, undefined, sig);
+  }
+
+  /**
+   * Runs one of the four `search*` client methods, keyed by `type`, and folds
+   * the result into that type's own state. Never fires as-you-type — always
+   * called from an explicit submit (Enter/button) or a resource-type change
+   * reusing the last submitted query — GitHub's search endpoints are more
+   * strictly rate-limited than ordinary list queries.
+   *
+   * `generation` pins this call to the {@link searchGenerationRef} value
+   * active when it was started; if a newer search has started by the time
+   * this one resolves, its result is discarded instead of applied — without
+   * this, a resource-type-change search (still using the previous query) can
+   * resolve after a freshly submitted new-query search and clobber it with
+   * stale results, since both share the same page-level abort signal and
+   * neither request is otherwise cancelled by the other.
+   */
+  async function runSearch(
+    type: SearchResourceType,
+    query: string,
+    cursor: string | undefined,
+    sig: AbortSignal,
+    generation: number,
+  ): Promise<void> {
+    const client = clientRef.current;
+    if (client === undefined) return;
+    setLoadingSearch(true);
+    switch (type) {
+      case "repositories": {
+        const result = await runWith(() => client.searchRepositories(query, cursor, sig), sig);
+        if (generation !== searchGenerationRef.current) return;
+        setLoadingSearch(false);
+        if (result === undefined) return;
+        setSearchedRepos((prev) => (cursor === undefined ? result.items : [...prev, ...result.items]));
+        setSearchedReposPage({ cursor: result.endCursor, hasNextPage: result.hasNextPage });
+        return;
+      }
+      case "issues": {
+        const result = await runWith(() => client.searchIssues(query, cursor, sig), sig);
+        if (generation !== searchGenerationRef.current) return;
+        setLoadingSearch(false);
+        if (result === undefined) return;
+        setSearchedIssues((prev) => (cursor === undefined ? result.items : [...prev, ...result.items]));
+        setSearchedIssuesPage({ cursor: result.endCursor, hasNextPage: result.hasNextPage });
+        return;
+      }
+      case "pullRequests": {
+        const result = await runWith(() => client.searchPullRequests(query, cursor, sig), sig);
+        if (generation !== searchGenerationRef.current) return;
+        setLoadingSearch(false);
+        if (result === undefined) return;
+        setSearchedPullRequests((prev) =>
+          cursor === undefined ? result.items : [...prev, ...result.items],
+        );
+        setSearchedPullRequestsPage({ cursor: result.endCursor, hasNextPage: result.hasNextPage });
+        return;
+      }
+      case "accounts": {
+        const result = await runWith(() => client.searchAccounts(query, cursor, sig), sig);
+        if (generation !== searchGenerationRef.current) return;
+        setLoadingSearch(false);
+        if (result === undefined) return;
+        setSearchedAccounts((prev) => (cursor === undefined ? result.items : [...prev, ...result.items]));
+        setSearchedAccountsPage({ cursor: result.endCursor, hasNextPage: result.hasNextPage });
+        return;
+      }
+    }
+  }
+
+  function resetSearchResults(): void {
+    setSearchedRepos([]);
+    setSearchedReposPage(NO_PAGE);
+    setSearchedIssues([]);
+    setSearchedIssuesPage(NO_PAGE);
+    setSearchedPullRequests([]);
+    setSearchedPullRequestsPage(NO_PAGE);
+    setSearchedAccounts([]);
+    setSearchedAccountsPage(NO_PAGE);
+  }
+
+  function handleSearchSubmit(): void {
+    const sig = signal();
+    if (sig === undefined) return;
+    const query = searchInput.trim();
+    if (query === "") {
+      notifications.show({ color: "red", message: "Enter a search query first" });
+      return;
+    }
+    resetSearchResults();
+    setLastSubmittedQuery(query);
+    const generation = ++searchGenerationRef.current;
+    void runSearch(searchType, query, undefined, sig, generation);
+  }
+
+  /** Switching resource type re-runs the last submitted query (a single,
+   *  deliberate click, not as-you-type) rather than requiring the user to
+   *  retype it; no query has been submitted yet, this just switches the
+   *  empty view. */
+  function handleSearchTypeChange(type: SearchResourceType): void {
+    setSearchType(type);
+    resetSearchResults();
+    if (lastSubmittedQuery === undefined) return;
+    const sig = signal();
+    if (sig === undefined) return;
+    const generation = ++searchGenerationRef.current;
+    void runSearch(type, lastSubmittedQuery, undefined, sig, generation);
   }
 
   return (
@@ -453,30 +628,55 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
           )}
         </Stack>
 
-        {/* --- Browse ------------------------------------------------ */}
+        {/* --- Browse / Search ---------------------------------------- */}
         {viewer !== undefined && (
           <>
-            <Divider label="Your organisations" labelPosition="center" />
-            <ScrollArea.Autosize mah="30vh" type="scroll">
-              <Stack gap="xs">
-                {loadingOrgs && orgs.length === 0 && (
-                  <Text size="sm" c="dimmed">
-                    Loading…
+            <SegmentedControl
+              fullWidth
+              value={browseMode}
+              onChange={(value) => setBrowseMode(value === "search" ? "search" : "browse")}
+              data={[
+                { value: "browse", label: "Browse" },
+                { value: "search", label: "Search" },
+              ]}
+            />
+
+            {browseMode === "browse" && (
+              <>
+                <UnstyledButton
+                  fw={600}
+                  onClick={() => handleSelectAccount({ login: viewer.login, kind: "user" })}
+                  aria-label={`Browse ${viewer.login}'s own repositories and projects`}
+                >
+                  <Text fw={selectedAccount?.login === viewer.login ? 700 : 600}>
+                    Your repositories &amp; projects
                   </Text>
-                )}
-                {!loadingOrgs && orgs.length === 0 && (
-                  <Text size="sm" c="dimmed">
-                    No organisations visible to this token.
-                  </Text>
-                )}
-                {orgs.map((org) => (
-                  <OrgRow
-                    key={org.login}
-                    org={org}
-                    selected={org.login === selectedOrgLogin}
-                    onSelect={() => handleSelectOrg(org.login)}
-                    onAdd={() => addNodes([orgToNode(org, cascadePosition(nodeCount))])}
-                  />
+                </UnstyledButton>
+
+                <Divider label="Your organisations" labelPosition="center" />
+                <ScrollArea.Autosize mah="30vh" type="scroll">
+                  <Stack gap="xs">
+                    {loadingOrgs && orgs.length === 0 && (
+                      <Text size="sm" c="dimmed">
+                        Loading…
+                      </Text>
+                    )}
+                    {!loadingOrgs && orgs.length === 0 && (
+                      <Text size="sm" c="dimmed">
+                        No organisations visible to this token.
+                      </Text>
+                    )}
+                    {orgs.map((org) => (
+                      <OrgRow
+                        key={org.login}
+                        org={org}
+                        selected={
+                          selectedAccount?.login === org.login &&
+                          selectedAccount.kind === "organization"
+                        }
+                        onSelect={() => handleSelectAccount({ login: org.login, kind: "organization" })}
+                        onAdd={() => addNodes([orgToNode(org, cascadePosition(nodeCount))])}
+                      />
                 ))}
                 {orgsPage.hasNextPage && (
                   <Button
@@ -494,10 +694,235 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
                 )}
               </Stack>
             </ScrollArea.Autosize>
+              </>
+            )}
 
-            {selectedOrgLogin !== undefined && (
+            {browseMode === "search" && (
+              <Stack gap="xs">
+                <Group
+                  gap="xs"
+                  component="form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleSearchSubmit();
+                  }}
+                >
+                  <TextInput
+                    style={{ flex: 1 }}
+                    placeholder="Search GitHub… (org:, repo:, is:open, etc. supported)"
+                    leftSection={<IconSearch size={16} />}
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.currentTarget.value)}
+                  />
+                  <Button type="submit" loading={loadingSearch}>
+                    Search
+                  </Button>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  GitHub&apos;s search endpoints are more strictly rate-limited than
+                  browsing — searches only run when submitted, not as you type.
+                </Text>
+                <SegmentedControl
+                  fullWidth
+                  value={searchType}
+                  onChange={(value) => {
+                    if (isSearchResourceType(value)) handleSearchTypeChange(value);
+                  }}
+                  data={[
+                    { value: "repositories", label: "Repositories" },
+                    { value: "issues", label: "Issues" },
+                    { value: "pullRequests", label: "Pull requests" },
+                    { value: "accounts", label: "Accounts" },
+                  ]}
+                />
+
+                {searchType === "repositories" && (
+                  <ScrollArea.Autosize mah="30vh" type="scroll">
+                    <Stack gap="xs">
+                      {loadingSearch && searchedRepos.length === 0 && (
+                        <Text size="sm" c="dimmed">
+                          Searching…
+                        </Text>
+                      )}
+                      {!loadingSearch &&
+                        lastSubmittedQuery !== undefined &&
+                        searchedRepos.length === 0 && (
+                          <Text size="sm" c="dimmed">
+                            No repositories found.
+                          </Text>
+                        )}
+                      {searchedRepos.map((repo) => (
+                        <RepoRow
+                          key={`${repo.owner.login}/${repo.name}`}
+                          repo={repo}
+                          onAdd={() => addNodes([repoToNode(repo, cascadePosition(nodeCount))])}
+                        />
+                      ))}
+                      {searchedReposPage.hasNextPage && lastSubmittedQuery !== undefined && (
+                        <LoadMoreButton
+                          loading={loadingSearch}
+                          onClick={() => {
+                            const sig = signal();
+                            if (sig !== undefined) {
+                              void runSearch(
+                                "repositories",
+                                lastSubmittedQuery,
+                                searchedReposPage.cursor,
+                                sig,
+                                searchGenerationRef.current,
+                              );
+                            }
+                          }}
+                        />
+                      )}
+                    </Stack>
+                  </ScrollArea.Autosize>
+                )}
+
+                {searchType === "issues" && (
+                  <ScrollArea.Autosize mah="30vh" type="scroll">
+                    <Stack gap="xs">
+                      {loadingSearch && searchedIssues.length === 0 && (
+                        <Text size="sm" c="dimmed">
+                          Searching…
+                        </Text>
+                      )}
+                      {!loadingSearch &&
+                        lastSubmittedQuery !== undefined &&
+                        searchedIssues.length === 0 && (
+                          <Text size="sm" c="dimmed">
+                            No issues found.
+                          </Text>
+                        )}
+                      {searchedIssues.map((issue) => (
+                        <IssueRow
+                          key={`${issue.repository.owner.login}/${issue.repository.name}#${String(issue.number)}`}
+                          issue={issue}
+                          onAdd={() =>
+                            addNodes([issueWithRepoToNode(issue, cascadePosition(nodeCount))])
+                          }
+                        />
+                      ))}
+                      {searchedIssuesPage.hasNextPage && lastSubmittedQuery !== undefined && (
+                        <LoadMoreButton
+                          loading={loadingSearch}
+                          onClick={() => {
+                            const sig = signal();
+                            if (sig !== undefined) {
+                              void runSearch(
+                                "issues",
+                                lastSubmittedQuery,
+                                searchedIssuesPage.cursor,
+                                sig,
+                                searchGenerationRef.current,
+                              );
+                            }
+                          }}
+                        />
+                      )}
+                    </Stack>
+                  </ScrollArea.Autosize>
+                )}
+
+                {searchType === "pullRequests" && (
+                  <ScrollArea.Autosize mah="30vh" type="scroll">
+                    <Stack gap="xs">
+                      {loadingSearch && searchedPullRequests.length === 0 && (
+                        <Text size="sm" c="dimmed">
+                          Searching…
+                        </Text>
+                      )}
+                      {!loadingSearch &&
+                        lastSubmittedQuery !== undefined &&
+                        searchedPullRequests.length === 0 && (
+                          <Text size="sm" c="dimmed">
+                            No pull requests found.
+                          </Text>
+                        )}
+                      {searchedPullRequests.map((pullRequest) => (
+                        <PullRequestRow
+                          key={`${pullRequest.repository.owner.login}/${pullRequest.repository.name}#${String(pullRequest.number)}`}
+                          pullRequest={pullRequest}
+                          onAdd={() =>
+                            addNodes([
+                              pullRequestWithRepoToNode(pullRequest, cascadePosition(nodeCount)),
+                            ])
+                          }
+                        />
+                      ))}
+                      {searchedPullRequestsPage.hasNextPage && lastSubmittedQuery !== undefined && (
+                        <LoadMoreButton
+                          loading={loadingSearch}
+                          onClick={() => {
+                            const sig = signal();
+                            if (sig !== undefined) {
+                              void runSearch(
+                                "pullRequests",
+                                lastSubmittedQuery,
+                                searchedPullRequestsPage.cursor,
+                                sig,
+                                searchGenerationRef.current,
+                              );
+                            }
+                          }}
+                        />
+                      )}
+                    </Stack>
+                  </ScrollArea.Autosize>
+                )}
+
+                {searchType === "accounts" && (
+                  <ScrollArea.Autosize mah="30vh" type="scroll">
+                    <Stack gap="xs">
+                      {loadingSearch && searchedAccounts.length === 0 && (
+                        <Text size="sm" c="dimmed">
+                          Searching…
+                        </Text>
+                      )}
+                      {!loadingSearch &&
+                        lastSubmittedQuery !== undefined &&
+                        searchedAccounts.length === 0 && (
+                          <Text size="sm" c="dimmed">
+                            No accounts found.
+                          </Text>
+                        )}
+                      {searchedAccounts.map((account) => (
+                        <AccountRow
+                          key={account.login}
+                          account={account}
+                          selected={selectedAccount?.login === account.login}
+                          onSelect={() =>
+                            handleSelectAccount({ login: account.login, kind: account.accountType })
+                          }
+                          onAdd={() => addNodes([orgToNode(account, cascadePosition(nodeCount))])}
+                        />
+                      ))}
+                      {searchedAccountsPage.hasNextPage && lastSubmittedQuery !== undefined && (
+                        <LoadMoreButton
+                          loading={loadingSearch}
+                          onClick={() => {
+                            const sig = signal();
+                            if (sig !== undefined) {
+                              void runSearch(
+                                "accounts",
+                                lastSubmittedQuery,
+                                searchedAccountsPage.cursor,
+                                sig,
+                                searchGenerationRef.current,
+                              );
+                            }
+                          }}
+                        />
+                      )}
+                    </Stack>
+                  </ScrollArea.Autosize>
+                )}
+              </Stack>
+            )}
+
+            {selectedAccount !== undefined && (
               <>
-                <Divider label={selectedOrgLogin} labelPosition="center" />
+                <Divider label={selectedAccount.login} labelPosition="center" />
                 <Tabs defaultValue="repos">
                   <Tabs.List>
                     <Tabs.Tab value="repos">Repositories</Tabs.Tab>
@@ -532,7 +957,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
                             onClick={() => {
                               const sig = signal();
                               if (sig !== undefined) {
-                                void loadRepos(selectedOrgLogin, reposPage.cursor, sig);
+                                void loadRepos(selectedAccount, reposPage.cursor, sig);
                               }
                             }}
                           />
@@ -561,7 +986,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
                             onAdd={() =>
                               addNodes([
                                 projectToNode(
-                                  selectedOrgLogin,
+                                  selectedAccount.login,
                                   project,
                                   cascadePosition(nodeCount),
                                 ),
@@ -576,7 +1001,7 @@ export function GitHubPanel({ opened, onClose }: GitHubPanelProps) {
                               const sig = signal();
                               if (sig !== undefined) {
                                 void loadProjects(
-                                  selectedOrgLogin,
+                                  selectedAccount,
                                   projectsPage.cursor,
                                   sig,
                                 );
@@ -692,5 +1117,95 @@ function LoadMoreButton({
     >
       Load more
     </Button>
+  );
+}
+
+/** A search result issue row with an "Add" action. */
+function IssueRow({
+  issue,
+  onAdd,
+}: {
+  issue: GitHubIssueWithRepo;
+  onAdd: () => void;
+}) {
+  return (
+    <Group justify="space-between" gap="xs" px="sm" py="xs">
+      <Stack gap={2} style={{ minWidth: 0 }}>
+        <Text fw={600} lineClamp={1}>
+          {issue.title}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {issue.repository.owner.login}/{issue.repository.name}#{String(issue.number)} —{" "}
+          {issue.state}
+        </Text>
+      </Stack>
+      <Button size="xs" variant="light" leftSection={<IconCirclePlus size={14} />} onClick={onAdd}>
+        Add
+      </Button>
+    </Group>
+  );
+}
+
+/** A search result pull request row with an "Add" action. */
+function PullRequestRow({
+  pullRequest,
+  onAdd,
+}: {
+  pullRequest: GitHubPullRequestWithRepo;
+  onAdd: () => void;
+}) {
+  return (
+    <Group justify="space-between" gap="xs" px="sm" py="xs">
+      <Stack gap={2} style={{ minWidth: 0 }}>
+        <Text fw={600} lineClamp={1}>
+          {pullRequest.title}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {pullRequest.repository.owner.login}/{pullRequest.repository.name}#
+          {String(pullRequest.number)} — {pullRequest.state}
+        </Text>
+      </Stack>
+      <Button size="xs" variant="light" leftSection={<IconCirclePlus size={14} />} onClick={onAdd}>
+        Add
+      </Button>
+    </Group>
+  );
+}
+
+/** A search result account row (user or organisation) — selectable to browse
+ *  its repos/projects via the same drill-down section {@link OrgRow} feeds,
+ *  and addable directly, matching {@link OrgRow}'s two affordances. */
+function AccountRow({
+  account,
+  selected,
+  onSelect,
+  onAdd,
+}: {
+  account: GitHubSearchAccount;
+  selected: boolean;
+  onSelect: () => void;
+  onAdd: () => void;
+}) {
+  return (
+    <Group justify="space-between" gap="xs" px="sm" py="xs">
+      <UnstyledButton fw={600} onClick={onSelect} aria-label={`Browse ${account.login}`}>
+        <Stack gap={2}>
+          <Group gap={6}>
+            <Text fw={selected ? 700 : 600}>{account.login}</Text>
+            <Badge size="xs" variant="light" color={account.accountType === "user" ? "teal" : "blue"}>
+              {account.accountType}
+            </Badge>
+          </Group>
+          {account.name !== undefined && (
+            <Text size="xs" c="dimmed">
+              {account.name}
+            </Text>
+          )}
+        </Stack>
+      </UnstyledButton>
+      <Button size="xs" variant="light" leftSection={<IconCirclePlus size={14} />} onClick={onAdd}>
+        Add
+      </Button>
+    </Group>
   );
 }
