@@ -68,6 +68,7 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
   const apply = useGraphStore((s) => s.apply);
   const setSelection = useGraphStore((s) => s.setSelection);
   const setSelectedNodeIds = useGraphStore((s) => s.setSelectedNodeIds);
+  const selectedNodeIds = useGraphStore((s) => s.selectedNodeIds);
   const { fitView, screenToFlowPosition } = useReactFlow();
   // Drive React Flow's colour mode from the Mantine scheme so the controls and
   // minimap follow light/dark/system (React Flow otherwise defaults to light).
@@ -287,16 +288,39 @@ export function GraphCanvas({ onContextMenu }: GraphCanvasProps) {
     [setSelection, setSelectedNodeIds],
   );
 
+  // Mirror the store's selection back onto React Flow's local `selected`
+  // flags, the other direction from `handleSelectionChange` above — so a
+  // programmatic `setSelectedNodeIds` call (from outside the canvas, e.g. a
+  // panel or hotkey) is reflected as a visual highlight, not just in the
+  // store. Setting `selected` via the controlled `nodes` prop does not itself
+  // re-fire `onSelectionChange`, so this does not loop back into
+  // `handleSelectionChange`. Gated on a ref of the last-applied id list
+  // (mirroring `prevStructureRef` above), so a mouse-driven selection —
+  // which already carries matching `selected` flags by the time
+  // `handleSelectionChange` mirrors it into the store — does not trigger a
+  // second, redundant `setNodes`.
+  const prevSelectedNodeIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    const prevIds = prevSelectedNodeIdsRef.current;
+    const unchanged =
+      prevIds.length === selectedNodeIds.length &&
+      prevIds.every((id, index) => id === selectedNodeIds[index]);
+    if (unchanged) return;
+    prevSelectedNodeIdsRef.current = selectedNodeIds;
+    setNodes((prev) =>
+      prev.map((node) => ({ ...node, selected: selectedNodeIds.includes(node.id) })),
+    );
+  }, [selectedNodeIds]);
+
   // Selects every currently visible node — `nodes` is already the
   // post-documentToFlow visible set, so a node hidden by a collapsed
-  // ancestor is correctly excluded, matching what's selectable by hand.
-  // Flips React Flow's own local `selected` flag (for the visual highlight)
-  // alongside the store mirrors `handleSelectionChange` also updates.
+  // ancestor is correctly excluded, matching what's selectable by hand. The
+  // visual highlight is applied by the effect above, driven by the store
+  // update here.
   useHotkeys([
     [
       "mod+A",
       () => {
-        setNodes((prev) => prev.map((node) => ({ ...node, selected: true })));
         setSelectedNodeIds(nodes.map((node) => node.id));
         setSelection({ nodeId: nodes[0]?.id, edgeId: undefined });
       },
