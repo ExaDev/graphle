@@ -18,15 +18,12 @@ import { Badge, Tooltip } from "@mantine/core";
 import { IconChevronDown, IconChevronRight, IconClockExclamation } from "@tabler/icons-react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import { resolveType, type GraphNode, type NodeTypeDefinition } from "@/schema";
+import { resolveType } from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
 
+import { extractLabel } from "./node-label";
 import { collapseToggle, nodeCard, nodeHeader, nodeLabel, staleIcon } from "./node-kinds.css";
-import {
-  DEFAULT_TYPE_PRESENTATION,
-  getTypePresentation,
-  type TypePresentation,
-} from "./type-presentation";
+import { DEFAULT_TYPE_PRESENTATION, getTypePresentation } from "./type-presentation";
 import type { GraphFlowNode } from "./to-flow";
 
 /** How long after a GitHub fetch a node is considered stale, shown by a small
@@ -42,21 +39,6 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 function isStale(fetchedAt: string | undefined): boolean {
   if (fetchedAt === undefined) return false;
   return Date.now() - Date.parse(fetchedAt) > STALE_AFTER_MS;
-}
-
-/**
- * Extract a node's display label from its data via the type's `labelField`. A
- * non-string (missing or wrong-typed) value falls back to the type's human
- * label, so a fresh node whose label field is not yet filled still shows a
- * recognisable title rather than a blank.
- */
-function extractLabel(
-  node: GraphNode,
-  typeDef: NodeTypeDefinition,
-  presentation: TypePresentation,
-): string {
-  const value = node.data[typeDef.labelField];
-  return typeof value === "string" ? value : presentation.label;
 }
 
 /**

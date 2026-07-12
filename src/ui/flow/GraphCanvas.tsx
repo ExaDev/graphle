@@ -42,6 +42,7 @@ import { useGraphStore } from "@/ui/store/graph-store";
 import { computeAutoLayout, type NodeSize } from "./auto-layout";
 import { type ContextMenuState } from "./ContextMenu";
 import { snapToggleActive } from "./GraphCanvas.css";
+import { NodeSearchPalette } from "./NodeSearchPalette";
 import { exportCanvasAsPng, exportCanvasAsSvg } from "./snapshot-export";
 import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
 import { nodeTypes } from "./type-presentation";
@@ -56,6 +57,10 @@ const DEFAULT_NODE_HEIGHT = 80;
 // Grid spacing (px) nodes snap to when snap-to-grid is enabled via the
 // Controls toggle below.
 const SNAP_GRID_PX = 16;
+
+// Pan/zoom animation duration (ms) for `fitView` when jumping to a node
+// chosen from the search palette.
+const JUMP_TO_NODE_FIT_DURATION_MS = 300;
 
 /** Imperative export capability exposed to {@link AppShell} via `ref` — the
  *  PNG/SVG export menu items live in AppShell (outside
@@ -444,6 +449,19 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
     [nodes, getNodesBounds],
   );
 
+  // Pans/zooms to the node chosen from the search palette and selects it, so
+  // the inspector opens on it and the selection-sync effect above applies the
+  // visual highlight — the same two effects a mouse click on the node itself
+  // would produce.
+  const handleJumpToNode = useCallback(
+    (nodeId: string) => {
+      void fitView({ nodes: [{ id: nodeId }], duration: JUMP_TO_NODE_FIT_DURATION_MS });
+      setSelectedNodeIds([nodeId]);
+      setSelection({ nodeId, edgeId: undefined });
+    },
+    [fitView, setSelectedNodeIds, setSelection],
+  );
+
   return (
     <div style={{ height: "100%", width: "100%" }}>
       <ReactFlow
@@ -541,6 +559,7 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
         </Controls>
         <MiniMap />
       </ReactFlow>
+      <NodeSearchPalette nodes={nodes} onSelectNode={handleJumpToNode} />
     </div>
   );
 }

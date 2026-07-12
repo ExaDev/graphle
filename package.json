@@ -27,6 +27,7 @@
     "@mantine/core": "^9.4.1",
     "@mantine/hooks": "^9.4.1",
     "@mantine/notifications": "^9.4.1",
+    "@mantine/spotlight": "^9.4.1",
     "@mantine/vanilla-extract": "^9.4.1",
     "@tabler/icons-react": "^3.44.0",
     "@xyflow/react": "^12.11.2",
