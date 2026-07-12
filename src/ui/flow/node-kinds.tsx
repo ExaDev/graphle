@@ -14,20 +14,35 @@
  * This file exports ONLY the component, so react-refresh fast refresh stays
  * happy; the `nodeTypes` wiring lives in {@link ./type-presentation.ts}.
  */
-import { Badge } from "@mantine/core";
-import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import { Badge, Tooltip } from "@mantine/core";
+import { IconChevronDown, IconChevronRight, IconClockExclamation } from "@tabler/icons-react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
 import { resolveType, type GraphNode, type NodeTypeDefinition } from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
 
-import { collapseToggle, nodeCard, nodeHeader, nodeLabel } from "./node-kinds.css";
+import { collapseToggle, nodeCard, nodeHeader, nodeLabel, staleIcon } from "./node-kinds.css";
 import {
   DEFAULT_TYPE_PRESENTATION,
   getTypePresentation,
   type TypePresentation,
 } from "./type-presentation";
 import type { GraphFlowNode } from "./to-flow";
+
+/** How long after a GitHub fetch a node is considered stale, shown by a small
+ *  clock badge prompting a refresh — see `fetchedAt`'s doc comment in
+ *  `src/schema/node.ts`. */
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/** Whether a GitHub-sourced node's `fetchedAt` is older than
+ *  {@link STALE_AFTER_MS}. Manually-created nodes (`fetchedAt === undefined`)
+ *  are never stale. Compared against `Date.now()` at render time — accurate
+ *  as of the component's last render, which is sufficient for a "roughly a
+ *  day old" indicator with no need for a ticking clock. */
+function isStale(fetchedAt: string | undefined): boolean {
+  if (fetchedAt === undefined) return false;
+  return Date.now() - Date.parse(fetchedAt) > STALE_AFTER_MS;
+}
 
 /**
  * Extract a node's display label from its data via the type's `labelField`. A
@@ -59,6 +74,7 @@ export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
   const Icon = presentation.Icon;
   const label = typeDef !== undefined ? extractLabel(data, typeDef, presentation) : data.type;
   const collapsed = data.collapsed === true;
+  const stale = isStale(data.fetchedAt);
 
   return (
     <div className={nodeCard} style={{ borderColor: presentation.colorVar }}>
@@ -66,6 +82,11 @@ export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
       <div className={nodeHeader}>
         <Icon size={16} stroke={1.75} style={{ color: presentation.colorVar }} />
         <div className={nodeLabel}>{label}</div>
+        {stale && (
+          <Tooltip label="Last fetched over a day ago - right-click to refresh">
+            <IconClockExclamation size={13} stroke={1.75} className={staleIcon} />
+          </Tooltip>
+        )}
       </div>
       <Badge
         size="xs"

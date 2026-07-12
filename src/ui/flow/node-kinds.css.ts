@@ -38,6 +38,16 @@ export const nodeLabel = style({
   textOverflow: "ellipsis",
 });
 
+/** Small "stale" clock badge shown on a GitHub-sourced node whose `fetchedAt`
+ *  is older than `STALE_AFTER_MS` (see `node-kinds.tsx`). Sits inline in the
+ *  header, pushed to the row's end, dimmed like the collapse toggle so it
+ *  reads as a subtle hint rather than a warning. */
+export const staleIcon = style({
+  marginLeft: "auto",
+  flexShrink: 0,
+  color: "var(--mantine-color-dimmed)",
+});
+
 /** Collapse/expand toggle, shown only on a node with at least one child
  *  (`data.childCount > 0` — see `to-flow.ts`). */
 export const collapseToggle = style({
