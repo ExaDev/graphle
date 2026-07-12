@@ -1,3 +1,16 @@
+# [1.19.0](https://github.com/ExaDev/graphle/compare/v1.18.0...v1.19.0) (2026-07-12)
+
+
+### Bug Fixes
+
+* **github:** parse GraphQL nullable name/description fields as explicit null ([d6d6a84](https://github.com/ExaDev/graphle/commit/d6d6a84018222fba1ee41e9bab844d54821015dc))
+
+
+### Features
+
+* **github:** add personal-account browsing and GitHub search methods ([01fa72e](https://github.com/ExaDev/graphle/commit/01fa72e4ddcbd0ccecc7c3c10e20804b5a97de18))
+* **ui:** add a searchable GitHub resource browser to GitHubPanel ([9c368d0](https://github.com/ExaDev/graphle/commit/9c368d07458ceeec72e2eb2153e6ff4dae281696))
+
 # [1.18.0](https://github.com/ExaDev/graphle/compare/v1.17.3...v1.18.0) (2026-07-12)
 
 
