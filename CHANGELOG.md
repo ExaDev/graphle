@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/ExaDev/graphle/compare/v1.17.3...v1.18.0) (2026-07-12)
+
+
+### Features
+
+* **github:** show stacked pull request relationships ([0cd2746](https://github.com/ExaDev/graphle/commit/0cd2746b46b278a731ec377dd92be89a5362c5ae)), closes [#5](https://github.com/ExaDev/graphle/issues/5)
+
 ## [1.17.3](https://github.com/ExaDev/graphle/compare/v1.17.2...v1.17.3) (2026-07-11)
 
 
