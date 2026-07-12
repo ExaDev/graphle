@@ -126,6 +126,7 @@ import {
   parseGithubFileUrl,
   type ParsedGithubFileUrl,
 } from "@/sharing/github-file-url";
+import { importCsv } from "@/sharing/csv";
 import { exportCanvasDocument, exportDocument, importDocument, serialiseDocument } from "@/sharing/json";
 import { RemoteLoadError } from "@/sharing/remote";
 import { writeRemoteUrlToLocation } from "@/sharing/url";
@@ -316,6 +317,41 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
       notifications.show({
         color: "red",
         message: `Import failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
+  /**
+   * Imports a `source,target[,label]` adjacency-list CSV via {@link importCsv}
+   * and folds the resulting delta into the *current* document with
+   * `mergeDelta` — unlike `handleImport` above, this adds to the existing
+   * graph rather than replacing it, matching a CSV's role as a batch of new
+   * relationships rather than a full document. Reports both counts since a
+   * CSV import routinely adds edges between already-existing nodes (e.g. a
+   * second CSV reusing labels from a first import currently mid-session), not
+   * just newly-created ones — `mergeDelta`'s return value only tracks added
+   * node ids, so the edge count is read as the document's edge-count delta
+   * across the merge.
+   */
+  async function handleImportCsv(file: File): Promise<void> {
+    try {
+      const text = await file.text();
+      const delta = importCsv(text);
+      const edgeCountBefore = document.edges.length;
+      const addedNodeIds = useGraphStore.getState().mergeDelta(delta);
+      const addedEdgeCount = useGraphStore.getState().document.edges.length - edgeCountBefore;
+      const addedNodeCount = addedNodeIds.length;
+      notifications.show({
+        color: "green",
+        message:
+          addedNodeCount === 0 && addedEdgeCount === 0
+            ? "Nothing new to add"
+            : `Added ${String(addedNodeCount)} node${addedNodeCount === 1 ? "" : "s"}, ${String(addedEdgeCount)} edge${addedEdgeCount === 1 ? "" : "s"}`,
+      });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: `CSV import failed: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }
@@ -1004,6 +1040,16 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
           leftSection={<IconUpload size={16} />}
           onChange={(file) => {
             if (file !== null) void handleImport(file);
+          }}
+        />
+        <FileInput
+          label="Import CSV"
+          description="A source,target[,label] adjacency list, added to the current graph"
+          placeholder="edges.csv"
+          accept="text/csv,.csv"
+          leftSection={<IconUpload size={16} />}
+          onChange={(file) => {
+            if (file !== null) void handleImportCsv(file);
           }}
         />
         <Group gap="xs" align="flex-end">
