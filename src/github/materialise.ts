@@ -10,6 +10,7 @@ import type {
   GitHubProject,
   GitHubProjectItem,
   GitHubPullRequest,
+  GitHubPullRequestWithRepo,
   GitHubRepo,
 } from "./schema";
 
@@ -141,6 +142,37 @@ export function pullRequestToNode(
     data: {
       owner: repoOwner,
       repo: repoName,
+      number: pullRequest.number,
+      title: pullRequest.title,
+      state: pullRequest.state,
+      url: pullRequest.url,
+      baseRefName: pullRequest.baseRefName,
+      headRefName: pullRequest.headRefName,
+    },
+  };
+}
+
+/**
+ * Materialises a pull request reached via search, where owner/repo come from
+ * the PR's own `repository` rather than a caller-supplied pair — mirrors
+ * {@link issueWithRepoToNode}'s reasoning: search results are never scoped to
+ * one repo, so it can't be assumed from context.
+ */
+export function pullRequestWithRepoToNode(
+  pullRequest: GitHubPullRequestWithRepo,
+  position: Position,
+): GraphNode {
+  return {
+    id: githubNodeId("pullRequest", [
+      pullRequest.repository.owner.login,
+      pullRequest.repository.name,
+      pullRequest.number,
+    ]),
+    type: "pullRequest",
+    position,
+    data: {
+      owner: pullRequest.repository.owner.login,
+      repo: pullRequest.repository.name,
       number: pullRequest.number,
       title: pullRequest.title,
       state: pullRequest.state,

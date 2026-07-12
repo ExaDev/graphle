@@ -258,5 +258,78 @@ describe.skipIf(PRIVATE_TOKEN_TYPES.length === 0)("GitHub API integration - priv
         expect(project.number).toBe(projectNumber);
       },
     );
+
+    it.each(fixtures.filter((fixture) => fixture.ownerType === "user"))(
+      "lists $owner's own repositories via listUserRepos",
+      async ({ owner, repo }) => {
+        const client = createGitHubClient({ token });
+        const page = await client.listUserRepos(owner, undefined, new AbortController().signal);
+        expect(page.items.map((r) => r.name)).toContain(repo);
+      },
+    );
+
+    it.each(fixtures.filter((fixture) => fixture.ownerType === "user"))(
+      "lists $owner's own projects via listUserProjects",
+      async ({ owner, projectNumber }) => {
+        const client = createGitHubClient({ token });
+        const page = await client.listUserProjects(owner, undefined, new AbortController().signal);
+        expect(page.items.map((p) => p.number)).toContain(projectNumber);
+      },
+    );
+  });
+});
+
+describe.skipIf(PRIVATE_TOKEN_TYPES.length === 0)("GitHub API integration - search", () => {
+  describe.each(PRIVATE_TOKEN_TYPES)("with a $label token", ({ token, fixtures }) => {
+    // Every query is scoped with a repo:/org:/user: qualifier so results are
+    // deterministic rather than depending on GitHub's global search index.
+    it.each(fixtures)(
+      "searches repositories, finding $owner/$repo",
+      async ({ owner, repo, ownerType }) => {
+        const client = createGitHubClient({ token });
+        const qualifier = ownerType === "user" ? `user:${owner}` : `org:${owner}`;
+        const page = await client.searchRepositories(
+          `${qualifier} ${repo} in:name`,
+          undefined,
+          new AbortController().signal,
+        );
+        expect(page.items.some((r) => r.owner.login === owner && r.name === repo)).toBe(true);
+      },
+    );
+
+    it.each(fixtures)(
+      "searches issues, finding the parent issue in $owner/$repo",
+      async ({ owner, repo, parentIssue }) => {
+        const client = createGitHubClient({ token });
+        const page = await client.searchIssues(
+          `repo:${owner}/${repo} Parent issue`,
+          undefined,
+          new AbortController().signal,
+        );
+        expect(page.items.some((i) => i.number === parentIssue)).toBe(true);
+      },
+    );
+
+    it.each(fixtures)(
+      "searches pull requests, finding the stacked fixture PR in $owner/$repo",
+      async ({ owner, repo, stackedPr }) => {
+        const client = createGitHubClient({ token });
+        const page = await client.searchPullRequests(
+          `repo:${owner}/${repo} Stacked fixture`,
+          undefined,
+          new AbortController().signal,
+        );
+        expect(page.items.some((p) => p.number === stackedPr)).toBe(true);
+      },
+    );
+
+    it.each(fixtures)("searches accounts, finding $owner", async ({ owner, ownerType }) => {
+      const client = createGitHubClient({ token });
+      const page = await client.searchAccounts(owner, undefined, new AbortController().signal);
+      const expectedType = ownerType === "user" ? "user" : "organization";
+      expect(
+        page.items.some((a) => a.login === owner && a.accountType === expectedType),
+      ).toBe(true);
+    });
   });
 });

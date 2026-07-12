@@ -11,11 +11,20 @@ import {
   ownsEdge,
   projectToNode,
   pullRequestToNode,
+  pullRequestWithRepoToNode,
   repoToNode,
   stackedOnEdge,
   tracksEdge,
 } from "./materialise";
-import type { GitHubIssue, GitHubIssueWithRepo, GitHubOrg, GitHubProject, GitHubPullRequest, GitHubRepo } from "./schema";
+import type {
+  GitHubIssue,
+  GitHubIssueWithRepo,
+  GitHubOrg,
+  GitHubProject,
+  GitHubPullRequest,
+  GitHubPullRequestWithRepo,
+  GitHubRepo,
+} from "./schema";
 
 const position = { x: 0, y: 0 };
 
@@ -36,6 +45,10 @@ const pullRequest: GitHubPullRequest = {
   isCrossRepository: false,
 };
 const project: GitHubProject = { id: "PVT_1", number: 1, title: "Board", url: "https://github.com/orgs/ExaDev/projects/1" };
+const pullRequestWithRepo: GitHubPullRequestWithRepo = {
+  ...pullRequest,
+  repository: { name: "graphle", owner: { login: "ExaDev" } },
+};
 
 describe("materialise - deterministic node ids", () => {
   it("gives the same GitHub entity the same id across two independent calls", () => {
@@ -57,6 +70,7 @@ describe("materialise - deterministic node ids", () => {
       { node: issueToNode("ExaDev", "graphle", issue, position), label: "issue (same-repo)" },
       { node: issueWithRepoToNode(issueWithRepo, position), label: "issue (with-repo)" },
       { node: pullRequestToNode("ExaDev", "graphle", pullRequest, position), label: "pullRequest" },
+      { node: pullRequestWithRepoToNode(pullRequestWithRepo, position), label: "pullRequest (with-repo)" },
       { node: projectToNode("ExaDev", project, position), label: "project" },
     ];
     for (const { node, label } of cases) {
@@ -114,5 +128,20 @@ describe("pullRequestToNode", () => {
     const node = pullRequestToNode("ExaDev", "graphle", pullRequest, position);
     expect(node.data.baseRefName).toBe("main");
     expect(node.data.headRefName).toBe("feature");
+  });
+});
+
+describe("pullRequestWithRepoToNode", () => {
+  it("reads owner/repo from the pull request's own repository, not a caller-supplied pair", () => {
+    const node = pullRequestWithRepoToNode(pullRequestWithRepo, position);
+    expect(node.data.owner).toBe("ExaDev");
+    expect(node.data.repo).toBe("graphle");
+    expect(node.data.number).toBe(4);
+  });
+
+  it("gives the same id as pullRequestToNode for the same owner/repo/number", () => {
+    const a = pullRequestToNode("ExaDev", "graphle", pullRequest, position);
+    const b = pullRequestWithRepoToNode(pullRequestWithRepo, position);
+    expect(a.id).toBe(b.id);
   });
 });

@@ -13,11 +13,14 @@ export {
 } from "./errors";
 export {
   GitHubIssue,
+  GitHubIssueWithRepo,
   GitHubOrg,
   GitHubProject,
   GitHubProjectItem,
   GitHubPullRequest,
+  GitHubPullRequestWithRepo,
   GitHubRepo,
+  GitHubSearchAccount,
   GitHubViewer,
   PageInfo,
   RateLimit,
@@ -26,11 +29,13 @@ export {
   buildDelta,
   containsEdge,
   issueToNode,
+  issueWithRepoToNode,
   orgToNode,
   ownsEdge,
   projectIssueItemToNode,
   projectToNode,
   pullRequestToNode,
+  pullRequestWithRepoToNode,
   repoToNode,
   tracksEdge,
 } from "./materialise";

@@ -220,61 +220,6 @@ describe("createGitHubClient - pagination", () => {
   });
 });
 
-describe("createGitHubClient - explicit-null nullable fields", () => {
-  // GraphQL returns an explicit `null` for a selected-but-unset nullable
-  // scalar, not an absent key (confirmed via live search API testing:
-  // User.name and Repository.description are both genuinely nullable, and
-  // real accounts/repos without one really do come back `null`). A schema
-  // that only accepts `undefined` for these fields fails to parse the
-  // instant a real node has one — these tests pin the fix (`nullableString`
-  // in schema.ts transforming `null` to `undefined` at the parse boundary)
-  // so it can't silently regress back to `.optional()`.
-  it("parses an org with a null name", async () => {
-    const client = createGitHubClient({
-      token: "t",
-      fetch: stubFetch({
-        ViewerOrgs: () =>
-          jsonResponse({
-            data: {
-              viewer: {
-                login: "joe",
-                organizations: {
-                  nodes: [{ login: "exadev", name: null }],
-                  pageInfo: { hasNextPage: false, endCursor: null },
-                },
-              },
-              rateLimit: RATE,
-            },
-          }),
-      }),
-    });
-    const orgs = await client.listViewerOrgs(undefined, new AbortController().signal);
-    expect(orgs.items).toEqual([{ login: "exadev", name: undefined }]);
-  });
-
-  it("parses a repo with a null description", async () => {
-    const client = createGitHubClient({
-      token: "t",
-      fetch: stubFetch({
-        OrgRepos: () =>
-          jsonResponse({
-            data: {
-              organization: {
-                repositories: {
-                  nodes: [{ name: "graphle", owner: { login: "exadev" }, description: null }],
-                  pageInfo: { hasNextPage: false, endCursor: null },
-                },
-              },
-              rateLimit: RATE,
-            },
-          }),
-      }),
-    });
-    const repos = await client.listOrgRepos("exadev", undefined, new AbortController().signal);
-    expect(repos.items[0]?.description).toBeUndefined();
-  });
-});
-
 describe("createGitHubClient - listRepoPullRequests", () => {
   it("fetches a page of pull requests", async () => {
     const client = createGitHubClient({
@@ -650,6 +595,289 @@ describe("createGitHubClient - getRepo", () => {
     ).rejects.toMatchObject({
       kind: { type: "rateLimited", resetAt: RATE.resetAt },
     });
+  });
+});
+
+describe("createGitHubClient - listUserRepos / listUserProjects", () => {
+  it("fetches a personal account's own repositories", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        UserRepos: () =>
+          jsonResponse({
+            data: {
+              user: {
+                repositories: {
+                  nodes: [{ name: "dotfiles", owner: { login: "joe" }, description: null }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const repos = await client.listUserRepos("joe", undefined, new AbortController().signal);
+    expect(repos.items.map((r) => r.name)).toEqual(["dotfiles"]);
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("fetches a personal account's own projects", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        UserProjects: () =>
+          jsonResponse({
+            data: {
+              user: {
+                projectsV2: {
+                  nodes: [{ id: "PVT_9", number: 2, title: "Personal board", url: "pu2" }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const projects = await client.listUserProjects("joe", undefined, new AbortController().signal);
+    expect(projects.items.map((p) => p.number)).toEqual([2]);
+  });
+
+  it("throws notFound when the login doesn't resolve to a user", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        UserRepos: () =>
+          jsonResponse({
+            data: { user: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a User" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listUserRepos("no-such-user", undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+});
+
+describe("createGitHubClient - search", () => {
+  it("searches repositories", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        SearchRepositories: () =>
+          jsonResponse({
+            data: {
+              search: {
+                nodes: [
+                  {
+                    __typename: "Repository",
+                    name: "graphle",
+                    owner: { login: "exadev" },
+                    url: "https://github.com/exadev/graphle",
+                    description: "A graph tool",
+                    isArchived: false,
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const repos = await client.searchRepositories("graphle", undefined, new AbortController().signal);
+    expect(repos.items.map((r) => r.name)).toEqual(["graphle"]);
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("appends is:issue to the query when searching issues", async () => {
+    let capturedVariables: Record<string, unknown> | undefined;
+    const client = createGitHubClient({
+      token: "t",
+      fetch: (_input, init) => {
+        const rawBody = init?.body;
+        if (typeof rawBody !== "string") throw new Error("expected a string request body");
+        const parsed: unknown = JSON.parse(rawBody);
+        const variables = extractVariables(parsed);
+        if (variables !== undefined) capturedVariables = variables;
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              search: {
+                nodes: [
+                  {
+                    __typename: "Issue",
+                    number: 1,
+                    title: "A bug",
+                    state: "OPEN",
+                    url: "iu1",
+                    repository: { name: "graphle", owner: { login: "exadev" } },
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+              rateLimit: RATE,
+            },
+          }),
+        );
+      },
+    });
+    const issues = await client.searchIssues("bug", undefined, new AbortController().signal);
+    expect(issues.items.map((i) => i.number)).toEqual([1]);
+    expect(capturedVariables).toMatchObject({ query: "bug is:issue" });
+  });
+
+  it("appends is:pr to the query when searching pull requests", async () => {
+    let capturedVariables: Record<string, unknown> | undefined;
+    const client = createGitHubClient({
+      token: "t",
+      fetch: (_input, init) => {
+        const rawBody = init?.body;
+        if (typeof rawBody !== "string") throw new Error("expected a string request body");
+        const parsed: unknown = JSON.parse(rawBody);
+        const variables = extractVariables(parsed);
+        if (variables !== undefined) capturedVariables = variables;
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              search: {
+                nodes: [
+                  {
+                    __typename: "PullRequest",
+                    number: 4,
+                    title: "Add feature",
+                    state: "OPEN",
+                    url: "pu4",
+                    baseRefName: "main",
+                    headRefName: "feature",
+                    isCrossRepository: false,
+                    repository: { name: "graphle", owner: { login: "exadev" } },
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+              rateLimit: RATE,
+            },
+          }),
+        );
+      },
+    });
+    const pullRequests = await client.searchPullRequests(
+      "feature",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(pullRequests.items.map((p) => p.number)).toEqual([4]);
+    expect(capturedVariables).toMatchObject({ query: "feature is:pr" });
+  });
+
+  it("searches accounts, discriminating User from Organization via accountType", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        SearchAccounts: () =>
+          jsonResponse({
+            data: {
+              search: {
+                nodes: [
+                  { __typename: "User", login: "joe", name: "Joe" },
+                  { __typename: "Organization", login: "exadev", name: "ExaDev" },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const accounts = await client.searchAccounts("joe", undefined, new AbortController().signal);
+    expect(accounts.items).toEqual([
+      { login: "joe", name: "Joe", accountType: "user" },
+      { login: "exadev", name: "ExaDev", accountType: "organization" },
+    ]);
+  });
+});
+
+describe("createGitHubClient - explicit-null nullable fields", () => {
+  // GraphQL returns an explicit `null` for a selected-but-unset nullable
+  // scalar, not an absent key (confirmed via live search API testing:
+  // User.name and Repository.description are both genuinely nullable, and
+  // real accounts/repos without one really do come back `null`). A schema
+  // that only accepts `undefined` for these fields fails to parse the
+  // instant a real node has one — these tests pin the fix (`nullableString`
+  // in schema.ts transforming `null` to `undefined` at the parse boundary)
+  // so it can't silently regress back to `.optional()`.
+  it("parses an org with a null name", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        ViewerOrgs: () =>
+          jsonResponse({
+            data: {
+              viewer: {
+                login: "joe",
+                organizations: {
+                  nodes: [{ login: "exadev", name: null }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const orgs = await client.listViewerOrgs(undefined, new AbortController().signal);
+    expect(orgs.items).toEqual([{ login: "exadev", name: undefined }]);
+  });
+
+  it("parses a repo with a null description", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        OrgRepos: () =>
+          jsonResponse({
+            data: {
+              organization: {
+                repositories: {
+                  nodes: [{ name: "graphle", owner: { login: "exadev" }, description: null }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const repos = await client.listOrgRepos("exadev", undefined, new AbortController().signal);
+    expect(repos.items[0]?.description).toBeUndefined();
+  });
+
+  it("parses a search account with a null name", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        SearchAccounts: () =>
+          jsonResponse({
+            data: {
+              search: {
+                nodes: [{ __typename: "User", login: "no-name-set", name: null }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+    const accounts = await client.searchAccounts(
+      "no-name-set",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(accounts.items).toEqual([
+      { login: "no-name-set", name: undefined, accountType: "user" },
+    ]);
   });
 });
 

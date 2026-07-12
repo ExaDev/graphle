@@ -41,9 +41,11 @@ function unreachableClient(): GitHubClient {
     viewer: unexpected("viewer"),
     listViewerOrgs: unexpected("listViewerOrgs"),
     listOrgRepos: unexpected("listOrgRepos"),
+    listUserRepos: unexpected("listUserRepos"),
     listRepoIssues: unexpected("listRepoIssues"),
     listRepoPullRequests: unexpected("listRepoPullRequests"),
     listOrgProjects: unexpected("listOrgProjects"),
+    listUserProjects: unexpected("listUserProjects"),
     listRepoProjects: unexpected("listRepoProjects"),
     listProjectItems: unexpected("listProjectItems"),
     listIssueSubIssues: unexpected("listIssueSubIssues"),
@@ -52,6 +54,10 @@ function unreachableClient(): GitHubClient {
     getOrgProject: unexpected("getOrgProject"),
     getUserProject: unexpected("getUserProject"),
     getRepo: unexpected("getRepo"),
+    searchRepositories: unexpected("searchRepositories"),
+    searchIssues: unexpected("searchIssues"),
+    searchPullRequests: unexpected("searchPullRequests"),
+    searchAccounts: unexpected("searchAccounts"),
     get lastRateLimit() {
       return undefined;
     },

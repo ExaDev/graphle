@@ -19,7 +19,13 @@ import {
   RepoProjectsResponse,
   RepoPullRequestsResponse,
   RepoResponse,
+  SearchAccountsResponse,
+  SearchIssuesResponse,
+  SearchPullRequestsResponse,
+  SearchRepositoriesResponse,
   UserProjectResponse,
+  UserProjectsResponse,
+  UserReposResponse,
   ViewerOrgsResponse,
   ViewerResponse,
   type GitHubProjectItem,
@@ -34,6 +40,14 @@ const GRAPHQL_ENDPOINT = "https://api.github.com/graphql";
  * count and per-response payload size for the entities this client fetches.
  */
 export const PAGE_SIZE = 50;
+
+/**
+ * Page size for `search()` queries specifically. GitHub's search endpoints
+ * are more strictly rate-limited than ordinary GraphQL list queries, so
+ * search pages are kept smaller than {@link PAGE_SIZE} to reduce point-cost
+ * per request.
+ */
+export const SEARCH_PAGE_SIZE = 20;
 
 // --- Query documents (verbatim per the documented operation shapes) ---------
 
@@ -75,7 +89,34 @@ const ORG_PROJECT_QUERY = `query OrgProject($login:String!,$number:Int!){ organi
 
 const USER_PROJECT_QUERY = `query UserProject($login:String!,$number:Int!){ user(login:$login){ projectV2(number:$number){ id number title url closed } } rateLimit{remaining resetAt} }`;
 
+// Mirrors ORG_REPOS_QUERY/ORG_PROJECTS_QUERY for a personal account, the same
+// organization()-vs-user() split already established by ORG_PROJECT_QUERY/
+// USER_PROJECT_QUERY above, rather than a generalised repositoryOwner()/
+// ProjectV2Owner query — kept as two separate methods, not one widened
+// listOrgRepos, for consistency with that existing precedent.
+const USER_REPOS_QUERY = `query UserRepos($login:String!,$first:Int!,$after:String){ user(login:$login){ repositories(first:$first,after:$after,orderBy:{field:UPDATED_AT,direction:DESC}){ pageInfo{hasNextPage endCursor} nodes{ name owner{login} url description isArchived } } } rateLimit{remaining resetAt} }`;
+
+const USER_PROJECTS_QUERY = `query UserProjects($login:String!,$first:Int!,$after:String){ user(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
+
 const REPO_QUERY = `query Repo($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ owner{login} name url description isArchived } rateLimit{remaining resetAt} }`;
+
+// GitHub's schema has no separate PULL_REQUEST search type — issues and PRs
+// share one search index under `type: ISSUE`; searchIssues/searchPullRequests
+// (implementations below) each append an `is:issue`/`is:pr` qualifier to the
+// caller's query text so their own results stay homogeneous (confirmed via a
+// live search that an unqualified `type: ISSUE` search returns a mix of
+// Issue and PullRequest nodes).
+const SEARCH_REPOSITORIES_QUERY = `query SearchRepositories($query:String!,$first:Int!,$after:String){ search(query:$query,type:REPOSITORY,first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ __typename ... on Repository{ name owner{login} url description isArchived } } } rateLimit{remaining resetAt} }`;
+
+const SEARCH_ISSUES_QUERY = `query SearchIssues($query:String!,$first:Int!,$after:String){ search(query:$query,type:ISSUE,first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ __typename ... on Issue{ number title state url repository{name owner{login}} } } } rateLimit{remaining resetAt} }`;
+
+const SEARCH_PULL_REQUESTS_QUERY = `query SearchPullRequests($query:String!,$first:Int!,$after:String){ search(query:$query,type:ISSUE,first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ __typename ... on PullRequest{ number title state url baseRefName headRefName isCrossRepository repository{name owner{login}} } } } rateLimit{remaining resetAt} }`;
+
+// User and Organization results are both selected via the same field names
+// (login/name/avatarUrl/url), so GraphQL flattens either match onto the same
+// response shape — one Zod schema parses both, discriminated only by
+// __typename (kept for GitHubSearchAccount's accountType).
+const SEARCH_ACCOUNTS_QUERY = `query SearchAccounts($query:String!,$first:Int!,$after:String){ search(query:$query,type:USER,first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ __typename ... on User{login name avatarUrl url} ... on Organization{login name avatarUrl url} } } rateLimit{remaining resetAt} }`;
 
 /** Maps a lower-case {@link IssueState} to GitHub's `IssueState` GraphQL enum. */
 function issueStateToGraphQL(state: IssueState): "OPEN" | "CLOSED" {
@@ -276,6 +317,22 @@ export function createGitHubClient(parameters: {
       return { items: repos.nodes, ...toPage(repos.pageInfo) };
     },
 
+    async listUserRepos(login, cursor, signal) {
+      const result = await graphql(
+        USER_REPOS_QUERY,
+        { login, first: PAGE_SIZE, after: cursor },
+        UserReposResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const user = result.data.user;
+      if (user === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const repos = user.repositories;
+      return { items: repos.nodes, ...toPage(repos.pageInfo) };
+    },
+
     async listRepoIssues(owner, name, cursor, filters, signal) {
       const result = await graphql(
         REPO_ISSUES_QUERY,
@@ -339,6 +396,22 @@ export function createGitHubClient(parameters: {
         throw new GitHubError({ type: "notFound" });
       }
       const projects = org.projectsV2;
+      return { items: projects.nodes, ...toPage(projects.pageInfo) };
+    },
+
+    async listUserProjects(login, cursor, signal) {
+      const result = await graphql(
+        USER_PROJECTS_QUERY,
+        { login, first: PAGE_SIZE, after: cursor },
+        UserProjectsResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const user = result.data.user;
+      if (user === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const projects = user.projectsV2;
       return { items: projects.nodes, ...toPage(projects.pageInfo) };
     },
 
@@ -489,6 +562,54 @@ export function createGitHubClient(parameters: {
         throw new GitHubError({ type: "notFound" });
       }
       return repo;
+    },
+
+    async searchRepositories(query, cursor, signal) {
+      const result = await graphql(
+        SEARCH_REPOSITORIES_QUERY,
+        { query, first: SEARCH_PAGE_SIZE, after: cursor },
+        SearchRepositoriesResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const search = result.data.search;
+      return { items: search.nodes, ...toPage(search.pageInfo) };
+    },
+
+    async searchIssues(query, cursor, signal) {
+      const result = await graphql(
+        SEARCH_ISSUES_QUERY,
+        { query: `${query} is:issue`, first: SEARCH_PAGE_SIZE, after: cursor },
+        SearchIssuesResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const search = result.data.search;
+      return { items: search.nodes, ...toPage(search.pageInfo) };
+    },
+
+    async searchPullRequests(query, cursor, signal) {
+      const result = await graphql(
+        SEARCH_PULL_REQUESTS_QUERY,
+        { query: `${query} is:pr`, first: SEARCH_PAGE_SIZE, after: cursor },
+        SearchPullRequestsResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const search = result.data.search;
+      return { items: search.nodes, ...toPage(search.pageInfo) };
+    },
+
+    async searchAccounts(query, cursor, signal) {
+      const result = await graphql(
+        SEARCH_ACCOUNTS_QUERY,
+        { query, first: SEARCH_PAGE_SIZE, after: cursor },
+        SearchAccountsResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const search = result.data.search;
+      return { items: search.nodes, ...toPage(search.pageInfo) };
     },
   };
 }

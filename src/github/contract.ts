@@ -6,7 +6,9 @@ import type {
   GitHubProject,
   GitHubProjectItem,
   GitHubPullRequest,
+  GitHubPullRequestWithRepo,
   GitHubRepo,
+  GitHubSearchAccount,
   GitHubViewer,
 } from "./schema";
 
@@ -39,6 +41,17 @@ export interface GitHubClient {
     cursor: string | undefined,
     signal: AbortSignal,
   ): Promise<Page<GitHubRepo>>;
+  /** List a personal account's own repositories. Mirrors {@link listOrgRepos}
+   *  for a `user`-owned login rather than an `organization`-owned one — kept
+   *  as a separate method rather than a generalised owner-agnostic one, the
+   *  same `organization`/`user` split {@link getOrgProject}/{@link getUserProject}
+   *  already established. Throws `GitHubError({type:"notFound"})` when the
+   *  login doesn't resolve to a user. */
+  listUserRepos(
+    login: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubRepo>>;
   listRepoIssues(
     owner: string,
     name: string,
@@ -54,6 +67,13 @@ export interface GitHubClient {
     signal: AbortSignal,
   ): Promise<Page<GitHubPullRequest>>;
   listOrgProjects(
+    login: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubProject>>;
+  /** List a personal account's own Projects v2 boards. Mirrors {@link listOrgProjects}
+   *  for a user-owned login, the same split as {@link listUserRepos}. */
+  listUserProjects(
     login: string,
     cursor: string | undefined,
     signal: AbortSignal,
@@ -124,5 +144,42 @@ export interface GitHubClient {
    *  Throws `GitHubError({type:"notFound"})` when the owner or repo doesn't
    *  exist or isn't visible. */
   getRepo(owner: string, name: string, signal: AbortSignal): Promise<GitHubRepo>;
+  /** Search repositories by GitHub's search-query syntax (name, `org:`,
+   *  `user:`, etc.). Uses a smaller page size than the rest of the client
+   *  since GitHub's search endpoints are more strictly rate-limited than
+   *  ordinary list queries. */
+  searchRepositories(
+    query: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubRepo>>;
+  /** Search issues (never pull requests — an `is:issue` qualifier is appended
+   *  internally, so callers pass their raw search text). GitHub has no
+   *  separate issue-only search type; issues and PRs share one search index
+   *  under `type: ISSUE`, disambiguated only by this qualifier. Mirrors
+   *  {@link searchRepositories}'s rate-limit note. */
+  searchIssues(
+    query: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubIssueWithRepo>>;
+  /** Search pull requests (never issues — an `is:pr` qualifier is appended
+   *  internally). Mirrors {@link searchIssues} in every other respect. */
+  searchPullRequests(
+    query: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubPullRequestWithRepo>>;
+  /** Search accounts — both personal users and organisations, both mapped to
+   *  the same result shape (GitHub selects them via the same field names) —
+   *  {@link GitHubSearchAccount.accountType} records which concrete kind
+   *  matched so a caller can route a "browse this account" action to
+   *  {@link listOrgRepos}/{@link listOrgProjects} or
+   *  {@link listUserRepos}/{@link listUserProjects} accordingly. */
+  searchAccounts(
+    query: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubSearchAccount>>;
   readonly lastRateLimit: { remaining: number; resetAt: string } | undefined;
 }

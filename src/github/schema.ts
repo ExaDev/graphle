@@ -40,6 +40,27 @@ export const GitHubOrg = z.object({
 });
 export type GitHubOrg = z.infer<typeof GitHubOrg>;
 
+/**
+ * An account found via search — the same shape as {@link GitHubOrg} plus
+ * which concrete kind matched (`User` or `Organization`, both selected via
+ * the same field names so they parse identically apart from `__typename`),
+ * needed only to route a "browse this account's repos" click to
+ * `listOrgRepos` vs `listUserRepos`.
+ */
+export const GitHubSearchAccount = z
+  .object({
+    __typename: z.enum(["User", "Organization"]),
+    login: z.string(),
+    name: nullableString(),
+    url: z.string().optional(),
+    avatarUrl: z.string().optional(),
+  })
+  .transform(({ __typename, ...rest }) => ({
+    ...rest,
+    accountType: __typename === "User" ? ("user" as const) : ("organization" as const),
+  }));
+export type GitHubSearchAccount = z.infer<typeof GitHubSearchAccount>;
+
 /** A GitHub repository. The owner is nested per the GraphQL `Repository` shape. */
 export const GitHubRepo = z.object({
   name: z.string(),
@@ -121,6 +142,16 @@ export const GitHubPullRequest = z.object({
   isCrossRepository: z.boolean(),
 });
 export type GitHubPullRequest = z.infer<typeof GitHubPullRequest>;
+
+/**
+ * A pull request reached via search, carrying its own owner/repo like
+ * {@link GitHubIssueWithRepo} does for issues — search results are never
+ * scoped to one repo, so the repo can't be assumed from context.
+ */
+export const GitHubPullRequestWithRepo = GitHubPullRequest.extend({
+  repository: z.object({ name: z.string(), owner: z.object({ login: z.string() }) }),
+});
+export type GitHubPullRequestWithRepo = z.infer<typeof GitHubPullRequestWithRepo>;
 
 /** A GitHub Projects v2 project. `id` is the GraphQL node id used to fetch items. */
 export const GitHubProject = z.object({
@@ -230,6 +261,34 @@ export const OrgProjectsResponse = z.object({
   }),
 });
 export type OrgProjectsResponse = z.infer<typeof OrgProjectsResponse>;
+
+/** `user` is nullable: GitHub returns `null` for an unknown login. Mirrors
+ *  {@link OrgReposResponse} for a personal account. */
+export const UserReposResponse = z.object({
+  data: z.object({
+    user: z
+      .object({
+        repositories: connection(GitHubRepo),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type UserReposResponse = z.infer<typeof UserReposResponse>;
+
+/** `user` is nullable: GitHub returns `null` for an unknown login. Mirrors
+ *  {@link OrgProjectsResponse} for a personal account. */
+export const UserProjectsResponse = z.object({
+  data: z.object({
+    user: z
+      .object({
+        projectsV2: connection(GitHubProject),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type UserProjectsResponse = z.infer<typeof UserProjectsResponse>;
 
 /** `repository` is nullable: GitHub returns `null` for an unknown name. */
 export const RepoIssuesResponse = z.object({
@@ -382,3 +441,38 @@ export const ProjectItemsResponse = z.object({
   }),
 });
 export type ProjectItemsResponse = z.infer<typeof ProjectItemsResponse>;
+
+// `search` is a top-level field, unlike every connection above — no nullable
+// parent to unwrap.
+
+export const SearchRepositoriesResponse = z.object({
+  data: z.object({
+    search: connection(GitHubRepo),
+    rateLimit: RateLimit,
+  }),
+});
+export type SearchRepositoriesResponse = z.infer<typeof SearchRepositoriesResponse>;
+
+export const SearchIssuesResponse = z.object({
+  data: z.object({
+    search: connection(GitHubIssueWithRepo),
+    rateLimit: RateLimit,
+  }),
+});
+export type SearchIssuesResponse = z.infer<typeof SearchIssuesResponse>;
+
+export const SearchPullRequestsResponse = z.object({
+  data: z.object({
+    search: connection(GitHubPullRequestWithRepo),
+    rateLimit: RateLimit,
+  }),
+});
+export type SearchPullRequestsResponse = z.infer<typeof SearchPullRequestsResponse>;
+
+export const SearchAccountsResponse = z.object({
+  data: z.object({
+    search: connection(GitHubSearchAccount),
+    rateLimit: RateLimit,
+  }),
+});
+export type SearchAccountsResponse = z.infer<typeof SearchAccountsResponse>;

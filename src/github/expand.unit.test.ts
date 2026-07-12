@@ -38,6 +38,9 @@ function clientWithRepos(repos: Page<{
     listOrgRepos() {
       return Promise.resolve(repos);
     },
+    listUserRepos() {
+      return Promise.reject(new Error("unexpected listUserRepos call"));
+    },
     listRepoIssues() {
       return Promise.reject(new Error("unexpected listRepoIssues call"));
     },
@@ -46,6 +49,9 @@ function clientWithRepos(repos: Page<{
     },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
+    },
+    listUserProjects() {
+      return Promise.reject(new Error("unexpected listUserProjects call"));
     },
     listRepoProjects() {
       return Promise.reject(new Error("unexpected listRepoProjects call"));
@@ -70,6 +76,18 @@ function clientWithRepos(repos: Page<{
     },
     getRepo() {
       return Promise.reject(new Error("unexpected getRepo call"));
+    },
+    searchRepositories() {
+      return Promise.reject(new Error("unexpected searchRepositories call"));
+    },
+    searchIssues() {
+      return Promise.reject(new Error("unexpected searchIssues call"));
+    },
+    searchPullRequests() {
+      return Promise.reject(new Error("unexpected searchPullRequests call"));
+    },
+    searchAccounts() {
+      return Promise.reject(new Error("unexpected searchAccounts call"));
     },
     get lastRateLimit() {
       return undefined;
@@ -173,11 +191,13 @@ function clientWithPullRequests(page: Page<PullRequestFixture>): GitHubClient {
     viewer: unexpected("viewer"),
     listViewerOrgs: unexpected("listViewerOrgs"),
     listOrgRepos: unexpected("listOrgRepos"),
+    listUserRepos: unexpected("listUserRepos"),
     listRepoIssues: unexpected("listRepoIssues"),
     listRepoPullRequests() {
       return Promise.resolve(page);
     },
     listOrgProjects: unexpected("listOrgProjects"),
+    listUserProjects: unexpected("listUserProjects"),
     listRepoProjects: unexpected("listRepoProjects"),
     listProjectItems: unexpected("listProjectItems"),
     listIssueSubIssues: unexpected("listIssueSubIssues"),
@@ -186,6 +206,10 @@ function clientWithPullRequests(page: Page<PullRequestFixture>): GitHubClient {
     getOrgProject: unexpected("getOrgProject"),
     getUserProject: unexpected("getUserProject"),
     getRepo: unexpected("getRepo"),
+    searchRepositories: unexpected("searchRepositories"),
+    searchIssues: unexpected("searchIssues"),
+    searchPullRequests: unexpected("searchPullRequests"),
+    searchAccounts: unexpected("searchAccounts"),
     get lastRateLimit() {
       return undefined;
     },
@@ -390,6 +414,9 @@ describe("expansionsForType - project-items", () => {
       listOrgRepos() {
         return Promise.reject(new Error("unexpected listOrgRepos call"));
       },
+      listUserRepos() {
+        return Promise.reject(new Error("unexpected listUserRepos call"));
+      },
       listRepoIssues() {
         return Promise.reject(new Error("unexpected listRepoIssues call"));
       },
@@ -398,6 +425,9 @@ describe("expansionsForType - project-items", () => {
       },
       listOrgProjects() {
         return Promise.reject(new Error("unexpected listOrgProjects call"));
+      },
+      listUserProjects() {
+        return Promise.reject(new Error("unexpected listUserProjects call"));
       },
       listRepoProjects() {
         return Promise.reject(new Error("unexpected listRepoProjects call"));
@@ -422,6 +452,18 @@ describe("expansionsForType - project-items", () => {
       },
       getRepo() {
         return Promise.reject(new Error("unexpected getRepo call"));
+      },
+      searchRepositories() {
+        return Promise.reject(new Error("unexpected searchRepositories call"));
+      },
+      searchIssues() {
+        return Promise.reject(new Error("unexpected searchIssues call"));
+      },
+      searchPullRequests() {
+        return Promise.reject(new Error("unexpected searchPullRequests call"));
+      },
+      searchAccounts() {
+        return Promise.reject(new Error("unexpected searchAccounts call"));
       },
       get lastRateLimit() {
         return undefined;
@@ -523,6 +565,9 @@ function clientWithSubIssues(page: Page<{ number: number; title: string; state: 
     listOrgRepos() {
       return Promise.reject(new Error("unexpected listOrgRepos call"));
     },
+    listUserRepos() {
+      return Promise.reject(new Error("unexpected listUserRepos call"));
+    },
     listRepoIssues() {
       return Promise.reject(new Error("unexpected listRepoIssues call"));
     },
@@ -531,6 +576,9 @@ function clientWithSubIssues(page: Page<{ number: number; title: string; state: 
     },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
+    },
+    listUserProjects() {
+      return Promise.reject(new Error("unexpected listUserProjects call"));
     },
     listRepoProjects() {
       return Promise.reject(new Error("unexpected listRepoProjects call"));
@@ -555,6 +603,18 @@ function clientWithSubIssues(page: Page<{ number: number; title: string; state: 
     },
     getRepo() {
       return Promise.reject(new Error("unexpected getRepo call"));
+    },
+    searchRepositories() {
+      return Promise.reject(new Error("unexpected searchRepositories call"));
+    },
+    searchIssues() {
+      return Promise.reject(new Error("unexpected searchIssues call"));
+    },
+    searchPullRequests() {
+      return Promise.reject(new Error("unexpected searchPullRequests call"));
+    },
+    searchAccounts() {
+      return Promise.reject(new Error("unexpected searchAccounts call"));
     },
     get lastRateLimit() {
       return undefined;
@@ -583,6 +643,9 @@ function clientWithBlockedBy(page: Page<IssueWithRepoFixture>): GitHubClient {
     listOrgRepos() {
       return Promise.reject(new Error("unexpected listOrgRepos call"));
     },
+    listUserRepos() {
+      return Promise.reject(new Error("unexpected listUserRepos call"));
+    },
     listRepoIssues() {
       return Promise.reject(new Error("unexpected listRepoIssues call"));
     },
@@ -591,6 +654,9 @@ function clientWithBlockedBy(page: Page<IssueWithRepoFixture>): GitHubClient {
     },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
+    },
+    listUserProjects() {
+      return Promise.reject(new Error("unexpected listUserProjects call"));
     },
     listRepoProjects() {
       return Promise.reject(new Error("unexpected listRepoProjects call"));
@@ -616,6 +682,18 @@ function clientWithBlockedBy(page: Page<IssueWithRepoFixture>): GitHubClient {
     getRepo() {
       return Promise.reject(new Error("unexpected getRepo call"));
     },
+    searchRepositories() {
+      return Promise.reject(new Error("unexpected searchRepositories call"));
+    },
+    searchIssues() {
+      return Promise.reject(new Error("unexpected searchIssues call"));
+    },
+    searchPullRequests() {
+      return Promise.reject(new Error("unexpected searchPullRequests call"));
+    },
+    searchAccounts() {
+      return Promise.reject(new Error("unexpected searchAccounts call"));
+    },
     get lastRateLimit() {
       return undefined;
     },
@@ -635,6 +713,9 @@ function clientWithBlocking(page: Page<IssueWithRepoFixture>): GitHubClient {
     listOrgRepos() {
       return Promise.reject(new Error("unexpected listOrgRepos call"));
     },
+    listUserRepos() {
+      return Promise.reject(new Error("unexpected listUserRepos call"));
+    },
     listRepoIssues() {
       return Promise.reject(new Error("unexpected listRepoIssues call"));
     },
@@ -643,6 +724,9 @@ function clientWithBlocking(page: Page<IssueWithRepoFixture>): GitHubClient {
     },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
+    },
+    listUserProjects() {
+      return Promise.reject(new Error("unexpected listUserProjects call"));
     },
     listRepoProjects() {
       return Promise.reject(new Error("unexpected listRepoProjects call"));
@@ -667,6 +751,18 @@ function clientWithBlocking(page: Page<IssueWithRepoFixture>): GitHubClient {
     },
     getRepo() {
       return Promise.reject(new Error("unexpected getRepo call"));
+    },
+    searchRepositories() {
+      return Promise.reject(new Error("unexpected searchRepositories call"));
+    },
+    searchIssues() {
+      return Promise.reject(new Error("unexpected searchIssues call"));
+    },
+    searchPullRequests() {
+      return Promise.reject(new Error("unexpected searchPullRequests call"));
+    },
+    searchAccounts() {
+      return Promise.reject(new Error("unexpected searchAccounts call"));
     },
     get lastRateLimit() {
       return undefined;
