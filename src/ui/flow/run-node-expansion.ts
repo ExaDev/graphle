@@ -47,18 +47,30 @@ async function runWithClient(
   client: GitHubClient,
   signal: AbortSignal,
   onResult?: (result: ExpansionResult) => void,
+  opts?: { silent?: boolean; onExistingMatch?: "keep" | "overwrite" },
 ): Promise<ExpansionResult | undefined> {
   try {
     const result = await expansion.run(node, client, cursor, signal);
-    const added = useGraphStore.getState().mergeDelta(result.delta);
+    const stampedDelta = {
+      ...result.delta,
+      nodes: result.delta.nodes.map((n) => ({
+        ...n,
+        fetchedAt: new Date().toISOString(),
+      })),
+    };
+    const added = useGraphStore
+      .getState()
+      .mergeDelta(stampedDelta, opts?.onExistingMatch);
     const count = added.length;
-    notifications.show({
-      color: "green",
-      message:
-        count === 0
-          ? "Nothing new to add"
-          : `Added ${String(count)} node${count === 1 ? "" : "s"}`,
-    });
+    if (opts?.silent !== true) {
+      notifications.show({
+        color: "green",
+        message:
+          count === 0
+            ? "Nothing new to add"
+            : `Added ${String(count)} node${count === 1 ? "" : "s"}`,
+      });
+    }
     onResult?.(result);
     return result;
   } catch (error) {
@@ -69,7 +81,9 @@ async function runWithClient(
         : error instanceof Error
           ? error.message
           : String(error);
-    notifications.show({ color: "red", message });
+    if (opts?.silent !== true) {
+      notifications.show({ color: "red", message });
+    }
     return undefined;
   }
 }
@@ -91,6 +105,7 @@ export async function runNodeExpansion(
   cursor: string | undefined,
   signal: AbortSignal,
   onResult?: (result: ExpansionResult) => void,
+  opts?: { silent?: boolean; onExistingMatch?: "keep" | "overwrite" },
 ): Promise<ExpansionResult | undefined> {
   const owner = ownerForNode(node);
   const client = await resolveGithubClient(owner, signal);
@@ -105,10 +120,11 @@ export async function runNodeExpansion(
           resumedClient,
           new AbortController().signal,
           onResult,
+          opts,
         );
       },
     });
     return undefined;
   }
-  return runWithClient(node, expansion, cursor, client, signal, onResult);
+  return runWithClient(node, expansion, cursor, client, signal, onResult, opts);
 }
