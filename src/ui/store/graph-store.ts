@@ -269,6 +269,19 @@ interface GraphState {
   rateLimit: RateLimit | undefined;
   /** Set or clear the current rate-limit reading. */
   setRateLimit: (rateLimit: RateLimit | undefined) => void;
+  /**
+   * The direction of the most recently run auto-layout, driving which sides
+   * `GenericNode` renders its handles on (see `node-kinds.tsx`) so edges exit
+   * and enter on the sides the layout actually flows along, rather than
+   * fixed left/right regardless of a top-to-bottom layout. Ephemeral, like
+   * `selection`/`rateLimit` — never persisted or written to the URL/document;
+   * a reload always starts back at the `"LR"` default, matching handle
+   * positions that were the fixed rendering before this field existed.
+   */
+  layoutDirection: "TB" | "LR";
+  /** Set the current layout direction — called by `GraphCanvas`'s
+   *  `handleAutoLayout` whenever a layout runs. */
+  setLayoutDirection: (layoutDirection: "TB" | "LR") => void;
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -437,6 +450,8 @@ export const useGraphStore = create<GraphState>()(
       setRemoteGithubSource: (remoteGithubSource) => set({ remoteGithubSource }),
       rateLimit: undefined,
       setRateLimit: (rateLimit) => set({ rateLimit }),
+      layoutDirection: "LR",
+      setLayoutDirection: (layoutDirection) => set({ layoutDirection }),
     };
   }),
 );

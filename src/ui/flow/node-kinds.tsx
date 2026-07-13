@@ -50,6 +50,12 @@ function isStale(fetchedAt: string | undefined): boolean {
 export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
   const types = useGraphStore((state) => state.document.types);
   const apply = useGraphStore((state) => state.apply);
+  const layoutDirection = useGraphStore((state) => state.layoutDirection);
+  // Mirrors the last-run auto-layout direction: "LR" keeps today's original
+  // Left/Right rendering, "TB" flips edges to exit the bottom and enter the
+  // top, matching the direction nodes were actually ranked and spaced in.
+  const targetPosition = layoutDirection === "TB" ? Position.Top : Position.Left;
+  const sourcePosition = layoutDirection === "TB" ? Position.Bottom : Position.Right;
   const typeDef = resolveType(types, data.type);
   const presentation =
     typeDef !== undefined ? getTypePresentation(typeDef) : DEFAULT_TYPE_PRESENTATION;
@@ -60,7 +66,7 @@ export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
 
   return (
     <div className={nodeCard} style={{ borderColor: presentation.colorVar }}>
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={targetPosition} />
       <div className={nodeHeader}>
         <Icon size={16} stroke={1.75} style={{ color: presentation.colorVar }} />
         <div className={nodeLabel}>{label}</div>
@@ -90,7 +96,7 @@ export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
           {collapsed ? `${String(data.childCount)} hidden` : `${String(data.childCount)} children`}
         </button>
       )}
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={sourcePosition} />
     </div>
   );
 }
