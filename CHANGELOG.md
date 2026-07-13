@@ -1,3 +1,12 @@
+# [1.31.0](https://github.com/ExaDev/graphle/compare/v1.30.0...v1.31.0) (2026-07-13)
+
+
+### Features
+
+* **github:** add assignee/author/involves fields to pull-request filters ([ae5ca33](https://github.com/ExaDev/graphle/commit/ae5ca337ad4afb20c74c9a101d3a7fb7c7f15d13))
+* **github:** route filtered PR-list loads through the search API ([bd842a7](https://github.com/ExaDev/graphle/commit/bd842a7542c9275fda83b34a67716a824aa37e4a))
+* **ui:** add assignee/author/involves inputs to the PR filter form ([02b0f9e](https://github.com/ExaDev/graphle/commit/02b0f9e73717375ccdb22e2a5a57c4d32bf15d06))
+
 # [1.30.0](https://github.com/ExaDev/graphle/compare/v1.29.0...v1.30.0) (2026-07-13)
 
 
