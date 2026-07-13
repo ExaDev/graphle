@@ -1,3 +1,10 @@
+## [1.31.1](https://github.com/ExaDev/graphle/compare/v1.31.0...v1.31.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **github:** recognise GitHub's own pulls/{value} person-filter shorthand ([fea940d](https://github.com/ExaDev/graphle/commit/fea940d46bac5c4011e192efb5178b90c6c3be97))
+
 # [1.31.0](https://github.com/ExaDev/graphle/compare/v1.30.0...v1.31.0) (2026-07-13)
 
 
