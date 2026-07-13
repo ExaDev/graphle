@@ -1,3 +1,18 @@
+# [1.30.0](https://github.com/ExaDev/graphle/compare/v1.29.0...v1.30.0) (2026-07-13)
+
+
+### Bug Fixes
+
+* **ui:** compute edge port assignment from rerouted subgraph endpoints ([6cff189](https://github.com/ExaDev/graphle/commit/6cff189bf24909956106c5e3a54026ee7da3e427))
+* **ui:** render edge labels by passing labelX/labelY through FloatingEdge ([46311b2](https://github.com/ExaDev/graphle/commit/46311b2c9bbadc88fce681ae82c39f16586643e6))
+
+
+### Features
+
+* **domain:** add pure edge-to-side port assignment with same-direction crowding merge ([cd7935c](https://github.com/ExaDev/graphle/commit/cd7935ce41e22f9495e7347cbe6e5b20ebadf5b9))
+* **ui:** render edges via dynamic floating connection points ([75aa465](https://github.com/ExaDev/graphle/commit/75aa4652aa47950eb57423519129466cbce45dca))
+* **ui:** switch node handles to four floating connection points ([7d11bf8](https://github.com/ExaDev/graphle/commit/7d11bf8d9034f031e4eb38a9c3cfc5a96a56c76c))
+
 # [1.29.0](https://github.com/ExaDev/graphle/compare/v1.28.0...v1.29.0) (2026-07-13)
 
 
