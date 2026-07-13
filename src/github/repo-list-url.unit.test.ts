@@ -171,4 +171,62 @@ describe("parseRepoPullRequestsFilters", () => {
       labels: [],
     });
   });
+
+  it("recognises assignee/author/involves via graphle's own query params", () => {
+    const url = "https://github.com/TeamAcelo/graphle/pulls?assignee=Mearman&author=octocat&involves=hubot";
+    const parsed = parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+    expect(parsed).toEqual({
+      ...DEFAULT_REPO_PULL_REQUESTS_FILTERS,
+      assignee: "Mearman",
+      author: "octocat",
+      involves: "hubot",
+    });
+  });
+
+  it("recognises a lone assignee= param without leaving author/involves as explicit undefined keys", () => {
+    const url = "https://github.com/TeamAcelo/graphle/pulls?assignee=Mearman";
+    const parsed = parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+    expect(parsed).toEqual({ ...DEFAULT_REPO_PULL_REQUESTS_FILTERS, assignee: "Mearman" });
+    expect("author" in parsed).toBe(false);
+    expect("involves" in parsed).toBe(false);
+  });
+
+  it("recognises assignee:/author:/involves: tokens from GitHub's q= search DSL", () => {
+    const url = "https://github.com/TeamAcelo/graphle/pulls?q=is%3Apr+assignee%3AMearman+author%3Aoctocat";
+    const parsed = parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+    expect(parsed.assignee).toBe("Mearman");
+    expect(parsed.author).toBe("octocat");
+    expect(parsed.involves).toBeUndefined();
+  });
+
+  it("still silently drops an unrecognised q= token (e.g. milestone) for pull requests", () => {
+    const url = "https://github.com/TeamAcelo/graphle/pulls?q=milestone%3Av2";
+    const parsed = parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+    expect(parsed).toEqual(DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+  });
+
+  it("falls back to a previously-set default when the URL specifies only one of the three", () => {
+    const defaults = { ...DEFAULT_REPO_PULL_REQUESTS_FILTERS, author: "octocat" };
+    const url = "https://github.com/TeamAcelo/graphle/pulls?assignee=Mearman";
+    const parsed = parseRepoPullRequestsFilters(url, defaults);
+    expect(parsed.assignee).toBe("Mearman");
+    expect(parsed.author).toBe("octocat");
+  });
+});
+
+describe("canonicalRepoPullRequestsUrl with assignee/author/involves", () => {
+  it("encodes assignee/author/involves using graphle's own query params", () => {
+    const parsed = { owner: "TeamAcelo", repo: "graphle" };
+    const filters = { ...DEFAULT_REPO_PULL_REQUESTS_FILTERS, assignee: "Mearman", author: "octocat" };
+    expect(canonicalRepoPullRequestsUrl(parsed, filters)).toBe(
+      "https://github.com/TeamAcelo/graphle/pulls?assignee=Mearman&author=octocat",
+    );
+  });
+
+  it("round-trips through parseRepoPullRequestsFilters", () => {
+    const parsed = { owner: "TeamAcelo", repo: "graphle" };
+    const filters = { ...DEFAULT_REPO_PULL_REQUESTS_FILTERS, involves: "hubot" };
+    const url = canonicalRepoPullRequestsUrl(parsed, filters);
+    expect(parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS)).toEqual(filters);
+  });
 });

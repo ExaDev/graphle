@@ -32,6 +32,25 @@ export interface RepoPullRequestsFilters {
   states: readonly PullRequestState[];
   sort: { field: PullRequestSortField; direction: SortDirection };
   labels: readonly string[];
+  /**
+   * A GitHub login to filter by assignee/author/involvement — each is a
+   * single value, not a list. Unlike `states`/`labels`, GitHub's
+   * `Repository.pullRequests` connection (what `graphql-adapter.ts`'s
+   * `listRepoPullRequests` queries) has no argument for any of these at
+   * all (confirmed against GitHub's GraphQL schema): setting any of the
+   * three routes the load through the separate `search` API instead
+   * (`repo-list-loader.ts`'s `loadRepoPullRequestsDocument`), which does
+   * support them as search qualifiers.
+   *
+   * `RepoIssuesFilters` deliberately has no equivalent fields: GitHub's
+   * `Repository.issues` connection *does* accept assignee filtering
+   * directly via its own `filterBy` argument — a different mechanism from
+   * the search-API route pull requests need, not yet wired up, and out of
+   * scope for this change.
+   */
+  assignee?: string;
+  author?: string;
+  involves?: string;
 }
 
 /** Today's previously-hardcoded behaviour (`states:[OPEN]`, sorted by most

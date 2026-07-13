@@ -78,22 +78,32 @@ export function canonicalRepoIssuesUrl(parsed: ParsedRepoListUrl, filters: RepoI
 
 /**
  * The canonical URL for a parsed repo pull-requests list — mirrors
- * {@link canonicalRepoIssuesUrl} for `.../pulls`.
+ * {@link canonicalRepoIssuesUrl} for `.../pulls`, plus `assignee=`/
+ * `author=`/`involves=` params when set (PR-only — see
+ * {@link RepoPullRequestsFilters}'s doc comment for why these have no
+ * `RepoIssuesFilters` equivalent).
  */
 export function canonicalRepoPullRequestsUrl(
   parsed: ParsedRepoListUrl,
   filters: RepoPullRequestsFilters,
 ): string {
-  return `https://github.com/${parsed.owner}/${parsed.repo}/pulls${encodeFiltersQuery(filters)}`;
+  const params = buildFiltersParams(filters);
+  if (filters.assignee !== undefined) params.set("assignee", filters.assignee);
+  if (filters.author !== undefined) params.set("author", filters.author);
+  if (filters.involves !== undefined) params.set("involves", filters.involves);
+  return `https://github.com/${parsed.owner}/${parsed.repo}/pulls${toQueryString(params)}`;
 }
 
-/** Builds the `?state=...&sort=...&direction=...&labels=...` query string
- *  for {@link canonicalRepoIssuesUrl}/{@link canonicalRepoPullRequestsUrl}.
- *  Each field is omitted when it matches the shared default (`["open"]`,
+/** Builds the `state=...&sort=...&direction=...&labels=...` params shared by
+ *  {@link canonicalRepoIssuesUrl}/{@link canonicalRepoPullRequestsUrl}. Each
+ *  field is omitted when it matches the shared default (`["open"]`,
  *  `updated`/`desc`, no labels — see `DEFAULT_REPO_ISSUES_FILTERS`/
  *  `DEFAULT_REPO_PULL_REQUESTS_FILTERS`), so the common case round-trips to
- *  the bare URL with no query string at all. */
-function encodeFiltersQuery(filters: RepoIssuesFilters | RepoPullRequestsFilters): string {
+ *  the bare URL with no query string at all. Returns the mutable
+ *  `URLSearchParams` itself (rather than a finished string) so
+ *  {@link canonicalRepoPullRequestsUrl} can layer its extra PR-only params
+ *  on before stringifying. */
+function buildFiltersParams(filters: RepoIssuesFilters | RepoPullRequestsFilters): URLSearchParams {
   const params = new URLSearchParams();
   const isDefaultState = filters.states.length === 1 && filters.states[0] === "open";
   if (!isDefaultState) params.set("state", filters.states.join(","));
@@ -103,8 +113,20 @@ function encodeFiltersQuery(filters: RepoIssuesFilters | RepoPullRequestsFilters
     params.set("direction", filters.sort.direction);
   }
   if (filters.labels.length > 0) params.set("labels", filters.labels.join(","));
+  return params;
+}
+
+/** `?a=b&c=d` when `params` has entries, `""` when empty — the shared tail
+ *  format for every canonical list URL in this module. */
+function toQueryString(params: URLSearchParams): string {
   const query = params.toString();
   return query === "" ? "" : `?${query}`;
+}
+
+/** {@link buildFiltersParams} stringified directly — the issues case, which
+ *  has no extra params to layer on top. */
+function encodeFiltersQuery(filters: RepoIssuesFilters): string {
+  return toQueryString(buildFiltersParams(filters));
 }
 
 /** Splits a comma-separated query param into its non-empty parts. */
@@ -118,11 +140,13 @@ function splitCommaList(value: string): string[] {
 /**
  * One recognised token from GitHub's own issue/PR search DSL (the `?q=`
  * string its list UI shows, e.g. `is:open sort:updated-desc label:bug`) —
- * only `is:`/`state:`, `sort:`, and `label:` are recognised; anything else
- * (assignee, author, milestone, free text, date ranges) is silently
- * dropped, not preserved, since the canonical URL this codec writes is
- * always a fresh encoding of exactly what the filter UI shows, never a
- * mix of understood and not-understood fragments.
+ * only `is:`/`state:`, `sort:`, and `label:` are recognised here; milestone,
+ * free text, and date ranges are silently dropped, not preserved, since the
+ * canonical URL this codec writes is always a fresh encoding of exactly
+ * what the filter UI shows, never a mix of understood and not-understood
+ * fragments. `assignee:`/`author:`/`involves:` are recognised too, but by
+ * the separate {@link parsePersonSearchTokens} below (PR-only — see its own
+ * doc comment for why), not by this struct/function.
  */
 interface SearchQueryTokens {
   states: string[];
@@ -138,16 +162,29 @@ function tokenizeSearchQuery(q: string): string[] {
   return matches ?? [];
 }
 
+/** Splits one `key:value` or `key:"quoted value"` search-DSL token into its
+ *  key and unquoted value, shared by {@link parseSearchQueryTokens} and
+ *  {@link parsePersonSearchTokens}. Returns `undefined` for a token with no
+ *  `:` (defensive against `tokenizeSearchQuery` ever yielding one — it
+ *  currently never does, since its regex requires a `:`, but this keeps the
+ *  two callers from needing to re-derive the same quote-stripping logic). */
+function parseSearchToken(token: string): { key: string; value: string } | undefined {
+  const colonIndex = token.indexOf(":");
+  if (colonIndex === -1) return undefined;
+  const key = token.slice(0, colonIndex);
+  const rawValue = token.slice(colonIndex + 1);
+  const value = rawValue.startsWith('"') && rawValue.endsWith('"') ? rawValue.slice(1, -1) : rawValue;
+  return { key, value };
+}
+
 /** Best-effort parse of GitHub's `q=` search DSL into the tokens this codec
  *  understands. Unrecognised tokens are ignored. */
 function parseSearchQueryTokens(q: string): SearchQueryTokens {
   const tokens: SearchQueryTokens = { states: [], sortField: undefined, sortDirection: undefined, labels: [] };
   for (const token of tokenizeSearchQuery(q)) {
-    const colonIndex = token.indexOf(":");
-    if (colonIndex === -1) continue;
-    const key = token.slice(0, colonIndex);
-    const rawValue = token.slice(colonIndex + 1);
-    const value = rawValue.startsWith('"') && rawValue.endsWith('"') ? rawValue.slice(1, -1) : rawValue;
+    const parsed = parseSearchToken(token);
+    if (parsed === undefined) continue;
+    const { key, value } = parsed;
     if (key === "is" || key === "state") {
       tokens.states.push(value);
     } else if (key === "sort") {
@@ -160,6 +197,39 @@ function parseSearchQueryTokens(q: string): SearchQueryTokens {
     }
   }
   return tokens;
+}
+
+/**
+ * Best-effort parse of the `assignee:`/`author:`/`involves:` tokens from
+ * GitHub's `q=` search DSL — kept separate from {@link parseSearchQueryTokens}
+ * (which stays scoped to `is:`/`state:`, `sort:`, `label:`, shared by both
+ * issues and pull requests) since these three qualifiers are only ever
+ * consumed for pull requests today: GitHub's `Repository.pullRequests`
+ * connection has no assignee/author argument at all, so
+ * `repo-list-loader.ts` routes a PR-list load through the separate `search`
+ * API whenever one of these is set. Repo-issues loading still uses the
+ * plain `Repository.issues` connection unconditionally, so these tokens
+ * would have nowhere to go if parsed there — `RepoIssuesFilters` has no
+ * matching fields (see its doc comment in `filters.ts`). Last value wins
+ * when a qualifier appears more than once, matching how `sort:` already
+ * behaves in {@link parseSearchQueryTokens}.
+ */
+function parsePersonSearchTokens(q: string): {
+  assignee: string | undefined;
+  author: string | undefined;
+  involves: string | undefined;
+} {
+  let assignee: string | undefined;
+  let author: string | undefined;
+  let involves: string | undefined;
+  for (const token of tokenizeSearchQuery(q)) {
+    const parsed = parseSearchToken(token);
+    if (parsed === undefined) continue;
+    if (parsed.key === "assignee") assignee = parsed.value;
+    else if (parsed.key === "author") author = parsed.value;
+    else if (parsed.key === "involves") involves = parsed.value;
+  }
+  return { assignee, author, involves };
 }
 
 /**
@@ -224,10 +294,63 @@ export function parseRepoIssuesFilters(url: string, defaults: RepoIssuesFilters)
   return parseRepoListFilters(url, defaults, isIssueState, isIssueSortField);
 }
 
-/** {@link parseRepoListFilters} instantiated for repo pull requests. */
+/**
+ * {@link parseRepoListFilters} instantiated for repo pull requests, then
+ * layered with `assignee`/`author`/`involves` — parsed independently of the
+ * shared `state`/`sort`/`labels` machinery above since `RepoIssuesFilters`
+ * has no equivalent fields for {@link parseRepoListFilters} to populate
+ * generically (see {@link RepoPullRequestsFilters}'s doc comment).
+ * Own-scheme `assignee=`/`author=`/`involves=` params take priority over a
+ * `q=` GitHub search-DSL token, mirroring how the shared function already
+ * prioritises its own `state=`/`sort=`/`labels=` params over `q=`.
+ */
 export function parseRepoPullRequestsFilters(
   url: string,
   defaults: RepoPullRequestsFilters,
 ): RepoPullRequestsFilters {
-  return parseRepoListFilters(url, defaults, isPullRequestState, isPullRequestSortField);
+  const base = parseRepoListFilters(url, defaults, isPullRequestState, isPullRequestSortField);
+
+  const queryIndex = url.indexOf("?");
+  if (queryIndex === -1) return base;
+  const params = new URLSearchParams(url.slice(queryIndex));
+
+  const hasOwnPersonParams = params.has("assignee") || params.has("author") || params.has("involves");
+  if (hasOwnPersonParams) {
+    return withPersonFields(
+      base,
+      params.get("assignee") ?? defaults.assignee,
+      params.get("author") ?? defaults.author,
+      params.get("involves") ?? defaults.involves,
+    );
+  }
+
+  const q = params.get("q");
+  if (q === null) return base;
+  const personTokens = parsePersonSearchTokens(q);
+  return withPersonFields(
+    base,
+    personTokens.assignee ?? defaults.assignee,
+    personTokens.author ?? defaults.author,
+    personTokens.involves ?? defaults.involves,
+  );
+}
+
+/** Spreads `assignee`/`author`/`involves` onto `base` only when each is
+ *  actually present — never assigning an explicit `undefined` to an
+ *  optional property, which `exactOptionalPropertyTypes` forbids in an
+ *  object literal (the same "conditionally spread, never set to undefined"
+ *  idiom `materialise.ts` already establishes for optional node-data
+ *  fields). */
+function withPersonFields(
+  base: RepoPullRequestsFilters,
+  assignee: string | undefined,
+  author: string | undefined,
+  involves: string | undefined,
+): RepoPullRequestsFilters {
+  return {
+    ...base,
+    ...(assignee !== undefined ? { assignee } : {}),
+    ...(author !== undefined ? { author } : {}),
+    ...(involves !== undefined ? { involves } : {}),
+  };
 }
