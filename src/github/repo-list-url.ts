@@ -6,9 +6,20 @@
  * `sharing/remote` fetch, which would fail: the list page is HTML, not JSON,
  * and not CORS-enabled for arbitrary origins.
  *
- * A single-issue or single-PR page (`.../issues/42`, `.../pulls/7`) is a
- * different resource entirely — not a list — and is deliberately out of
- * scope here.
+ * A single-issue page (`.../issues/42`) is a different resource entirely —
+ * not a list — and is deliberately out of scope here. Pull requests have no
+ * equivalent exclusion: confirmed live against github.com, `.../pulls/{value}`
+ * (any value, including one that looks numeric) and `.../pulls/assigned/{value}`
+ * are themselves GitHub's own path-segment shorthand for the PR list filtered
+ * by author/assignee, not a single-PR view — the real single-PR route is the
+ * singular `.../pull/{number}`, an unrelated path this module still doesn't
+ * handle. See {@link parseRepoPullRequestsUrl} and
+ * {@link parseRepoPullRequestsFilters}, which both recognise this shorthand.
+ * Issues have no matching shorthand handling here: GitHub's equivalent
+ * (`.../issues/{value}`, redirecting to `.../issues/created_by/{value}`)
+ * would need `RepoIssuesFilters` to grow assignee/author fields backed by
+ * `Repository.issues`'s own `filterBy` argument — a different GraphQL
+ * mechanism than pull requests' `search` route, and not yet built.
  *
  * Filters (state/sort/labels) are a separate concern from URL-shape
  * recognition, handled by {@link parseRepoIssuesFilters}/
@@ -37,6 +48,19 @@ function buildRepoListUrlPattern(segment: "issues" | "pulls"): RegExp {
 const REPO_ISSUES_URL_PATTERN = buildRepoListUrlPattern("issues");
 const REPO_PULL_REQUESTS_URL_PATTERN = buildRepoListUrlPattern("pulls");
 
+/** GitHub's own path-segment shorthand for a repo's PR list filtered by
+ *  assignee — `.../pulls/assigned/{value}` — checked ahead of
+ *  {@link REPO_PULL_REQUESTS_AUTHOR_PATTERN} only for clarity; the two never
+ *  actually overlap; a single `[^/]+` path segment can't itself contain the
+ *  `/` that separates `assigned` from its value. */
+const REPO_PULL_REQUESTS_ASSIGNED_PATTERN =
+  /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pulls\/assigned\/([^/?]+)\/?$/;
+
+/** GitHub's own path-segment shorthand for a repo's PR list filtered by
+ *  author — `.../pulls/{value}` — see the module doc comment for why this
+ *  applies to any value, including one that looks like a PR number. */
+const REPO_PULL_REQUESTS_AUTHOR_PATTERN = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pulls\/([^/?]+)\/?$/;
+
 function parseRepoListUrl(pattern: RegExp, url: string): ParsedRepoListUrl | undefined {
   const match = pattern.exec(url);
   if (match === null) return undefined;
@@ -55,12 +79,37 @@ export function parseRepoIssuesUrl(url: string): ParsedRepoListUrl | undefined {
 }
 
 /**
- * Parse a GitHub repo pull-requests list URL. Returns `undefined` for
- * anything else, including a single-PR page (`.../pulls/7`), a gist URL, a
- * Projects URL, or a repo file (blob) URL.
+ * Parse a GitHub repo pull-requests list URL — the bare/query form
+ * (`.../pulls`, `.../pulls?...`) or either of GitHub's own person-filter
+ * path shorthands (`.../pulls/{value}`, `.../pulls/assigned/{value}`, see
+ * the module doc comment). Returns `undefined` for anything else, including
+ * a gist URL, a Projects URL, or a repo file (blob) URL.
  */
 export function parseRepoPullRequestsUrl(url: string): ParsedRepoListUrl | undefined {
-  return parseRepoListUrl(REPO_PULL_REQUESTS_URL_PATTERN, url);
+  return (
+    parseRepoListUrl(REPO_PULL_REQUESTS_URL_PATTERN, url) ??
+    parseRepoListUrl(REPO_PULL_REQUESTS_ASSIGNED_PATTERN, url) ??
+    parseRepoListUrl(REPO_PULL_REQUESTS_AUTHOR_PATTERN, url)
+  );
+}
+
+/**
+ * Extracts the person-filter value from GitHub's `.../pulls/{value}`
+ * (author) or `.../pulls/assigned/{value}` (assignee) path shorthand, if
+ * `url` matches either — see the module doc comment. Consumed by
+ * {@link parseRepoPullRequestsFilters} alongside its existing query-string
+ * sources.
+ */
+function parsePullRequestsPathShorthand(url: string): { assignee?: string; author?: string } | undefined {
+  const assignedMatch = REPO_PULL_REQUESTS_ASSIGNED_PATTERN.exec(url);
+  const assignee = assignedMatch?.[3];
+  if (assignee !== undefined) return { assignee };
+
+  const authorMatch = REPO_PULL_REQUESTS_AUTHOR_PATTERN.exec(url);
+  const author = authorMatch?.[3];
+  if (author !== undefined) return { author };
+
+  return undefined;
 }
 
 /**
@@ -300,38 +349,49 @@ export function parseRepoIssuesFilters(url: string, defaults: RepoIssuesFilters)
  * shared `state`/`sort`/`labels` machinery above since `RepoIssuesFilters`
  * has no equivalent fields for {@link parseRepoListFilters} to populate
  * generically (see {@link RepoPullRequestsFilters}'s doc comment).
- * Own-scheme `assignee=`/`author=`/`involves=` params take priority over a
- * `q=` GitHub search-DSL token, mirroring how the shared function already
- * prioritises its own `state=`/`sort=`/`labels=` params over `q=`.
+ *
+ * Three sources feed `assignee`/`author`, in ascending priority: `defaults`,
+ * then GitHub's own `.../pulls/{value}`/`.../pulls/assigned/{value}` path
+ * shorthand ({@link parsePullRequestsPathShorthand}), then own-scheme
+ * `assignee=`/`author=`/`involves=` query params or a `q=` GitHub search-DSL
+ * token (mutually exclusive with each other, and — by construction, since
+ * GitHub itself never emits both at once — with the path shorthand too, but
+ * checked in this order regardless so an explicit query param would still
+ * win over a path segment if a caller ever combined them).
  */
 export function parseRepoPullRequestsFilters(
   url: string,
   defaults: RepoPullRequestsFilters,
 ): RepoPullRequestsFilters {
   const base = parseRepoListFilters(url, defaults, isPullRequestState, isPullRequestSortField);
+  const pathPerson = parsePullRequestsPathShorthand(url);
+  const pathApplied =
+    pathPerson === undefined
+      ? base
+      : withPersonFields(base, pathPerson.assignee, pathPerson.author, undefined);
 
   const queryIndex = url.indexOf("?");
-  if (queryIndex === -1) return base;
+  if (queryIndex === -1) return pathApplied;
   const params = new URLSearchParams(url.slice(queryIndex));
 
   const hasOwnPersonParams = params.has("assignee") || params.has("author") || params.has("involves");
   if (hasOwnPersonParams) {
     return withPersonFields(
-      base,
-      params.get("assignee") ?? defaults.assignee,
-      params.get("author") ?? defaults.author,
-      params.get("involves") ?? defaults.involves,
+      pathApplied,
+      params.get("assignee") ?? pathApplied.assignee,
+      params.get("author") ?? pathApplied.author,
+      params.get("involves") ?? pathApplied.involves,
     );
   }
 
   const q = params.get("q");
-  if (q === null) return base;
+  if (q === null) return pathApplied;
   const personTokens = parsePersonSearchTokens(q);
   return withPersonFields(
-    base,
-    personTokens.assignee ?? defaults.assignee,
-    personTokens.author ?? defaults.author,
-    personTokens.involves ?? defaults.involves,
+    pathApplied,
+    personTokens.assignee ?? pathApplied.assignee,
+    personTokens.author ?? pathApplied.author,
+    personTokens.involves ?? pathApplied.involves,
   );
 }
 

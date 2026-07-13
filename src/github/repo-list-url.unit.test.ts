@@ -59,8 +59,27 @@ describe("parseRepoPullRequestsUrl", () => {
     expect(parseRepoPullRequestsUrl(url)).toEqual({ owner: "TeamAcelo", repo: "graphle" });
   });
 
-  it("returns undefined for a single-PR page", () => {
-    expect(parseRepoPullRequestsUrl("https://github.com/TeamAcelo/graphle/pulls/7")).toBeUndefined();
+  it("parses GitHub's own author-shorthand path (.../pulls/{value}) — confirmed live, not a single-PR page", () => {
+    expect(parseRepoPullRequestsUrl("https://github.com/TeamAcelo/graphle/pulls/Mearman")).toEqual({
+      owner: "TeamAcelo",
+      repo: "graphle",
+    });
+  });
+
+  it("parses the author-shorthand path even when the value looks like a PR number", () => {
+    // GitHub applies the same author-shorthand treatment regardless — the
+    // real single-PR view is the unrelated singular `.../pull/7` route.
+    expect(parseRepoPullRequestsUrl("https://github.com/TeamAcelo/graphle/pulls/7")).toEqual({
+      owner: "TeamAcelo",
+      repo: "graphle",
+    });
+  });
+
+  it("parses GitHub's own assignee-shorthand path (.../pulls/assigned/{value})", () => {
+    expect(parseRepoPullRequestsUrl("https://github.com/TeamAcelo/graphle/pulls/assigned/Mearman")).toEqual({
+      owner: "TeamAcelo",
+      repo: "graphle",
+    });
   });
 
   it("returns undefined for a gist URL", () => {
@@ -210,6 +229,26 @@ describe("parseRepoPullRequestsFilters", () => {
     const url = "https://github.com/TeamAcelo/graphle/pulls?assignee=Mearman";
     const parsed = parseRepoPullRequestsFilters(url, defaults);
     expect(parsed.assignee).toBe("Mearman");
+    expect(parsed.author).toBe("octocat");
+  });
+
+  it("derives author from GitHub's .../pulls/{value} path shorthand — the exact originally-reported URL shape", () => {
+    const url = "https://github.com/adpeak/adpeak-mono/pulls/Mearman";
+    const parsed = parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+    expect(parsed.author).toBe("Mearman");
+    expect(parsed.assignee).toBeUndefined();
+  });
+
+  it("derives assignee from GitHub's .../pulls/assigned/{value} path shorthand", () => {
+    const url = "https://github.com/adpeak/adpeak-mono/pulls/assigned/Mearman";
+    const parsed = parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
+    expect(parsed.assignee).toBe("Mearman");
+    expect(parsed.author).toBeUndefined();
+  });
+
+  it("prefers an explicit query param over the path shorthand when a caller combines them", () => {
+    const url = "https://github.com/adpeak/adpeak-mono/pulls/Mearman?author=octocat";
+    const parsed = parseRepoPullRequestsFilters(url, DEFAULT_REPO_PULL_REQUESTS_FILTERS);
     expect(parsed.author).toBe("octocat");
   });
 });
