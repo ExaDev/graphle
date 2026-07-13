@@ -1,5 +1,6 @@
 import type { RepoIssuesFilters, RepoPullRequestsFilters } from "./filters";
 import type {
+  GitHubBranch,
   GitHubIssue,
   GitHubIssueWithRepo,
   GitHubOrg,
@@ -66,6 +67,29 @@ export interface GitHubClient {
     filters: RepoPullRequestsFilters,
     signal: AbortSignal,
   ): Promise<Page<GitHubPullRequest>>;
+  /** List a repo's branches (GitHub's `Repository.refs` connection, scoped to
+   *  `refs/heads/` — never tags). Unlike `listRepoIssues`/`listRepoPullRequests`,
+   *  this connection has no `states`/`labels`/`orderBy` argument in GitHub's
+   *  schema. Throws `GitHubError({type:"notFound"})` when the owner/name
+   *  doesn't resolve. */
+  listRepoBranches(
+    owner: string,
+    name: string,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Page<GitHubBranch>>;
+  /** Resolve a single pull request by its number (`/{owner}/{name}/pull/{number}`).
+   *  Used to re-fetch a PR's `headRepository` fresh — a persisted PR node's
+   *  own `data` doesn't carry it (see `pullRequestToNode`), so a PR-node
+   *  expansion needing accurate fork detection re-fetches rather than
+   *  trusting stale/absent local data. Throws `GitHubError({type:"notFound"})`
+   *  when the owner/name/number doesn't resolve. */
+  getPullRequest(
+    owner: string,
+    name: string,
+    number: number,
+    signal: AbortSignal,
+  ): Promise<GitHubPullRequest>;
   listOrgProjects(
     login: string,
     cursor: string | undefined,

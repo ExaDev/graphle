@@ -421,6 +421,173 @@ describe("createGitHubClient - listRepoPullRequests", () => {
   });
 });
 
+describe("createGitHubClient - listRepoBranches", () => {
+  it("fetches a page of branches", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoBranches: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                refs: {
+                  nodes: [{ name: "main" }, { name: "feature-1" }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+
+    const branches = await client.listRepoBranches(
+      "exadev",
+      "graphle",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(branches.items).toEqual([{ name: "main" }, { name: "feature-1" }]);
+    expect(branches.hasNextPage).toBe(false);
+    expect(branches.endCursor).toBeUndefined();
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("threads endCursor from one page into the next call", async () => {
+    let call = 0;
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoBranches: () => {
+          call += 1;
+          const refs =
+            call === 1
+              ? { nodes: [{ name: "main" }], pageInfo: { hasNextPage: true, endCursor: "CURSOR1" } }
+              : { nodes: [{ name: "feature-1" }], pageInfo: { hasNextPage: false, endCursor: null } };
+          return jsonResponse({ data: { repository: { refs }, rateLimit: RATE } });
+        },
+      }),
+    });
+
+    const first = await client.listRepoBranches("exadev", "graphle", undefined, new AbortController().signal);
+    expect(first.items).toEqual([{ name: "main" }]);
+    expect(first.endCursor).toBe("CURSOR1");
+    expect(first.hasNextPage).toBe(true);
+
+    const second = await client.listRepoBranches(
+      "exadev",
+      "graphle",
+      first.endCursor,
+      new AbortController().signal,
+    );
+    expect(second.items).toEqual([{ name: "feature-1" }]);
+    expect(second.hasNextPage).toBe(false);
+  });
+
+  it("treats a null refs connection as an empty page, not an error", async () => {
+    // Repository.refs is itself nullable in GitHub's schema, unlike
+    // issues/pullRequests — confirmed against the GraphQL schema reference.
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoBranches: () =>
+          jsonResponse({
+            data: { repository: { refs: null }, rateLimit: RATE },
+          }),
+      }),
+    });
+
+    const branches = await client.listRepoBranches(
+      "exadev",
+      "graphle",
+      undefined,
+      new AbortController().signal,
+    );
+    expect(branches).toEqual({ items: [], endCursor: undefined, hasNextPage: false });
+  });
+
+  it("throws notFound when the repository doesn't resolve", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        RepoBranches: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+          }),
+      }),
+    });
+    await expect(
+      client.listRepoBranches("exadev", "no-such-repo", undefined, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+});
+
+describe("createGitHubClient - getPullRequest", () => {
+  it("resolves a single pull request by number", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        PullRequest: () =>
+          jsonResponse({
+            data: {
+              repository: {
+                pullRequest: {
+                  number: 1,
+                  title: "Add feature",
+                  state: "OPEN",
+                  url: "pr1",
+                  baseRefName: "main",
+                  headRefName: "feature-1",
+                  headRepository: { name: "graphle", owner: { login: "exadev" } },
+                },
+              },
+              rateLimit: RATE,
+            },
+          }),
+      }),
+    });
+
+    const pullRequest = await client.getPullRequest("exadev", "graphle", 1, new AbortController().signal);
+    expect(pullRequest.number).toBe(1);
+    expect(pullRequest.state).toBe("open");
+    expect(pullRequest.headRepository).toEqual({ name: "graphle", owner: { login: "exadev" } });
+    expect(client.lastRateLimit).toEqual(RATE);
+  });
+
+  it("throws notFound when the repository doesn't resolve", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        PullRequest: () =>
+          jsonResponse({
+            data: { repository: null, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+          }),
+      }),
+    });
+    await expect(
+      client.getPullRequest("exadev", "no-such-repo", 1, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+
+  it("throws notFound when the PR number doesn't resolve in a known repository", async () => {
+    const client = createGitHubClient({
+      token: "t",
+      fetch: stubFetch({
+        PullRequest: () =>
+          jsonResponse({
+            data: { repository: { pullRequest: null }, rateLimit: RATE },
+            errors: [{ type: "NOT_FOUND", message: "Could not resolve to a PullRequest" }],
+          }),
+      }),
+    });
+    await expect(
+      client.getPullRequest("exadev", "graphle", 9999, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: { type: "notFound" } });
+  });
+});
+
 describe("createGitHubClient - getOrgProject / getUserProject", () => {
   it("resolves an org-owned project by number", async () => {
     const client = createGitHubClient({

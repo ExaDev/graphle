@@ -15,6 +15,8 @@ import {
   OrgProjectsResponse,
   OrgReposResponse,
   ProjectItemsResponse,
+  PullRequestResponse,
+  RepoBranchesResponse,
   RepoIssuesResponse,
   RepoProjectsResponse,
   RepoPullRequestsResponse,
@@ -65,6 +67,16 @@ const REPO_ISSUES_QUERY = `query RepoIssues($owner:String!,$name:String!,$first:
 // `PullRequestOrderField` enum exists elsewhere in the schema and is not what
 // this argument accepts.
 const REPO_PULL_REQUESTS_QUERY = `query RepoPullRequests($owner:String!,$name:String!,$first:Int!,$after:String,$states:[PullRequestState!]!,$orderByField:IssueOrderField!,$orderByDirection:OrderDirection!,$labels:[String!]){ repository(owner:$owner,name:$name){ pullRequests(first:$first,after:$after,states:$states,labels:$labels,orderBy:{field:$orderByField,direction:$orderByDirection}){ pageInfo{hasNextPage endCursor} nodes{ number title state url baseRefName headRefName headRepository{name owner{login}} } } } rateLimit{remaining resetAt} }`;
+
+// `refPrefix:"refs/heads/"` scopes to branches only (excludes `refs/tags/`),
+// confirmed against the GraphQL schema reference — `Repository.refs` takes
+// no `states`/`labels`/`orderBy` filters the way `issues`/`pullRequests` do.
+const REPO_BRANCHES_QUERY = `query RepoBranches($owner:String!,$name:String!,$first:Int!,$after:String){ repository(owner:$owner,name:$name){ refs(refPrefix:"refs/heads/",first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ name } } } rateLimit{remaining resetAt} }`;
+
+// Same node field selection as REPO_PULL_REQUESTS_QUERY's `nodes{...}` (kept
+// in sync deliberately: getPullRequest needs the same headRepository detail
+// listRepoPullRequests already fetches, just for one PR by number).
+const PULL_REQUEST_QUERY = `query PullRequest($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){ pullRequest(number:$number){ number title state url baseRefName headRefName headRepository{name owner{login}} } } rateLimit{remaining resetAt} }`;
 
 const ORG_PROJECTS_QUERY = `query OrgProjects($login:String!,$first:Int!,$after:String){ organization(login:$login){ projectsV2(first:$first,after:$after){ pageInfo{hasNextPage endCursor} nodes{ id number title url closed } } } rateLimit{remaining resetAt} }`;
 
@@ -381,6 +393,47 @@ export function createGitHubClient(parameters: {
       }
       const pullRequests = repo.pullRequests;
       return { items: pullRequests.nodes, ...toPage(pullRequests.pageInfo) };
+    },
+
+    async listRepoBranches(owner, name, cursor, signal) {
+      const result = await graphql(
+        REPO_BRANCHES_QUERY,
+        { owner, name, first: PAGE_SIZE, after: cursor },
+        RepoBranchesResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const repo = result.data.repository;
+      if (repo === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      // `refs` is itself nullable in GitHub's schema (unlike `issues`/
+      // `pullRequests`) — a null connection has no refs matching the prefix,
+      // which is an empty page, not an error.
+      const refs = repo.refs;
+      if (refs === null) {
+        return { items: [], endCursor: undefined, hasNextPage: false };
+      }
+      return { items: refs.nodes, ...toPage(refs.pageInfo) };
+    },
+
+    async getPullRequest(owner, name, number, signal) {
+      const result = await graphql(
+        PULL_REQUEST_QUERY,
+        { owner, name, number },
+        PullRequestResponse,
+        signal,
+      );
+      lastRateLimit = result.data.rateLimit;
+      const repo = result.data.repository;
+      if (repo === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      const pullRequest = repo.pullRequest;
+      if (pullRequest === null) {
+        throw new GitHubError({ type: "notFound" });
+      }
+      return pullRequest;
     },
 
     async listOrgProjects(login, cursor, signal) {

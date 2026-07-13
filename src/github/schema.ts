@@ -155,6 +155,13 @@ export const GitHubPullRequestWithRepo = GitHubPullRequest.extend({
 });
 export type GitHubPullRequestWithRepo = z.infer<typeof GitHubPullRequestWithRepo>;
 
+/** A git ref under `refs/heads/` (a branch) — just enough to materialise a
+ *  `branch` node (`branchToNode`); GitHub's `Ref` type carries considerably
+ *  more (target commit, protection rules, comparisons) but nothing here
+ *  needs it. */
+export const GitHubBranch = z.object({ name: z.string() });
+export type GitHubBranch = z.infer<typeof GitHubBranch>;
+
 /** A GitHub Projects v2 project. `id` is the GraphQL node id used to fetch items. */
 export const GitHubProject = z.object({
   id: z.string(),
@@ -369,6 +376,42 @@ export const RepoPullRequestsResponse = z.object({
   }),
 });
 export type RepoPullRequestsResponse = z.infer<typeof RepoPullRequestsResponse>;
+
+/**
+ * `repository` is nullable (unknown owner/name). Unlike `issues`/`pullRequests`,
+ * GitHub's `Repository.refs` connection is itself nullable (confirmed against
+ * the GraphQL schema reference — `refs: RefConnection`, no `!`) — modelled
+ * here rather than defended against with a fallback; a null `refs` is treated
+ * as an empty page by {@link listRepoBranches}'s consumer in `graphql-adapter.ts`.
+ */
+export const RepoBranchesResponse = z.object({
+  data: z.object({
+    repository: z
+      .object({
+        refs: connection(GitHubBranch).nullable(),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type RepoBranchesResponse = z.infer<typeof RepoBranchesResponse>;
+
+/**
+ * `repository` is nullable (unknown owner/name); its nested `pullRequest` is
+ * independently nullable (unknown PR number in a known repo) — mirrors
+ * {@link IssueSubIssuesResponse}'s two-level nullability for the same reason.
+ */
+export const PullRequestResponse = z.object({
+  data: z.object({
+    repository: z
+      .object({
+        pullRequest: GitHubPullRequest.nullable(),
+      })
+      .nullable(),
+    rateLimit: RateLimit,
+  }),
+});
+export type PullRequestResponse = z.infer<typeof PullRequestResponse>;
 
 /** `repository` is nullable: GitHub returns `null` for an unknown name. */
 export const RepoProjectsResponse = z.object({

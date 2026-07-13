@@ -47,6 +47,12 @@ function clientWithRepos(repos: Page<{
     listRepoPullRequests() {
       return Promise.reject(new Error("unexpected listRepoPullRequests call"));
     },
+    listRepoBranches() {
+      return Promise.reject(new Error("unexpected listRepoBranches call"));
+    },
+    getPullRequest() {
+      return Promise.reject(new Error("unexpected getPullRequest call"));
+    },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
     },
@@ -196,6 +202,8 @@ function clientWithPullRequests(page: Page<PullRequestFixture>): GitHubClient {
     listRepoPullRequests() {
       return Promise.resolve(page);
     },
+    listRepoBranches: unexpected("listRepoBranches"),
+    getPullRequest: unexpected("getPullRequest"),
     listOrgProjects: unexpected("listOrgProjects"),
     listUserProjects: unexpected("listUserProjects"),
     listRepoProjects: unexpected("listRepoProjects"),
@@ -459,6 +467,12 @@ describe("expansionsForType - project-items", () => {
       listRepoPullRequests() {
         return Promise.reject(new Error("unexpected listRepoPullRequests call"));
       },
+      listRepoBranches() {
+        return Promise.reject(new Error("unexpected listRepoBranches call"));
+      },
+      getPullRequest() {
+        return Promise.reject(new Error("unexpected getPullRequest call"));
+      },
       listOrgProjects() {
         return Promise.reject(new Error("unexpected listOrgProjects call"));
       },
@@ -610,6 +624,12 @@ function clientWithSubIssues(page: Page<{ number: number; title: string; state: 
     listRepoPullRequests() {
       return Promise.reject(new Error("unexpected listRepoPullRequests call"));
     },
+    listRepoBranches() {
+      return Promise.reject(new Error("unexpected listRepoBranches call"));
+    },
+    getPullRequest() {
+      return Promise.reject(new Error("unexpected getPullRequest call"));
+    },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
     },
@@ -688,6 +708,12 @@ function clientWithBlockedBy(page: Page<IssueWithRepoFixture>): GitHubClient {
     listRepoPullRequests() {
       return Promise.reject(new Error("unexpected listRepoPullRequests call"));
     },
+    listRepoBranches() {
+      return Promise.reject(new Error("unexpected listRepoBranches call"));
+    },
+    getPullRequest() {
+      return Promise.reject(new Error("unexpected getPullRequest call"));
+    },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
     },
@@ -757,6 +783,12 @@ function clientWithBlocking(page: Page<IssueWithRepoFixture>): GitHubClient {
     },
     listRepoPullRequests() {
       return Promise.reject(new Error("unexpected listRepoPullRequests call"));
+    },
+    listRepoBranches() {
+      return Promise.reject(new Error("unexpected listRepoBranches call"));
+    },
+    getPullRequest() {
+      return Promise.reject(new Error("unexpected getPullRequest call"));
     },
     listOrgProjects() {
       return Promise.reject(new Error("unexpected listOrgProjects call"));
