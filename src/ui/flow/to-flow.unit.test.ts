@@ -295,4 +295,78 @@ describe("documentToFlow", () => {
     expect(flow.edges[0]?.source).toBe(parent.id);
     expect(flow.edges[0]?.target).toBe(outside.id);
   });
+
+  it("computes a rerouted edge's port assignment from the visible ancestor's position, not the hidden original endpoint's", () => {
+    // The child sits far to the left of "outside", so a port computation
+    // keyed by the *original* endpoint would face the edge "right" (child
+    // faces towards outside, which is to its right). But the edge is drawn
+    // from the group node the child is rerouted to, and the group sits to
+    // the right of "outside" — so the attachment side computed from the
+    // group's own position is "left", the opposite of what the original
+    // endpoint would produce.
+    const parent = { ...makeFreeform("Parent", 1000, 0), collapsed: true };
+    const child = { ...makeFreeform("Child", 0, 0), parentId: parent.id };
+    const outside = makeFreeform("Outside", 500, 0);
+    const edge = GraphEdge.parse({
+      id: "e1",
+      source: child.id,
+      target: outside.id,
+      type: "references",
+      data: {},
+    });
+    const flow = documentToFlow(documentWith([parent, child, outside], [edge]));
+    expect(flow.edges).toHaveLength(1);
+    const rendered = flow.edges[0];
+    expect(rendered).toBeDefined();
+    if (rendered === undefined) return;
+    expect(rendered.source).toBe(parent.id);
+    const { data } = rendered;
+    expect(data).toBeDefined();
+    if (data === undefined) return;
+    expect(data.ports.sourceSide).toBe("left");
+  });
+
+  it("gives a collapsed group's boundary edges the same port assignment they would get attached to the group node directly", () => {
+    // Two hidden children (each positioned nowhere near the group, to prove
+    // their own position isn't what drives the result) each contribute one
+    // boundary edge. Collapsing the group and rerouting its children's
+    // edges must not change the geometry of those edges at all: it should
+    // be indistinguishable from the two edges having attached to the group
+    // node directly all along.
+    const parent = makeFreeform("Parent", 1000, 0);
+    const outsideA = makeFreeform("OutsideA", 0, -2000);
+    const outsideB = makeFreeform("OutsideB", 3000, 0);
+
+    const baseline = documentToFlow(
+      documentWith(
+        [parent, outsideA, outsideB],
+        [
+          GraphEdge.parse({ id: "eA", source: parent.id, target: outsideA.id, type: "references", data: {} }),
+          GraphEdge.parse({ id: "eB", source: parent.id, target: outsideB.id, type: "references", data: {} }),
+        ],
+      ),
+    );
+
+    const collapsedParent = { ...parent, collapsed: true };
+    const childA = { ...makeFreeform("ChildA", 5000, -1900), parentId: parent.id };
+    const childB = { ...makeFreeform("ChildB", 0, 5000), parentId: parent.id };
+    const collapsed = documentToFlow(
+      documentWith(
+        [collapsedParent, childA, childB, outsideA, outsideB],
+        [
+          GraphEdge.parse({ id: "eA", source: childA.id, target: outsideA.id, type: "references", data: {} }),
+          GraphEdge.parse({ id: "eB", source: childB.id, target: outsideB.id, type: "references", data: {} }),
+        ],
+      ),
+    );
+
+    for (const edgeId of ["eA", "eB"]) {
+      const baselinePorts = baseline.edges.find((e) => e.id === edgeId)?.data?.ports;
+      const collapsedPorts = collapsed.edges.find((e) => e.id === edgeId)?.data?.ports;
+      expect(baselinePorts).toBeDefined();
+      expect(collapsedPorts).toBeDefined();
+      if (baselinePorts === undefined || collapsedPorts === undefined) continue;
+      expect(collapsedPorts).toEqual(baselinePorts);
+    }
+  });
 });

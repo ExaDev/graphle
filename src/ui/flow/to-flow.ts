@@ -192,10 +192,19 @@ export function edgeToFlow(
  * rerouted to draw between the resolved endpoints — "reroute to the group
  * node" — with its `data` (label/style source) otherwise untouched.
  *
- * `computeEdgePorts` runs once over the whole document (a uniform
- * `DEFAULT_NODE_WIDTH`/`DEFAULT_NODE_HEIGHT` footprint for every node, since
- * this coarse layer has no measured sizes to work from) and each edge's
- * resulting assignment is threaded into `edgeToFlow`.
+ * Edges are rerouted to their actually-drawn (visible-ancestor) endpoints
+ * *before* `computeEdgePorts` ever sees them, so port assignment groups and
+ * spaces edges against the node each edge is really attached to — not the
+ * original, possibly-hidden endpoint. Computing ports from the original
+ * endpoints would key each rerouted boundary edge's crowding group by its
+ * (now invisible) child node instead of the shared group node several
+ * children's edges actually converge on, defeating the crowding logic
+ * `computeEdgePorts` exists to provide and misdirecting the chosen side
+ * relative to the group node's real position. `computeEdgePorts` runs once
+ * over the rerouted edge set (a uniform `DEFAULT_NODE_WIDTH`/
+ * `DEFAULT_NODE_HEIGHT` footprint for every node, since this coarse layer
+ * has no measured sizes to work from) and each edge's resulting assignment
+ * is threaded into `edgeToFlow`.
  */
 export function documentToFlow(document: GraphDocument): {
   nodes: GraphFlowNode[];
@@ -207,25 +216,34 @@ export function documentToFlow(document: GraphDocument): {
     .filter((node) => !isHidden(node.id, nodesById))
     .map((node) => nodeToFlow(node, countChildren(node.id, document.nodes)));
 
-  const edgePorts = computeEdgePorts(document, {
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-  });
-
-  const edges: GraphFlowEdge[] = [];
+  // Resolve every edge's actually-drawn endpoints up front: an edge fully
+  // internal to one collapsed subtree (both endpoints resolve to the same
+  // ancestor) has nothing to draw and is dropped here, before port
+  // computation ever sees it. The rerouted edges are what both port
+  // assignment and rendering use from this point on.
+  const routedEdges: GraphEdge[] = [];
   for (const edge of document.edges) {
-    const ports = edgePorts.get(edge.id);
-    // `computeEdgePorts` only assigns a port to an edge whose source and
-    // target both resolve to a real node in `document.nodes` (see its own
-    // doc comment) — an edge referencing a nonexistent node id has no
-    // coherent attachment point to draw, so it is dropped here rather than
-    // rendered with a made-up side/offset.
-    if (ports === undefined) continue;
     const source = visibleAncestor(edge.source, nodesById);
     const target = visibleAncestor(edge.target, nodesById);
     if (source === target) continue;
-    const rerouted = source === edge.source && target === edge.target ? edge : { ...edge, source, target };
-    edges.push(edgeToFlow(rerouted, document.edgeTypes, ports));
+    routedEdges.push(source === edge.source && target === edge.target ? edge : { ...edge, source, target });
+  }
+
+  const edgePorts = computeEdgePorts(
+    { ...document, edges: routedEdges },
+    { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
+  );
+
+  const edges: GraphFlowEdge[] = [];
+  for (const edge of routedEdges) {
+    const ports = edgePorts.get(edge.id);
+    // `computeEdgePorts` only assigns a port to an edge whose (rerouted)
+    // source and target both resolve to a real node in `document.nodes`
+    // (see its own doc comment) — an edge referencing a nonexistent node id
+    // has no coherent attachment point to draw, so it is dropped here
+    // rather than rendered with a made-up side/offset.
+    if (ports === undefined) continue;
+    edges.push(edgeToFlow(edge, document.edgeTypes, ports));
   }
 
   return { nodes, edges };
