@@ -4,6 +4,7 @@ import type { GitHubClient } from "./contract";
 import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
 import {
   blocksEdge,
+  branchToNode,
   buildDelta,
   containsEdge,
   issueToNode,
@@ -51,12 +52,19 @@ export type ExpansionResult = {
 export type Expansion = {
   id: string;
   label: string;
-  run: (
-    source: GraphNode,
-    client: GitHubClient,
-    cursor: string | undefined,
-    signal: AbortSignal,
-  ) => Promise<ExpansionResult>;
+  /**
+   * Takes a single destructured options object, rather than positional
+   * parameters, specifically so an expansion with no real pagination
+   * (`pullRequestBranches` — a PR always has exactly one base and one head
+   * branch) can omit `cursor` from its own parameter list entirely instead
+   * of declaring it and never reading it.
+   */
+  run: (opts: {
+    source: GraphNode;
+    client: GitHubClient;
+    cursor: string | undefined;
+    signal: AbortSignal;
+  }) => Promise<ExpansionResult>;
 };
 
 /**
@@ -104,7 +112,7 @@ function requireNumber(node: GraphNode, field: string): number {
 const orgRepos: Expansion = {
   id: "org-repos",
   label: "Repositories",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "org") {
       throw new Error("org-repos expansion requires an org source node");
     }
@@ -127,7 +135,7 @@ const orgRepos: Expansion = {
 const orgProjects: Expansion = {
   id: "org-projects",
   label: "Projects",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "org") {
       throw new Error("org-projects expansion requires an org source node");
     }
@@ -150,7 +158,7 @@ const orgProjects: Expansion = {
 const repoIssues: Expansion = {
   id: "repo-issues",
   label: "Issues",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "repo") {
       throw new Error("repo-issues expansion requires a repo source node");
     }
@@ -174,7 +182,7 @@ const repoIssues: Expansion = {
 const repoPullRequests: Expansion = {
   id: "repo-pull-requests",
   label: "Pull requests",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "repo") {
       throw new Error("repo-pull-requests expansion requires a repo source node");
     }
@@ -227,7 +235,7 @@ const repoPullRequests: Expansion = {
 const repoProjects: Expansion = {
   id: "repo-projects",
   label: "Projects",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "repo") {
       throw new Error("repo-projects expansion requires a repo source node");
     }
@@ -248,10 +256,73 @@ const repoProjects: Expansion = {
   },
 };
 
+const repoBranches: Expansion = {
+  id: "repo-branches",
+  label: "Branches",
+  async run({ source, client, cursor, signal }) {
+    if (source.type !== "repo") {
+      throw new Error("repo-branches expansion requires a repo source node");
+    }
+    const owner = requireString(source, "owner");
+    const name = requireString(source, "name");
+    const page = await client.listRepoBranches(owner, name, cursor, signal);
+    const positions = placeAround(source.position, page.items.length);
+    const nodes = page.items.map((branch, i) => ({
+      ...branchToNode(owner, name, branch.name, positionAt(positions, i)),
+      parentId: source.id,
+    }));
+    const edges = nodes.map((node) => containsEdge(source.id, node.id));
+    return {
+      delta: buildDelta(nodes, edges),
+      endCursor: page.endCursor,
+      hasNextPage: page.hasNextPage,
+    };
+  },
+};
+
+/**
+ * Lists a single pull request's base and head branch — unlike every other
+ * expansion, its source of truth is the PR node itself (`baseRefName`/
+ * `headRefName`, already on `pullRequestDataSchema`), not a paginated GitHub
+ * connection, so `run` always reports `hasNextPage: false` regardless of
+ * `cursor`. It re-fetches the PR fresh via `client.getPullRequest` rather
+ * than trusting the source node's own persisted `data`: `headRepository`
+ * (needed to detect a fork and scope the head branch to it — see
+ * `pullRequestBranchDelta`) is never persisted onto a PR node (see
+ * `pullRequestToNode`), only read transiently during `repoPullRequests`'
+ * own fetch.
+ */
+const pullRequestBranches: Expansion = {
+  id: "pull-request-branches",
+  label: "Branches",
+  async run({ source, client, signal }) {
+    if (source.type !== "pullRequest") {
+      throw new Error("pull-request-branches expansion requires a pull request source node");
+    }
+    const owner = requireString(source, "owner");
+    const name = requireString(source, "repo");
+    const number = requireNumber(source, "number");
+    const pullRequest = await client.getPullRequest(owner, name, number, signal);
+    const { nodes, edges } = pullRequestBranchDelta(
+      pullRequest,
+      source,
+      owner,
+      name,
+      source.id,
+      new Map(),
+    );
+    return {
+      delta: buildDelta(nodes, edges),
+      endCursor: undefined,
+      hasNextPage: false,
+    };
+  },
+};
+
 const projectItems: Expansion = {
   id: "project-items",
   label: "Items",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "project") {
       throw new Error("project-items expansion requires a project source node");
     }
@@ -286,7 +357,7 @@ const projectItems: Expansion = {
 const issueSubIssues: Expansion = {
   id: "issue-sub-issues",
   label: "Sub-issues",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "issue") {
       throw new Error("issue-sub-issues expansion requires an issue source node");
     }
@@ -317,7 +388,7 @@ const issueSubIssues: Expansion = {
 const issueBlockedBy: Expansion = {
   id: "issue-blocked-by",
   label: "Blocked by",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "issue") {
       throw new Error("issue-blocked-by expansion requires an issue source node");
     }
@@ -339,7 +410,7 @@ const issueBlockedBy: Expansion = {
 const issueBlocking: Expansion = {
   id: "issue-blocking",
   label: "Blocking",
-  async run(source, client, cursor, signal) {
+  async run({ source, client, cursor, signal }) {
     if (source.type !== "issue") {
       throw new Error("issue-blocking expansion requires an issue source node");
     }
@@ -360,23 +431,26 @@ const issueBlocking: Expansion = {
 
 /**
  * The expansions available for a node type. `org` nodes offer their owned
- * repos and projects; `repo` nodes offer their issues, pull requests, and
- * projects; `project` nodes offer their items; `issue` nodes offer their
- * sub-issues (GitHub's own "sub-issues" feature — `Issue.subIssues`) and
- * their blocking relationships (`Issue.blockedBy`/`Issue.blocking`); every
- * other type (including `pullRequest`, `freeform`, and any custom type) has
- * nothing to expand into, so an empty list is returned.
+ * repos and projects; `repo` nodes offer their issues, pull requests,
+ * branches, and projects; `project` nodes offer their items; `issue` nodes
+ * offer their sub-issues (GitHub's own "sub-issues" feature —
+ * `Issue.subIssues`) and their blocking relationships (`Issue.blockedBy`/
+ * `Issue.blocking`); `pullRequest` nodes offer their base and head branch;
+ * every other type (`freeform`, `branch`, and any custom type) has nothing
+ * to expand into, so an empty list is returned.
  */
 export function expansionsForType(typeName: string): Expansion[] {
   switch (typeName) {
     case "org":
       return [orgRepos, orgProjects];
     case "repo":
-      return [repoIssues, repoPullRequests, repoProjects];
+      return [repoIssues, repoPullRequests, repoBranches, repoProjects];
     case "project":
       return [projectItems];
     case "issue":
       return [issueSubIssues, issueBlockedBy, issueBlocking];
+    case "pullRequest":
+      return [pullRequestBranches];
     default:
       return [];
   }

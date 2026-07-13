@@ -58,7 +58,7 @@ async function runWithClient(
   opts?: { silent?: boolean; onExistingMatch?: "keep" | "overwrite" },
 ): Promise<RunNodeExpansionResult | undefined> {
   try {
-    const result = await expansion.run(node, client, cursor, signal);
+    const result = await expansion.run({ source: node, client, cursor, signal });
     const stampedDelta = {
       ...result.delta,
       nodes: result.delta.nodes.map((n) => ({

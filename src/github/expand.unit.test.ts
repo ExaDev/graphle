@@ -117,10 +117,7 @@ describe("expansionsForType - org-repos", () => {
     if (expansion === undefined) throw new Error("org-repos expansion missing");
 
     const { delta, endCursor, hasNextPage } = await expansion.run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     expect(hasNextPage).toBe(false);
@@ -154,10 +151,7 @@ describe("expansionsForType - org-repos", () => {
     if (expansion === undefined) throw new Error("org-repos expansion missing");
 
     const { delta } = await expansion.run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     const doc = emptyDocument("test");
@@ -250,10 +244,7 @@ describe("expansionsForType - repo-pull-requests", () => {
     });
 
     const { delta } = await findPullRequestsExpansion().run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     const prNode = delta.nodes.find((n) => n.type === "pullRequest");
@@ -304,10 +295,7 @@ describe("expansionsForType - repo-pull-requests", () => {
     });
 
     const { delta } = await findPullRequestsExpansion().run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     const pr1 = delta.nodes.find((n) => n.data.number === 1);
@@ -355,10 +343,7 @@ describe("expansionsForType - repo-pull-requests", () => {
     });
 
     const { delta } = await findPullRequestsExpansion().run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     const branchNodes = delta.nodes.filter((n) => n.type === "branch" && n.data.branchName === "feature-base");
@@ -398,10 +383,7 @@ describe("expansionsForType - repo-pull-requests", () => {
     });
 
     const { delta } = await findPullRequestsExpansion().run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     const branchNodes = delta.nodes.filter((n) => n.type === "branch");
@@ -410,12 +392,220 @@ describe("expansionsForType - repo-pull-requests", () => {
   });
 });
 
+/** Builds a client whose listRepoBranches returns a fixed canned page, all
+ *  other methods throw so a test fails loudly on an unexpected call. */
+function clientWithBranches(page: Page<{ name: string }>): GitHubClient {
+  const unexpected = (name: string) => () => Promise.reject(new Error(`unexpected ${name} call`));
+  return {
+    viewer: unexpected("viewer"),
+    listViewerOrgs: unexpected("listViewerOrgs"),
+    listOrgRepos: unexpected("listOrgRepos"),
+    listUserRepos: unexpected("listUserRepos"),
+    listRepoIssues: unexpected("listRepoIssues"),
+    listRepoPullRequests: unexpected("listRepoPullRequests"),
+    listRepoBranches() {
+      return Promise.resolve(page);
+    },
+    getPullRequest: unexpected("getPullRequest"),
+    listOrgProjects: unexpected("listOrgProjects"),
+    listUserProjects: unexpected("listUserProjects"),
+    listRepoProjects: unexpected("listRepoProjects"),
+    listProjectItems: unexpected("listProjectItems"),
+    listIssueSubIssues: unexpected("listIssueSubIssues"),
+    listIssueBlockedBy: unexpected("listIssueBlockedBy"),
+    listIssueBlocking: unexpected("listIssueBlocking"),
+    getOrgProject: unexpected("getOrgProject"),
+    getUserProject: unexpected("getUserProject"),
+    getRepo: unexpected("getRepo"),
+    searchRepositories: unexpected("searchRepositories"),
+    searchIssues: unexpected("searchIssues"),
+    searchPullRequests: unexpected("searchPullRequests"),
+    searchAccounts: unexpected("searchAccounts"),
+    get lastRateLimit() {
+      return undefined;
+    },
+  };
+}
+
+function findBranchesExpansion() {
+  const expansion = expansionsForType("repo").find((e) => e.id === "repo-branches");
+  if (expansion === undefined) throw new Error("repo-branches expansion missing");
+  return expansion;
+}
+
+describe("expansionsForType - repo-branches", () => {
+  it("builds branch nodes and contains edges from the source repo", async () => {
+    const source = repoSource();
+    const client = clientWithBranches({
+      items: [{ name: "main" }, { name: "feature-1" }],
+      endCursor: undefined,
+      hasNextPage: false,
+    });
+
+    const { delta, endCursor, hasNextPage } = await findBranchesExpansion().run({
+      source,
+      client,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(hasNextPage).toBe(false);
+    expect(endCursor).toBeUndefined();
+    expect(delta.nodes.map((n) => (n.type === "branch" ? n.data.branchName : null))).toEqual([
+      "main",
+      "feature-1",
+    ]);
+    expect(delta.nodes.every((n) => n.parentId === source.id)).toBe(true);
+    expect(delta.edges).toHaveLength(2);
+    for (const edge of delta.edges) {
+      expect(edge.source).toBe(source.id);
+      expect(edge.type).toBe("contains");
+      expect(delta.nodes.some((n) => n.id === edge.target)).toBe(true);
+    }
+  });
+
+  it("throws when run against a non-repo source", async () => {
+    const source: GraphNode = { id: "issue-1", type: "issue", position, data: { owner: "x", repo: "y", number: 1, title: "t" } };
+    const client = clientWithBranches({ items: [], endCursor: undefined, hasNextPage: false });
+    await expect(
+      findBranchesExpansion().run({ source, client, cursor: undefined, signal: new AbortController().signal }),
+    ).rejects.toThrow("repo-branches expansion requires a repo source node");
+  });
+});
+
+/** Builds a client whose getPullRequest returns a fixed canned pull request,
+ *  all other methods throw so a test fails loudly on an unexpected call. */
+function clientWithGetPullRequest(pullRequest: PullRequestFixture): GitHubClient {
+  const unexpected = (name: string) => () => Promise.reject(new Error(`unexpected ${name} call`));
+  return {
+    viewer: unexpected("viewer"),
+    listViewerOrgs: unexpected("listViewerOrgs"),
+    listOrgRepos: unexpected("listOrgRepos"),
+    listUserRepos: unexpected("listUserRepos"),
+    listRepoIssues: unexpected("listRepoIssues"),
+    listRepoPullRequests: unexpected("listRepoPullRequests"),
+    listRepoBranches: unexpected("listRepoBranches"),
+    getPullRequest() {
+      return Promise.resolve(pullRequest);
+    },
+    listOrgProjects: unexpected("listOrgProjects"),
+    listUserProjects: unexpected("listUserProjects"),
+    listRepoProjects: unexpected("listRepoProjects"),
+    listProjectItems: unexpected("listProjectItems"),
+    listIssueSubIssues: unexpected("listIssueSubIssues"),
+    listIssueBlockedBy: unexpected("listIssueBlockedBy"),
+    listIssueBlocking: unexpected("listIssueBlocking"),
+    getOrgProject: unexpected("getOrgProject"),
+    getUserProject: unexpected("getUserProject"),
+    getRepo: unexpected("getRepo"),
+    searchRepositories: unexpected("searchRepositories"),
+    searchIssues: unexpected("searchIssues"),
+    searchPullRequests: unexpected("searchPullRequests"),
+    searchAccounts: unexpected("searchAccounts"),
+    get lastRateLimit() {
+      return undefined;
+    },
+  };
+}
+
+function pullRequestSource(): GraphNode {
+  return {
+    id: "pr-1",
+    type: "pullRequest",
+    position,
+    data: { owner: "exadev", repo: "graphle", number: 1, title: "Add feature" },
+  };
+}
+
+function findPullRequestBranchesExpansion() {
+  const expansion = expansionsForType("pullRequest").find((e) => e.id === "pull-request-branches");
+  if (expansion === undefined) throw new Error("pull-request-branches expansion missing");
+  return expansion;
+}
+
+describe("expansionsForType - pull-request-branches", () => {
+  it("re-fetches the PR fresh and builds its base and head branch nodes/edges", async () => {
+    const source = pullRequestSource();
+    const client = clientWithGetPullRequest({
+      number: 1,
+      title: "Add feature",
+      state: "open",
+      url: "https://github.com/exadev/graphle/pull/1",
+      baseRefName: "main",
+      headRefName: "feature-1",
+      headRepository: { name: "graphle", owner: { login: "exadev" } },
+    });
+
+    const { delta, endCursor, hasNextPage } = await findPullRequestBranchesExpansion().run({
+      source,
+      client,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(hasNextPage).toBe(false);
+    expect(endCursor).toBeUndefined();
+    const branchNames = delta.nodes.map((n) => (n.type === "branch" ? n.data.branchName : null)).sort();
+    expect(branchNames).toEqual(["feature-1", "main"]);
+    expect(delta.nodes.every((n) => n.parentId === source.id)).toBe(true);
+    expect(delta.edges).toContainEqual(expect.objectContaining({ type: "baseBranch", source: source.id }));
+    expect(delta.edges).toContainEqual(expect.objectContaining({ type: "headBranch", source: source.id }));
+  });
+
+  it("leaves a fork's head branch unparented, no contains edge", async () => {
+    const source = pullRequestSource();
+    const client = clientWithGetPullRequest({
+      number: 1,
+      title: "Fork PR",
+      state: "open",
+      url: "https://github.com/exadev/graphle/pull/1",
+      baseRefName: "main",
+      headRefName: "feature-1",
+      headRepository: { name: "graphle", owner: { login: "someone-else" } },
+    });
+
+    const { delta } = await findPullRequestBranchesExpansion().run({
+      source,
+      client,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    const headBranch = delta.nodes.find((n) => n.type === "branch" && n.data.owner === "someone-else");
+    if (headBranch === undefined) throw new Error("fixture: fork head branch node must exist");
+    expect(headBranch.parentId).toBeUndefined();
+    expect(delta.edges.some((e) => e.type === "contains" && e.target === headBranch.id)).toBe(false);
+  });
+
+  it("throws when run against a non-pull-request source", async () => {
+    const source = repoSource();
+    const client = clientWithGetPullRequest({
+      number: 1,
+      title: "Add feature",
+      state: "open",
+      url: "https://github.com/exadev/graphle/pull/1",
+      baseRefName: "main",
+      headRefName: "feature-1",
+      headRepository: { name: "graphle", owner: { login: "exadev" } },
+    });
+    await expect(
+      findPullRequestBranchesExpansion().run({
+        source,
+        client,
+        cursor: undefined,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow("pull-request-branches expansion requires a pull request source node");
+  });
+});
+
 describe("expansionsForType - dispatch table", () => {
-  it("offers repos and projects for org/repo, items for project, sub-issues/blocking for issue, nothing for freeform/unknown", () => {
+  it("offers repos and projects for org/repo, items for project, sub-issues/blocking for issue, branches for pullRequest, nothing for freeform/branch/unknown", () => {
     expect(expansionsForType("org").map((e) => e.id)).toEqual(["org-repos", "org-projects"]);
     expect(expansionsForType("repo").map((e) => e.id)).toEqual([
       "repo-issues",
       "repo-pull-requests",
+      "repo-branches",
       "repo-projects",
     ]);
     expect(expansionsForType("project").map((e) => e.id)).toEqual(["project-items"]);
@@ -424,6 +614,8 @@ describe("expansionsForType - dispatch table", () => {
       "issue-blocked-by",
       "issue-blocking",
     ]);
+    expect(expansionsForType("pullRequest").map((e) => e.id)).toEqual(["pull-request-branches"]);
+    expect(expansionsForType("branch")).toEqual([]);
     expect(expansionsForType("freeform")).toEqual([]);
     expect(expansionsForType("custom-thing")).toEqual([]);
   });
@@ -543,10 +735,7 @@ describe("expansionsForType - project-items", () => {
     if (expansion === undefined) throw new Error("project-items expansion missing");
 
     const { delta } = await expansion.run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     // One issue node, no freeform (draft) nodes; one tracks edge.
@@ -578,10 +767,7 @@ describe("expansionsForType - project-items", () => {
     if (expansion === undefined) throw new Error("project-items expansion missing");
 
     const { delta } = await expansion.run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     const doc = emptyDocument("test");
@@ -854,10 +1040,7 @@ describe("expansionsForType - issue-sub-issues", () => {
     if (expansion === undefined) throw new Error("issue-sub-issues expansion missing");
 
     const { delta, hasNextPage } = await expansion.run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     expect(hasNextPage).toBe(false);
@@ -880,7 +1063,7 @@ describe("expansionsForType - issue-sub-issues", () => {
     if (expansion === undefined) throw new Error("issue-sub-issues expansion missing");
 
     await expect(
-      expansion.run(source, client, undefined, new AbortController().signal),
+      expansion.run({ source, client, cursor: undefined, signal: new AbortController().signal }),
     ).rejects.toThrow("issue-sub-issues expansion requires an issue source node");
   });
 });
@@ -906,10 +1089,7 @@ describe("expansionsForType - issue-blocked-by", () => {
     if (expansion === undefined) throw new Error("issue-blocked-by expansion missing");
 
     const { delta, hasNextPage } = await expansion.run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     expect(hasNextPage).toBe(false);
@@ -931,7 +1111,7 @@ describe("expansionsForType - issue-blocked-by", () => {
     if (expansion === undefined) throw new Error("issue-blocked-by expansion missing");
 
     await expect(
-      expansion.run(source, client, undefined, new AbortController().signal),
+      expansion.run({ source, client, cursor: undefined, signal: new AbortController().signal }),
     ).rejects.toThrow("issue-blocked-by expansion requires an issue source node");
   });
 });
@@ -957,10 +1137,7 @@ describe("expansionsForType - issue-blocking", () => {
     if (expansion === undefined) throw new Error("issue-blocking expansion missing");
 
     const { delta, hasNextPage } = await expansion.run(
-      source,
-      client,
-      undefined,
-      new AbortController().signal,
+      { source, client, cursor: undefined, signal: new AbortController().signal },
     );
 
     expect(hasNextPage).toBe(false);
@@ -981,7 +1158,7 @@ describe("expansionsForType - issue-blocking", () => {
     if (expansion === undefined) throw new Error("issue-blocking expansion missing");
 
     await expect(
-      expansion.run(source, client, undefined, new AbortController().signal),
+      expansion.run({ source, client, cursor: undefined, signal: new AbortController().signal }),
     ).rejects.toThrow("issue-blocking expansion requires an issue source node");
   });
 });
