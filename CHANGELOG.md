@@ -1,3 +1,11 @@
+# [1.32.0](https://github.com/ExaDev/graphle/compare/v1.31.1...v1.32.0) (2026-07-13)
+
+
+### Features
+
+* **github:** add branch-listing and single-PR GraphQL queries ([528707d](https://github.com/ExaDev/graphle/commit/528707de01644849bf62c8125097d714b3e3a44c))
+* **github:** add repo and pull-request branch expansions ([486a96f](https://github.com/ExaDev/graphle/commit/486a96f4c1c3948c483265ed1f17e937f30f06b4))
+
 ## [1.31.1](https://github.com/ExaDev/graphle/compare/v1.31.0...v1.31.1) (2026-07-13)
 
 
