@@ -95,7 +95,7 @@ function sideLength(side: Side, nodeSize: NodeSize): number {
 }
 
 /** Sorts a group's entries by the *other* endpoint's document position
- *  along the axis perpendicular to `side` (`y` for left/right, `x` for
+ *  along the axis parallel to `side` (`y` for left/right, `x` for
  *  top/bottom), ascending, ties broken by edge id — this is what keeps a
  *  given edge's slot stable across re-renders instead of depending on
  *  iteration/insertion order. */
