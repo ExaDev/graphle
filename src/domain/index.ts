@@ -35,3 +35,10 @@ export {
 } from "./align";
 export { connectedNodeIds } from "./reachability";
 export { findSchemaDrift, type DriftEntry } from "./schema-drift";
+export {
+  computeEdgePorts,
+  sideFacing,
+  type EdgePorts,
+  type Point,
+  type Side,
+} from "./edge-ports";

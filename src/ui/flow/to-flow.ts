@@ -8,8 +8,11 @@
  * single {@link FLOW_NODE_TYPE} type string, so React Flow routes them all
  * through the one generic component; the graphle node type lives on `data.type`
  * and is resolved by the component. Each domain {@link GraphEdge} becomes a
- * React Flow edge with its label and line style (colour, dash pattern) derived
- * from its resolved edge type, and the whole domain edge stashed on `data`.
+ * React Flow edge stamped with the single {@link FLOW_EDGE_TYPE} type string,
+ * routing every edge through the one `FloatingEdge` component; its label and
+ * line style (colour, dash pattern) are derived from its resolved edge type,
+ * and the whole domain edge plus its precomputed attachment `ports` (see
+ * {@link GraphFlowEdgeData}) are stashed on `data`.
  *
  * Subgraphs (`GraphNode.parentId`/`collapsed`, see `src/schema/node.ts`) are
  * resolved here too, in {@link documentToFlow}: a node hidden by a collapsed
@@ -23,7 +26,14 @@
  */
 import type { Edge, Node } from "@xyflow/react";
 
-import { childCount as countChildren, indexNodesById, isHidden, visibleAncestor } from "@/domain";
+import {
+  childCount as countChildren,
+  computeEdgePorts,
+  indexNodesById,
+  isHidden,
+  visibleAncestor,
+  type EdgePorts,
+} from "@/domain";
 import { resolveEdgeType } from "@/schema";
 import type { EdgeTypeDefinition, GraphDocument, GraphEdge, GraphNode } from "@/schema";
 
@@ -34,14 +44,52 @@ import type { EdgeTypeDefinition, GraphDocument, GraphEdge, GraphNode } from "@/
  */
 export const FLOW_NODE_TYPE = "default";
 
+/**
+ * The React Flow edge type every graphle edge renders as. There is exactly
+ * one React Flow edge component, `FloatingEdge`: it computes each edge's
+ * live attachment point from the domain's precomputed side/offset assignment
+ * (stashed on `ports`, see {@link GraphFlowEdge}) against each endpoint's
+ * live measured position, rather than pinning to a fixed handle.
+ */
+export const FLOW_EDGE_TYPE = "floating";
+
+// Fallback footprint for a node React Flow hasn't measured yet (the brief
+// window right after it's added, before first paint). Two call sites need a
+// size for an unmeasured node: `GraphCanvas`'s auto-layout (still needs some
+// size to rank and space a node) and `computeEdgePorts` below (a uniform
+// size for every node, since document-level port assignment runs before any
+// node has a real measured footprint). 220x80 is close to `GenericNode`'s
+// typical rendered size.
+export const DEFAULT_NODE_WIDTH = 220;
+export const DEFAULT_NODE_HEIGHT = 80;
+
 /** A domain node plus the one piece of whole-document context its
  *  presentation needs — see the module doc. */
 export type GraphFlowNodeData = GraphNode & { childCount: number };
 
 /** React Flow node carrying the domain node (plus `childCount`) as its data. */
 export type GraphFlowNode = Node<GraphFlowNodeData, typeof FLOW_NODE_TYPE>;
-/** React Flow edge carrying the full domain edge as its data. */
-export type GraphFlowEdge = Edge<GraphEdge>;
+
+/**
+ * The data every {@link GraphFlowEdge} carries: the whole domain edge (under
+ * `edge`, a sibling of `ports` rather than merged into it — the domain
+ * `GraphEdge` type itself never gains a `ports` field), plus this edge's
+ * precomputed `ports` assignment from `computeEdgePorts` (which side of each
+ * endpoint it attaches to, and its offset fraction along that side).
+ *
+ * `ports` lives inside React Flow's `data` bag rather than as a top-level
+ * `GraphFlowEdge` property: React Flow's edge renderer forwards only a
+ * fixed, known set of top-level `Edge` fields as props to a custom edge
+ * component (id/type/source/target/label/style/…, see `EdgeProps`) — any
+ * other top-level field is invisible to the component. `data` is the one
+ * caller-defined field on that list, so it is the only place `FloatingEdge`
+ * can actually read `ports` from.
+ */
+export type GraphFlowEdgeData = { edge: GraphEdge; ports: EdgePorts };
+
+/** React Flow edge carrying {@link GraphFlowEdgeData} (the domain edge plus
+ *  its precomputed attachment ports) as its data. */
+export type GraphFlowEdge = Edge<GraphFlowEdgeData, typeof FLOW_EDGE_TYPE>;
 
 /**
  * Project a single domain node to a React Flow node. The constant
@@ -107,19 +155,27 @@ function edgeTypeStyle(
 /**
  * Project a single domain edge to a React Flow edge. The label and line style
  * are derived from the edge's resolved type (from `edgeTypes`, falling back to
- * the built-in registry); the whole domain edge is kept on `data` for any
- * future edge interactions.
+ * the built-in registry); the whole domain edge is kept on `data.edge` for any
+ * future edge interactions. `ports` (this edge's precomputed side/offset
+ * assignment, from `computeEdgePorts`) is threaded through by the caller —
+ * this function has no document-wide view needed to compute it itself — and
+ * stashed alongside it on `data.ports` for `FloatingEdge` to read.
  */
-export function edgeToFlow(edge: GraphEdge, edgeTypes: EdgeTypeDefinition[]): GraphFlowEdge {
+export function edgeToFlow(
+  edge: GraphEdge,
+  edgeTypes: EdgeTypeDefinition[],
+  ports: EdgePorts,
+): GraphFlowEdge {
   const type = resolveEdgeType(edgeTypes, edge.type);
   const style = edgeTypeStyle(type);
   return {
     id: edge.id,
+    type: FLOW_EDGE_TYPE,
     source: edge.source,
     target: edge.target,
     label: edgeLabelText(edge, type),
     ...(style !== undefined ? { style } : {}),
-    data: edge,
+    data: { edge, ports },
   };
 }
 
@@ -135,6 +191,11 @@ export function edgeToFlow(edge: GraphEdge, edgeTypes: EdgeTypeDefinition[]): Gr
  * and is dropped (nothing meaningful to draw); if they differ, the edge is
  * rerouted to draw between the resolved endpoints — "reroute to the group
  * node" — with its `data` (label/style source) otherwise untouched.
+ *
+ * `computeEdgePorts` runs once over the whole document (a uniform
+ * `DEFAULT_NODE_WIDTH`/`DEFAULT_NODE_HEIGHT` footprint for every node, since
+ * this coarse layer has no measured sizes to work from) and each edge's
+ * resulting assignment is threaded into `edgeToFlow`.
  */
 export function documentToFlow(document: GraphDocument): {
   nodes: GraphFlowNode[];
@@ -146,13 +207,25 @@ export function documentToFlow(document: GraphDocument): {
     .filter((node) => !isHidden(node.id, nodesById))
     .map((node) => nodeToFlow(node, countChildren(node.id, document.nodes)));
 
+  const edgePorts = computeEdgePorts(document, {
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
+  });
+
   const edges: GraphFlowEdge[] = [];
   for (const edge of document.edges) {
+    const ports = edgePorts.get(edge.id);
+    // `computeEdgePorts` only assigns a port to an edge whose source and
+    // target both resolve to a real node in `document.nodes` (see its own
+    // doc comment) — an edge referencing a nonexistent node id has no
+    // coherent attachment point to draw, so it is dropped here rather than
+    // rendered with a made-up side/offset.
+    if (ports === undefined) continue;
     const source = visibleAncestor(edge.source, nodesById);
     const target = visibleAncestor(edge.target, nodesById);
     if (source === target) continue;
     const rerouted = source === edge.source && target === edge.target ? edge : { ...edge, source, target };
-    edges.push(edgeToFlow(rerouted, document.edgeTypes));
+    edges.push(edgeToFlow(rerouted, document.edgeTypes, ports));
   }
 
   return { nodes, edges };

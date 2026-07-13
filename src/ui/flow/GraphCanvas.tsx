@@ -23,6 +23,7 @@ import { useHotkeys } from "@mantine/hooks";
 import { IconArrowAutofitDown, IconArrowAutofitRight, IconGrid3x3 } from "@tabler/icons-react";
 import {
   Background,
+  ConnectionMode,
   ControlButton,
   Controls,
   MiniMap,
@@ -42,18 +43,25 @@ import { useGraphStore } from "@/ui/store/graph-store";
 
 import { computeAutoLayout, type NodeSize } from "./auto-layout";
 import { type ContextMenuState } from "./ContextMenu";
+import { FloatingEdge } from "./FloatingEdge";
 import { snapToggleActive } from "./GraphCanvas.css";
 import { NodeSearchPalette } from "./NodeSearchPalette";
 import { exportCanvasAsPng, exportCanvasAsSvg } from "./snapshot-export";
-import { documentToFlow, type GraphFlowEdge, type GraphFlowNode } from "./to-flow";
+import {
+  DEFAULT_NODE_HEIGHT,
+  DEFAULT_NODE_WIDTH,
+  FLOW_EDGE_TYPE,
+  documentToFlow,
+  type GraphFlowEdge,
+  type GraphFlowNode,
+} from "./to-flow";
 import { nodeTypes } from "./type-presentation";
 
-// Fallback footprint for a node React Flow hasn't measured yet (the brief
-// window right after it's added, before first paint) — layout still needs
-// some size to rank and space it, and this is close to GenericNode's typical
-// rendered size.
-const DEFAULT_NODE_WIDTH = 220;
-const DEFAULT_NODE_HEIGHT = 80;
+/** Maps {@link FLOW_EDGE_TYPE} to `FloatingEdge`, the one edge component
+ *  every graphle edge renders through — module-scope so its identity is
+ *  stable across renders (React Flow re-registers edge types whenever this
+ *  object's identity changes). */
+const edgeTypes = { [FLOW_EDGE_TYPE]: FloatingEdge };
 
 // Grid spacing (px) nodes snap to when snap-to-grid is enabled via the
 // Controls toggle below.
@@ -490,6 +498,8 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        connectionMode={ConnectionMode.Loose}
         colorMode={flowColorMode}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}

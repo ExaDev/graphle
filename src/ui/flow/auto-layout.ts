@@ -6,7 +6,7 @@ import type { Position } from "@/schema";
 export type NodeSize = { width: number; height: number };
 
 // The spacing constants below are sized relative to GenericNode's typical
-// rendered card footprint (~220x80px — see GraphCanvas's
+// rendered card footprint (~220x80px — see `to-flow.ts`'s
 // DEFAULT_NODE_WIDTH/DEFAULT_NODE_HEIGHT fallback, which uses the same
 // figures for a node React Flow hasn't measured yet).
 

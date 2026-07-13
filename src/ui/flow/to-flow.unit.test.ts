@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { EdgePorts } from "@/domain";
 import {
   GRAPH_DOCUMENT_VERSION,
   GraphEdge,
@@ -10,11 +11,22 @@ import {
 } from "@/schema";
 
 import {
+  FLOW_EDGE_TYPE,
   FLOW_NODE_TYPE,
   documentToFlow,
   edgeToFlow,
   nodeToFlow,
 } from "./to-flow";
+
+/** A fixed port assignment for `edgeToFlow` unit tests that don't exercise
+ *  `computeEdgePorts` itself (that's `edge-ports.unit.test.ts`'s job) — only
+ *  its passthrough onto the projected `GraphFlowEdge`. */
+const samplePorts: EdgePorts = {
+  sourceSide: "right",
+  sourceOffset: 0.5,
+  targetSide: "left",
+  targetOffset: 0.5,
+};
 
 function makeFreeform(label: string, x = 0, y = 0): GraphNode {
   return GraphNodeSchema.parse({
@@ -90,7 +102,7 @@ describe("nodeToFlow", () => {
 });
 
 describe("edgeToFlow", () => {
-  it("sets id, source, target, and the whole edge as data", () => {
+  it("sets id, the floating flow type, source, target, the whole edge as data.edge, and ports as data.ports", () => {
     const a = makeFreeform("A");
     const b = makeFreeform("B");
     const edge = GraphEdge.parse({
@@ -100,11 +112,13 @@ describe("edgeToFlow", () => {
       type: "owns",
       data: {},
     });
-    const flow = edgeToFlow(edge, noEdgeTypes);
+    const flow = edgeToFlow(edge, noEdgeTypes, samplePorts);
     expect(flow.id).toBe(edge.id);
+    expect(flow.type).toBe(FLOW_EDGE_TYPE);
     expect(flow.source).toBe(a.id);
     expect(flow.target).toBe(b.id);
-    expect(flow.data).toBe(edge);
+    expect(flow.data?.edge).toBe(edge);
+    expect(flow.data?.ports).toEqual(samplePorts);
   });
 
   it("falls back to the resolved type's display label when data has no label field set", () => {
@@ -117,7 +131,7 @@ describe("edgeToFlow", () => {
     });
     // "owns" resolves to the built-in edge type registry (falls back since
     // `noEdgeTypes` carries no document-level override).
-    expect(edgeToFlow(edge, noEdgeTypes).label).toBe("Owns");
+    expect(edgeToFlow(edge, noEdgeTypes, samplePorts).label).toBe("Owns");
   });
 
   it("uses data.label as the label when present", () => {
@@ -128,7 +142,7 @@ describe("edgeToFlow", () => {
       type: "references",
       data: { label: "depends on" },
     });
-    expect(edgeToFlow(edge, noEdgeTypes).label).toBe("depends on");
+    expect(edgeToFlow(edge, noEdgeTypes, samplePorts).label).toBe("depends on");
   });
 
   it("derives a line style (colour + dash pattern) from the resolved type", () => {
@@ -146,8 +160,8 @@ describe("edgeToFlow", () => {
       type: "owns",
       data: {},
     });
-    const dashedFlow = edgeToFlow(dashed, noEdgeTypes);
-    const solidFlow = edgeToFlow(solid, noEdgeTypes);
+    const dashedFlow = edgeToFlow(dashed, noEdgeTypes, samplePorts);
+    const solidFlow = edgeToFlow(solid, noEdgeTypes, samplePorts);
     expect(dashedFlow.style).toMatchObject({ strokeDasharray: "6 4" });
     expect(solidFlow.style).not.toHaveProperty("strokeDasharray");
     expect(solidFlow.style).toMatchObject({ stroke: "var(--mantine-color-green-6)" });
