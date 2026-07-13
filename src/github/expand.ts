@@ -3,17 +3,15 @@ import type { GraphEdge, GraphNode, Position } from "../schema";
 import type { GitHubClient } from "./contract";
 import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
 import {
-  baseBranchEdge,
   blocksEdge,
-  branchToNode,
   buildDelta,
   containsEdge,
-  headBranchEdge,
   issueToNode,
   issueWithRepoToNode,
   ownsEdge,
   projectIssueItemToNode,
   projectToNode,
+  pullRequestBranchDelta,
   pullRequestToNode,
   repoToNode,
   tracksEdge,
@@ -207,67 +205,19 @@ const repoPullRequests: Expansion = {
     // identity index, so this is no longer limited to same-page matches the
     // way the old direct-edge inference was.
     const branchNodes = new Map<string, GraphNode>();
+    const branchNodesList: GraphNode[] = [];
     const branchEdges: GraphEdge[] = [];
-    const branchContainsEdges: GraphEdge[] = [];
-
-    function branchNodeFor(
-      branchOwner: string,
-      branchRepo: string,
-      branchName: string,
-      near: Position,
-    ): { node: GraphNode; isNew: boolean } {
-      const candidate = branchToNode(branchOwner, branchRepo, branchName, near);
-      const existing = branchNodes.get(candidate.id);
-      if (existing !== undefined) return { node: existing, isNew: false };
-      branchNodes.set(candidate.id, candidate);
-      return { node: candidate, isNew: true };
-    }
 
     page.items.forEach((pullRequest, i) => {
       const prNode = nodes[i];
       if (prNode === undefined) return;
-
-      // The base branch always belongs to the repo being expanded.
-      const { node: baseBranch, isNew: baseIsNew } = branchNodeFor(
-        owner,
-        name,
-        pullRequest.baseRefName,
-        prNode.position,
-      );
-      branchEdges.push(baseBranchEdge(prNode.id, baseBranch.id));
-      if (baseIsNew) {
-        baseBranch.parentId = source.id;
-        branchContainsEdges.push(containsEdge(source.id, baseBranch.id));
-      }
-
-      // The head branch may live in a fork; `headRepository` names the repo
-      // it actually lives in (undefined when that fork has been deleted, in
-      // which case the branch can no longer be materialised).
-      if (pullRequest.headRepository !== undefined) {
-        const { node: headBranch, isNew: headIsNew } = branchNodeFor(
-          pullRequest.headRepository.owner.login,
-          pullRequest.headRepository.name,
-          pullRequest.headRefName,
-          prNode.position,
-        );
-        branchEdges.push(headBranchEdge(prNode.id, headBranch.id));
-        // Only stamp repo-containment when the head branch actually belongs
-        // to the repo being expanded — a fork's branch has no node for its
-        // own repo in this graph to be contained by.
-        const headBranchIsInSourceRepo =
-          pullRequest.headRepository.owner.login === owner && pullRequest.headRepository.name === name;
-        if (headIsNew && headBranchIsInSourceRepo) {
-          headBranch.parentId = source.id;
-          branchContainsEdges.push(containsEdge(source.id, headBranch.id));
-        }
-      }
+      const branchDelta = pullRequestBranchDelta(pullRequest, prNode, owner, name, source.id, branchNodes);
+      branchNodesList.push(...branchDelta.nodes);
+      branchEdges.push(...branchDelta.edges);
     });
 
     return {
-      delta: buildDelta(
-        [...nodes, ...branchNodes.values()],
-        [...containsEdges, ...branchEdges, ...branchContainsEdges],
-      ),
+      delta: buildDelta([...nodes, ...branchNodesList], [...containsEdges, ...branchEdges]),
       endCursor: page.endCursor,
       hasNextPage: page.hasNextPage,
     };

@@ -13,6 +13,7 @@ import {
   orgToNode,
   ownsEdge,
   projectToNode,
+  pullRequestBranchDelta,
   pullRequestToNode,
   pullRequestWithRepoToNode,
   repoToNode,
@@ -27,6 +28,7 @@ import type {
   GitHubPullRequestWithRepo,
   GitHubRepo,
 } from "./schema";
+import type { GraphNode } from "../schema";
 
 const position = { x: 0, y: 0 };
 
@@ -172,5 +174,101 @@ describe("pullRequestWithRepoToNode", () => {
     const a = pullRequestToNode("ExaDev", "graphle", pullRequest, position);
     const b = pullRequestWithRepoToNode(pullRequestWithRepo, position);
     expect(a.id).toBe(b.id);
+  });
+});
+
+describe("pullRequestBranchDelta", () => {
+  const prNode: GraphNode = pullRequestToNode("ExaDev", "graphle", pullRequest, position);
+
+  it("materialises both base and head branch, parented under parentId, with edges from the PR", () => {
+    const { nodes, edges } = pullRequestBranchDelta(
+      pullRequest,
+      prNode,
+      "ExaDev",
+      "graphle",
+      "repo-1",
+      new Map(),
+    );
+
+    expect(nodes).toHaveLength(2);
+    const baseBranch = nodes.find((n) => n.data.branchName === "main");
+    const headBranch = nodes.find((n) => n.data.branchName === "feature");
+    if (baseBranch === undefined || headBranch === undefined) {
+      throw new Error("fixture: both branch nodes must exist");
+    }
+    expect(baseBranch.parentId).toBe("repo-1");
+    expect(headBranch.parentId).toBe("repo-1");
+    expect(edges).toContainEqual(
+      expect.objectContaining({ type: "baseBranch", source: prNode.id, target: baseBranch.id }),
+    );
+    expect(edges).toContainEqual(
+      expect.objectContaining({ type: "headBranch", source: prNode.id, target: headBranch.id }),
+    );
+    expect(edges).toContainEqual(
+      expect.objectContaining({ type: "contains", source: "repo-1", target: baseBranch.id }),
+    );
+    expect(edges).toContainEqual(
+      expect.objectContaining({ type: "contains", source: "repo-1", target: headBranch.id }),
+    );
+  });
+
+  it("materialises a fork's head branch as a node, but leaves it unparented with no contains edge", () => {
+    const forkPullRequest: GitHubPullRequest = {
+      ...pullRequest,
+      headRepository: { name: "graphle", owner: { login: "someone-else" } },
+    };
+    const { nodes, edges } = pullRequestBranchDelta(
+      forkPullRequest,
+      prNode,
+      "ExaDev",
+      "graphle",
+      "repo-1",
+      new Map(),
+    );
+
+    const headBranch = nodes.find((n) => n.data.owner === "someone-else");
+    if (headBranch === undefined) throw new Error("fixture: fork head branch node must exist");
+    expect(headBranch.parentId).toBeUndefined();
+    expect(edges.some((e) => e.type === "contains" && e.target === headBranch.id)).toBe(false);
+    expect(edges).toContainEqual(
+      expect.objectContaining({ type: "headBranch", source: prNode.id, target: headBranch.id }),
+    );
+  });
+
+  it("creates no head branch node or edge when the PR's fork has been deleted", () => {
+    const deletedForkPullRequest: GitHubPullRequest = { ...pullRequest, headRepository: undefined };
+    const { nodes, edges } = pullRequestBranchDelta(
+      deletedForkPullRequest,
+      prNode,
+      "ExaDev",
+      "graphle",
+      "repo-1",
+      new Map(),
+    );
+
+    expect(nodes.map((n) => n.data.branchName)).toEqual(["main"]);
+    expect(edges.some((e) => e.type === "headBranch")).toBe(false);
+  });
+
+  it("reuses an existing branch node from a caller-supplied Map instead of duplicating it", () => {
+    const branchNodes = new Map<string, GraphNode>();
+    const existingMain = branchToNode("ExaDev", "graphle", "main", position);
+    branchNodes.set(existingMain.id, existingMain);
+
+    const { nodes, edges } = pullRequestBranchDelta(
+      pullRequest,
+      prNode,
+      "ExaDev",
+      "graphle",
+      "repo-1",
+      branchNodes,
+    );
+
+    // The base branch ("main") was already in the Map, so it's not returned
+    // again as a new node — only the head branch ("feature") is.
+    expect(nodes.map((n) => n.data.branchName)).toEqual(["feature"]);
+    expect(edges).toContainEqual(
+      expect.objectContaining({ type: "baseBranch", source: prNode.id, target: existingMain.id }),
+    );
   });
 });

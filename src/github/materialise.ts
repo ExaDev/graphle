@@ -314,6 +314,86 @@ export function baseBranchEdge(pullRequestId: string, branchId: string): GraphEd
 }
 
 /**
+ * Materialises one pull request's base and head branch as nodes plus the
+ * `baseBranch`/`headBranch` edges linking `prNode` to them. `branchNodes` is
+ * caller-owned and caller-supplied — a `repo-pull-requests` expansion fetching
+ * many PRs shares one `Map` across the whole page so two PRs referencing the
+ * same branch (e.g. one PR's base equals another's head) converge on a single
+ * node rather than duplicating it; a single-PR expansion (`pull-request-branches`)
+ * passes a fresh `Map` since there is only ever one PR to dedupe against. Only
+ * *newly* created branch nodes are returned in `nodes` — a branch already
+ * present in `branchNodes` from an earlier call in the same loop is reused
+ * (via its id) without being re-added.
+ *
+ * The base branch always belongs to the repo being expanded (`repoOwner`/
+ * `repoName`), so a new base branch is always parented under `parentId` with
+ * a `contains` edge. The head branch may live in a fork (`headRepository`);
+ * `undefined` means the fork has since been deleted, in which case no head
+ * branch node/edge is created at all. A fork's head branch is still
+ * materialised as a node (so it's visible on the canvas) but is deliberately
+ * left unparented, with no `contains` edge from `parentId` — it isn't
+ * genuinely owned by the repo/PR being expanded.
+ */
+export function pullRequestBranchDelta(
+  pullRequest: GitHubPullRequest,
+  prNode: GraphNode,
+  repoOwner: string,
+  repoName: string,
+  parentId: string,
+  branchNodes: Map<string, GraphNode>,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+
+  function branchNodeFor(
+    branchOwner: string,
+    branchRepo: string,
+    branchName: string,
+    near: Position,
+  ): { node: GraphNode; isNew: boolean } {
+    const candidate = branchToNode(branchOwner, branchRepo, branchName, near);
+    const existing = branchNodes.get(candidate.id);
+    if (existing !== undefined) return { node: existing, isNew: false };
+    branchNodes.set(candidate.id, candidate);
+    return { node: candidate, isNew: true };
+  }
+
+  const { node: baseBranch, isNew: baseIsNew } = branchNodeFor(
+    repoOwner,
+    repoName,
+    pullRequest.baseRefName,
+    prNode.position,
+  );
+  edges.push(baseBranchEdge(prNode.id, baseBranch.id));
+  if (baseIsNew) {
+    baseBranch.parentId = parentId;
+    nodes.push(baseBranch);
+    edges.push(containsEdge(parentId, baseBranch.id));
+  }
+
+  if (pullRequest.headRepository !== undefined) {
+    const { node: headBranch, isNew: headIsNew } = branchNodeFor(
+      pullRequest.headRepository.owner.login,
+      pullRequest.headRepository.name,
+      pullRequest.headRefName,
+      prNode.position,
+    );
+    edges.push(headBranchEdge(prNode.id, headBranch.id));
+    if (headIsNew) {
+      nodes.push(headBranch);
+      const headBranchIsInSourceRepo =
+        pullRequest.headRepository.owner.login === repoOwner && pullRequest.headRepository.name === repoName;
+      if (headBranchIsInSourceRepo) {
+        headBranch.parentId = parentId;
+        edges.push(containsEdge(parentId, headBranch.id));
+      }
+    }
+  }
+
+  return { nodes, edges };
+}
+
+/**
  * Assembles a {@link GraphDelta} from the nodes and edges an expansion produced.
  * Kept as a named helper so expansion sites build deltas uniformly and the
  * shape stays in one place.
