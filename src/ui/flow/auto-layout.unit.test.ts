@@ -21,7 +21,25 @@ function orientation(ax: number, ay: number, bx: number, by: number, cx: number,
   return value > 0 ? 1 : -1;
 }
 
+function pointsEqual(ax: number, ay: number, bx: number, by: number): boolean {
+  return ax === bx && ay === by;
+}
+
 function segmentsCross(a: Segment, b: Segment): boolean {
+  // Two edges leaving (or arriving at) the same node share an endpoint —
+  // that is a fan-out/fan-in, not a crossing. Without this guard, the
+  // orientation test below reports a spurious crossing for any shared
+  // endpoint (the shared point sits exactly on both segments, so the
+  // orientation flips across it).
+  if (
+    pointsEqual(a.x1, a.y1, b.x1, b.y1) ||
+    pointsEqual(a.x1, a.y1, b.x2, b.y2) ||
+    pointsEqual(a.x2, a.y2, b.x1, b.y1) ||
+    pointsEqual(a.x2, a.y2, b.x2, b.y2)
+  ) {
+    return false;
+  }
+
   const o1 = orientation(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1);
   const o2 = orientation(a.x1, a.y1, a.x2, a.y2, b.x2, b.y2);
   const o3 = orientation(b.x1, b.y1, b.x2, b.y2, a.x1, a.y1);

@@ -286,12 +286,12 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
     [apply, graphDocument],
   );
 
-  // Runs dagre's deterministic layout over the currently VISIBLE nodes/edges
-  // (`nodes`/`edges` are already `documentToFlow`'s hidden-filtered,
-  // boundary-rerouted projection), then folds the result into one
-  // `moveNodes` call — a single undo step. A collapsed node's hidden
-  // descendants aren't in `nodes` (dagre never sees or sizes them), so they
-  // are translated by the same delta as their visible parent, exactly
+  // Runs ELK's deterministic layered layout over the currently VISIBLE
+  // nodes/edges (`nodes`/`edges` are already `documentToFlow`'s
+  // hidden-filtered, boundary-rerouted projection), then folds the result
+  // into one `moveNodes` call — a single undo step. A collapsed node's
+  // hidden descendants aren't in `nodes` (ELK never sees or sizes them), so
+  // they are translated by the same delta as their visible parent, exactly
   // mirroring `handleNodeDragStop`'s treatment of a dragged collapsed node,
   // so they aren't left stale relative to it.
   const handleAutoLayout = useCallback(
