@@ -62,3 +62,21 @@ export const collapseToggle = style({
   color: "var(--mantine-color-dimmed)",
   fontSize: vars.fontSizes.xs,
 });
+
+/** One of `GenericNode`'s 4 drag-to-connect handles (see `node-kinds.tsx`).
+ *  React Flow's default handle dot is sized/coloured for a single handle per
+ *  side; with all 4 sides occupied at once it reads as visual clutter, so
+ *  this shrinks each dot and dims it to near-invisible until hovered, at
+ *  which point it grows back to a clearly clickable target. */
+export const connectionHandle = style({
+  width: 6,
+  height: 6,
+  opacity: 0.35,
+  transition: "opacity 120ms ease, transform 120ms ease",
+  selectors: {
+    "&:hover": {
+      opacity: 1,
+      transform: "scale(1.6)",
+    },
+  },
+});

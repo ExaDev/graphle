@@ -31,7 +31,6 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
-  useUpdateNodeInternals,
   type Connection,
   type EdgeChange,
   type NodeChange,
@@ -103,10 +102,7 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
   const setSelection = useGraphStore((s) => s.setSelection);
   const setSelectedNodeIds = useGraphStore((s) => s.setSelectedNodeIds);
   const selectedNodeIds = useGraphStore((s) => s.selectedNodeIds);
-  const layoutDirection = useGraphStore((s) => s.layoutDirection);
-  const setLayoutDirection = useGraphStore((s) => s.setLayoutDirection);
   const { fitView, screenToFlowPosition, getNodesBounds } = useReactFlow();
-  const updateNodeInternals = useUpdateNodeInternals();
   // Drive React Flow's colour mode from the Mantine scheme so the controls and
   // minimap follow light/dark/system (React Flow otherwise defaults to light).
   const { colorScheme } = useMantineColorScheme();
@@ -314,7 +310,6 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
         ]),
       );
       const layout = await computeAutoLayout(nodes, edges, sizes, direction);
-      setLayoutDirection(direction);
 
       const moves: Array<{ id: string; position: { x: number; y: number } }> = [];
       for (const node of nodes) {
@@ -336,25 +331,8 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
       }
       apply({ type: "moveNodes", moves });
     },
-    [apply, graphDocument, nodes, edges, setLayoutDirection],
+    [apply, graphDocument, nodes, edges],
   );
-
-  // Kept in sync on every render (not via an effect) so the
-  // `layoutDirection`-triggered effect below can read the current node ids
-  // without depending on the `nodes` array's identity — `GenericNode`'s
-  // handle positions follow `layoutDirection` (see `node-kinds.tsx`), and
-  // React Flow caches each node's measured handle bounds, so every node needs
-  // re-measuring whenever that direction changes or edges keep attaching at
-  // the stale, pre-flip points.
-  const nodesRef = useRef(nodes);
-  useEffect(() => {
-    nodesRef.current = nodes;
-  }, [nodes]);
-  useEffect(() => {
-    for (const node of nodesRef.current) {
-      updateNodeInternals(node.id);
-    }
-  }, [layoutDirection, updateNodeInternals]);
 
   // Tracks whether Alt is currently held, for the alt-drag-subtract marquee
   // gesture below. Modifier state is read from raw window keydown/keyup

@@ -22,7 +22,14 @@ import { resolveType } from "@/schema";
 import { useGraphStore } from "@/ui/store/graph-store";
 
 import { extractLabel } from "./node-label";
-import { collapseToggle, nodeCard, nodeHeader, nodeLabel, staleIcon } from "./node-kinds.css";
+import {
+  collapseToggle,
+  connectionHandle,
+  nodeCard,
+  nodeHeader,
+  nodeLabel,
+  staleIcon,
+} from "./node-kinds.css";
 import { DEFAULT_TYPE_PRESENTATION, getTypePresentation } from "./type-presentation";
 import type { GraphFlowNode } from "./to-flow";
 
@@ -50,12 +57,6 @@ function isStale(fetchedAt: string | undefined): boolean {
 export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
   const types = useGraphStore((state) => state.document.types);
   const apply = useGraphStore((state) => state.apply);
-  const layoutDirection = useGraphStore((state) => state.layoutDirection);
-  // Mirrors the last-run auto-layout direction: "LR" keeps today's original
-  // Left/Right rendering, "TB" flips edges to exit the bottom and enter the
-  // top, matching the direction nodes were actually ranked and spaced in.
-  const targetPosition = layoutDirection === "TB" ? Position.Top : Position.Left;
-  const sourcePosition = layoutDirection === "TB" ? Position.Bottom : Position.Right;
   const typeDef = resolveType(types, data.type);
   const presentation =
     typeDef !== undefined ? getTypePresentation(typeDef) : DEFAULT_TYPE_PRESENTATION;
@@ -66,7 +67,35 @@ export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
 
   return (
     <div className={nodeCard} style={{ borderColor: presentation.colorVar }}>
-      <Handle type="target" position={targetPosition} />
+      {/* One drag-to-connect affordance per side, all `type="source"` so
+       *  `connectionMode="loose"` (see `GraphCanvas.tsx`) lets a drag start or
+       *  end at any of them. These only ever create connections — the actual
+       *  rendered edge path is decided independently and continuously by
+       *  `FloatingEdge`, not by which handle a node happens to expose. */}
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="top"
+        className={connectionHandle}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="right"
+        className={connectionHandle}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        className={connectionHandle}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="left"
+        className={connectionHandle}
+      />
       <div className={nodeHeader}>
         <Icon size={16} stroke={1.75} style={{ color: presentation.colorVar }} />
         <div className={nodeLabel}>{label}</div>
@@ -96,7 +125,6 @@ export function GenericNode({ data }: NodeProps<GraphFlowNode>) {
           {collapsed ? `${String(data.childCount)} hidden` : `${String(data.childCount)} children`}
         </button>
       )}
-      <Handle type="source" position={sourcePosition} />
     </div>
   );
 }
