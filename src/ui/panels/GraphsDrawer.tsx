@@ -151,6 +151,25 @@ export interface GraphsDrawerProps {
 /** Stable empty list used as the `useLiveQuery` default before the first read. */
 const EMPTY_SUMMARIES: StoredGraphSummary[] = [];
 
+/** Sets or clears one of `RepoPullRequestsFilters`'s optional person fields
+ *  from a text input's current value — an empty string clears the field
+ *  (deleting the optional key, not setting it to `""`, since GitHub's search
+ *  DSL has no meaningful empty-string qualifier) rather than every other
+ *  value being assigned directly. */
+function withPersonFilterField(
+  filters: RepoPullRequestsFilters,
+  field: "assignee" | "author" | "involves",
+  value: string,
+): RepoPullRequestsFilters {
+  const next = { ...filters };
+  if (value === "") {
+    delete next[field];
+  } else {
+    next[field] = value;
+  }
+  return next;
+}
+
 export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
   // The store is created once; `db` is a process-wide singleton.
   const store = useMemo(() => createGraphStore(db), []);
@@ -1344,6 +1363,42 @@ export function GraphsDrawer({ opened, onClose }: GraphsDrawerProps) {
               value={[...draftSource.filters.labels]}
               onChange={(labels) =>
                 setDraftSource({ ...draftSource, filters: { ...draftSource.filters, labels } })
+              }
+            />
+            <TextInput
+              size="xs"
+              label="Assignee"
+              placeholder="GitHub username"
+              value={draftSource.filters.assignee ?? ""}
+              onChange={(event) =>
+                setDraftSource({
+                  ...draftSource,
+                  filters: withPersonFilterField(draftSource.filters, "assignee", event.currentTarget.value),
+                })
+              }
+            />
+            <TextInput
+              size="xs"
+              label="Author"
+              placeholder="GitHub username"
+              value={draftSource.filters.author ?? ""}
+              onChange={(event) =>
+                setDraftSource({
+                  ...draftSource,
+                  filters: withPersonFilterField(draftSource.filters, "author", event.currentTarget.value),
+                })
+              }
+            />
+            <TextInput
+              size="xs"
+              label="Involves"
+              placeholder="GitHub username"
+              value={draftSource.filters.involves ?? ""}
+              onChange={(event) =>
+                setDraftSource({
+                  ...draftSource,
+                  filters: withPersonFilterField(draftSource.filters, "involves", event.currentTarget.value),
+                })
               }
             />
             <Button
