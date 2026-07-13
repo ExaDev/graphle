@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_REPO_ISSUES_FILTERS, DEFAULT_REPO_PULL_REQUESTS_FILTERS } from "./filters";
 import { loadRepoIssuesDocument, loadRepoPullRequestsDocument } from "./repo-list-loader";
 import type { GitHubClient, Page } from "./contract";
-import type { GitHubIssue, GitHubPullRequest, GitHubRepo } from "./schema";
+import type { GitHubIssue, GitHubPullRequest, GitHubPullRequestWithRepo, GitHubRepo } from "./schema";
 
 const repo: GitHubRepo = {
   name: "graphle",
@@ -32,6 +32,10 @@ function pullRequest(number: number, title: string): GitHubPullRequest {
     headRefName: `feature-${String(number)}`,
     headRepository: { name: repo.name, owner: repo.owner },
   };
+}
+
+function pullRequestWithRepo(number: number, title: string): GitHubPullRequestWithRepo {
+  return { ...pullRequest(number, title), repository: repo };
 }
 
 /** A client that fails loudly on any call the test doesn't expect. */
@@ -261,5 +265,98 @@ describe("loadRepoPullRequestsDocument", () => {
     await loadRepoPullRequestsDocument(parsed, filters, client, new AbortController().signal);
 
     expect(receivedFilters).toEqual(filters);
+  });
+
+  it("stays on listRepoPullRequests, unchanged, when no assignee/author/involves is set", async () => {
+    let listCalled = false;
+    const client: GitHubClient = {
+      ...unreachableClient(),
+      getRepo: () => Promise.resolve(repo),
+      listRepoPullRequests: (): Promise<Page<GitHubPullRequest>> => {
+        listCalled = true;
+        return Promise.resolve({ items: [], endCursor: undefined, hasNextPage: false });
+      },
+    };
+
+    await loadRepoPullRequestsDocument(parsed, DEFAULT_REPO_PULL_REQUESTS_FILTERS, client, new AbortController().signal);
+
+    expect(listCalled).toBe(true);
+  });
+
+  it("routes through searchPullRequests, with the right query, when assignee is set", async () => {
+    let receivedQuery: string | undefined;
+    const client: GitHubClient = {
+      ...unreachableClient(),
+      getRepo: () => Promise.resolve(repo),
+      searchPullRequests: (query): Promise<Page<GitHubPullRequestWithRepo>> => {
+        receivedQuery = query;
+        return Promise.resolve({
+          items: [pullRequestWithRepo(5, "Assigned to Mearman")],
+          endCursor: undefined,
+          hasNextPage: false,
+        });
+      },
+    };
+    const filters = { ...DEFAULT_REPO_PULL_REQUESTS_FILTERS, assignee: "Mearman" };
+
+    const result = await loadRepoPullRequestsDocument(parsed, filters, client, new AbortController().signal);
+
+    expect(receivedQuery).toBe("repo:exadev/graphle is:open sort:updated-desc assignee:Mearman");
+    const prNodes = result.document.nodes.filter((n) => n.type === "pullRequest");
+    expect(prNodes.map((n) => n.data.title)).toEqual(["Assigned to Mearman"]);
+  });
+
+  it("includes author and involves qualifiers together when all three are set", async () => {
+    let receivedQuery: string | undefined;
+    const client: GitHubClient = {
+      ...unreachableClient(),
+      getRepo: () => Promise.resolve(repo),
+      searchPullRequests: (query): Promise<Page<GitHubPullRequestWithRepo>> => {
+        receivedQuery = query;
+        return Promise.resolve({ items: [], endCursor: undefined, hasNextPage: false });
+      },
+    };
+    const filters = {
+      ...DEFAULT_REPO_PULL_REQUESTS_FILTERS,
+      assignee: "Mearman",
+      author: "octocat",
+      involves: "hubot",
+    };
+
+    await loadRepoPullRequestsDocument(parsed, filters, client, new AbortController().signal);
+
+    expect(receivedQuery).toBe(
+      "repo:exadev/graphle is:open sort:updated-desc assignee:Mearman author:octocat involves:hubot",
+    );
+  });
+
+  it("pages through search results the same way as the ordinary list path", async () => {
+    let calls = 0;
+    const client: GitHubClient = {
+      ...unreachableClient(),
+      getRepo: () => Promise.resolve(repo),
+      searchPullRequests: (_query, cursor): Promise<Page<GitHubPullRequestWithRepo>> => {
+        calls += 1;
+        if (cursor === undefined) {
+          return Promise.resolve({
+            items: [pullRequestWithRepo(1, "Page one")],
+            endCursor: "cursor-2",
+            hasNextPage: true,
+          });
+        }
+        return Promise.resolve({
+          items: [pullRequestWithRepo(2, "Page two")],
+          endCursor: undefined,
+          hasNextPage: false,
+        });
+      },
+    };
+    const filters = { ...DEFAULT_REPO_PULL_REQUESTS_FILTERS, involves: "hubot" };
+
+    const result = await loadRepoPullRequestsDocument(parsed, filters, client, new AbortController().signal);
+
+    expect(calls).toBe(2);
+    const prNodes = result.document.nodes.filter((n) => n.type === "pullRequest");
+    expect(prNodes.map((n) => n.data.title)).toEqual(["Page one", "Page two"]);
   });
 });
