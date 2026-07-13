@@ -62,10 +62,17 @@ describe("computeEdgePorts", () => {
   it("spreads 3 edges into the same node/side evenly when there is room, in the documented sort order", () => {
     // hub is far enough to the right of every source that the horizontal
     // difference always dominates, so every edge attaches to hub's "left"
-    // side regardless of the sources' differing y positions.
+    // side regardless of the sources' x/y positions below. Sources carry
+    // *both* distinct x and distinct y, chosen so that sorting by the
+    // correct parallel axis (y, for a left/right side) and sorting by the
+    // perpendicular axis (x) give opposite orderings (y ascending is
+    // s1 < s2 < s3; x ascending is s3 < s2 < s1) — a test using only one
+    // varying axis cannot tell a parallel-axis sort from a
+    // perpendicular-axis one, since with x constant both axes would agree
+    // by falling back to edge id order.
     const hub = node("hub", 5000, 1000);
-    const s1 = node("s1", 0, 0);
-    const s2 = node("s2", 0, 500);
+    const s1 = node("s1", 100, 0);
+    const s2 = node("s2", 50, 500);
     const s3 = node("s3", 0, 1200);
     const e1 = edge("e1", s1.id, hub.id);
     const e2 = edge("e2", s2.id, hub.id);
@@ -89,7 +96,9 @@ describe("computeEdgePorts", () => {
 
     // Sorted ascending by the other endpoint's document position.y
     // (s1=0 < s2=500 < s3=1200), so e1 < e2 < e3 in offset order, each
-    // distinct, each within the "in" half [0, 0.5).
+    // distinct, each within the "in" half [0, 0.5). A sort on x instead
+    // would reverse this to e3 < e2 < e1, so this assertion fails under
+    // that regression.
     expect(p1.targetOffset).toBeCloseTo(0.125);
     expect(p2.targetOffset).toBeCloseTo(0.25);
     expect(p3.targetOffset).toBeCloseTo(0.375);

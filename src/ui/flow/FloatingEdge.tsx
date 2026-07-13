@@ -70,7 +70,7 @@ export function FloatingEdge({
   const sourcePoint = pointOnSide(sourceRect, sourcePosition, ports.sourceOffset);
   const targetPoint = pointOnSide(targetRect, targetPosition, ports.targetOffset);
 
-  const [path] = getBezierPath({
+  const [path, labelX, labelY] = getBezierPath({
     sourceX: sourcePoint.x,
     sourceY: sourcePoint.y,
     sourcePosition,
@@ -83,6 +83,8 @@ export function FloatingEdge({
     <BaseEdge
       id={id}
       path={path}
+      labelX={labelX}
+      labelY={labelY}
       {...(markerEnd !== undefined ? { markerEnd } : {})}
       {...(style !== undefined ? { style } : {})}
       {...(label !== undefined ? { label } : {})}
