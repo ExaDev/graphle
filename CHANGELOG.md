@@ -1,3 +1,16 @@
+# [1.29.0](https://github.com/ExaDev/graphle/compare/v1.28.0...v1.29.0) (2026-07-13)
+
+
+### Bug Fixes
+
+* **ui:** correct stale dagre references and shared-endpoint crossing bug ([667b468](https://github.com/ExaDev/graphle/commit/667b468f388988424240474123dc2c03bb5e6f70))
+
+
+### Features
+
+* **ui:** orient node handles to the last layout direction ([91d6b0e](https://github.com/ExaDev/graphle/commit/91d6b0e9e07991d0eba313834099d1f7ce9ecc07))
+* **ui:** replace dagre with ELK layered layout tuned to reduce edge crossings ([6c75250](https://github.com/ExaDev/graphle/commit/6c752501bf2c508570afd361e45b9d2c50c1dd58))
+
 # [1.28.0](https://github.com/ExaDev/graphle/compare/v1.27.0...v1.28.0) (2026-07-12)
 
 
