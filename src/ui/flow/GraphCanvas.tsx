@@ -291,7 +291,7 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
   // mirroring `handleNodeDragStop`'s treatment of a dragged collapsed node,
   // so they aren't left stale relative to it.
   const handleAutoLayout = useCallback(
-    (direction: "TB" | "LR") => {
+    async (direction: "TB" | "LR") => {
       const sizes = new Map<string, NodeSize>(
         nodes.map((node) => [
           node.id,
@@ -301,7 +301,7 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
           },
         ]),
       );
-      const layout = computeAutoLayout(nodes, edges, sizes, direction);
+      const layout = await computeAutoLayout(nodes, edges, sizes, direction);
 
       const moves: Array<{ id: string; position: { x: number; y: number } }> = [];
       for (const node of nodes) {
@@ -542,10 +542,10 @@ export function GraphCanvas({ onContextMenu, ref }: GraphCanvasProps) {
       >
         <Background />
         <Controls>
-          <ControlButton title="Layout top-to-bottom" onClick={() => handleAutoLayout("TB")}>
+          <ControlButton title="Layout top-to-bottom" onClick={() => void handleAutoLayout("TB")}>
             <IconArrowAutofitDown />
           </ControlButton>
-          <ControlButton title="Layout left-to-right" onClick={() => handleAutoLayout("LR")}>
+          <ControlButton title="Layout left-to-right" onClick={() => void handleAutoLayout("LR")}>
             <IconArrowAutofitRight />
           </ControlButton>
           <ControlButton
