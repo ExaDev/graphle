@@ -1,5 +1,7 @@
 # Graphle
 
+[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/ExaDev/graphle) [![Release](https://img.shields.io/github/v/release/ExaDev/graphle)](https://github.com/ExaDev/graphle/releases/latest) [![CI](https://img.shields.io/github/actions/workflow/status/ExaDev/graphle/ci.yml?branch=main)](https://github.com/ExaDev/graphle/actions)
+
 > A client-side graph tool for mapping relationships between dependent systems —
 > built around GitHub orgs, repos, issues and Projects (v2), though the graph is
 > generic enough to hold anything.
