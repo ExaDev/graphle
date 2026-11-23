@@ -85,14 +85,16 @@ jobs:
     # Named GH_ rather than GITHUB_: Actions rejects any secret name starting
     # with GITHUB_ (reserved for its own built-ins). The _PRIVATE pair are
     # separate, more-privileged tokens dedicated to reading two otherwise-
-    # unused fixture repos (Mearman/graphle-test-private,
-    # ExaDev/graphle-test-private) — kept apart from the public-only pair so
+    # unused private fixture repos, named by the two GRAPHLE_TEST_PRIVATE_*
+    # repository variables as owner/name — kept apart from the public-only pair so
     # those stay minimally scoped.
     env:
       GH_TEST_PAT_CLASSIC: ${{ secrets.GH_TEST_PAT_CLASSIC }}
       GH_TEST_PAT_FINE_GRAINED: ${{ secrets.GH_TEST_PAT_FINE_GRAINED }}
       GH_TEST_PAT_CLASSIC_PRIVATE: ${{ secrets.GH_TEST_PAT_CLASSIC_PRIVATE }}
       GH_TEST_PAT_FINE_GRAINED_PRIVATE: ${{ secrets.GH_TEST_PAT_FINE_GRAINED_PRIVATE }}
+      GRAPHLE_TEST_PRIVATE_USER_FIXTURE: ${{ vars.GRAPHLE_TEST_PRIVATE_USER_FIXTURE }}
+      GRAPHLE_TEST_PRIVATE_ORG_FIXTURE: ${{ vars.GRAPHLE_TEST_PRIVATE_ORG_FIXTURE }}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-and-run

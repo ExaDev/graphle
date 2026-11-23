@@ -82,8 +82,12 @@ describe.skipIf(ACCOUNT_SEARCH_TOKEN_TYPES.length === 0)("GitHub API integration
  * (`GH_TEST_PAT_CLASSIC_PRIVATE`/`GH_TEST_PAT_FINE_GRAINED_PRIVATE`) rather
  * than widening those — the public-access tokens stay minimally scoped, and
  * these more-privileged ones are dedicated to reading two otherwise-unused
- * fixture repos created solely for this purpose
- * (`Mearman/graphle-test-private`, `ExaDev/graphle-test-private`). Each
+ * private fixture repos created solely for this purpose, one under a
+ * personal account and one under an organisation. Their `owner/name` slugs
+ * come from `GRAPHLE_TEST_PRIVATE_USER_FIXTURE` and
+ * `GRAPHLE_TEST_PRIVATE_ORG_FIXTURE` (see `.env.example`), so no private
+ * repository name lives in this public source; a fixture whose variable is
+ * unset or malformed is left out, and the suite skips when none remain. Each
  * fixture repo has: three issues (a parent with a sub-issue, and a third
  * issue the parent blocks), two pull requests (#5 stacked on #4 — #5's base
  * branch is #4's head branch, for testing stacked-PR detection), and a
@@ -92,7 +96,7 @@ describe.skipIf(ACCOUNT_SEARCH_TOKEN_TYPES.length === 0)("GitHub API integration
  *
  * Coverage is asymmetric by design, not oversight: a fine-grained token can
  * only target one resource owner, so `GH_TEST_PAT_FINE_GRAINED_PRIVATE` is
- * scoped to the ExaDev org only (the more product-relevant case — see
+ * scoped to the organisation fixture only (the more product-relevant case — see
  * `GitHubPanel.tsx`'s note that fine-grained tokens can't read a personal
  * account's own Projects boards) — `ownerType: "user"`-only checks (like
  * `getUserProject`) are skipped for it via the `it.each` filter on each
@@ -120,46 +124,69 @@ type PrivateFixture = {
   projectNodeId: string;
 };
 
-const MEARMAN_FIXTURE: PrivateFixture = {
-  owner: "Mearman",
-  repo: "graphle-test-private",
-  ownerType: "user",
+const SHARED_FIXTURE_SHAPE = {
   parentIssue: 1,
   subIssue: 2,
   blockedIssue: 3,
   pr: 4,
   stackedPr: 5,
-  projectNumber: 8,
-  projectNodeId: "PVT_kwHOABRSoM4BdIcn",
 };
 
-const EXADEV_FIXTURE: PrivateFixture = {
-  owner: "ExaDev",
-  repo: "graphle-test-private",
-  ownerType: "org",
-  parentIssue: 1,
-  subIssue: 2,
-  blockedIssue: 3,
-  pr: 4,
-  stackedPr: 5,
-  projectNumber: 13,
-  projectNodeId: "PVT_kwDOCFoIAs4BdIco",
-};
+/**
+ * Parses an `owner/name` slug from the environment variable `name`.
+ * Returns `undefined` when the variable is unset or not of that form.
+ */
+function fixtureSlug(name: string): { owner: string; repo: string } | undefined {
+  const match = /^([^/\s]+)\/([^/\s]+)$/.exec(process.env[name] ?? "");
+  if (match === null) return undefined;
+  const [, owner, repo] = match;
+  if (owner === undefined || repo === undefined) return undefined;
+  return { owner, repo };
+}
+
+const userSlug = fixtureSlug("GRAPHLE_TEST_PRIVATE_USER_FIXTURE");
+const orgSlug = fixtureSlug("GRAPHLE_TEST_PRIVATE_ORG_FIXTURE");
+
+const USER_FIXTURE: PrivateFixture | undefined =
+  userSlug === undefined
+    ? undefined
+    : {
+        ...userSlug,
+        ...SHARED_FIXTURE_SHAPE,
+        ownerType: "user",
+        projectNumber: 8,
+        projectNodeId: "PVT_kwHOABRSoM4BdIcn",
+      };
+
+const ORG_FIXTURE: PrivateFixture | undefined =
+  orgSlug === undefined
+    ? undefined
+    : {
+        ...orgSlug,
+        ...SHARED_FIXTURE_SHAPE,
+        ownerType: "org",
+        projectNumber: 13,
+        projectNodeId: "PVT_kwDOCFoIAs4BdIco",
+      };
+
+function present(fixtures: (PrivateFixture | undefined)[]): PrivateFixture[] {
+  return fixtures.filter((fixture): fixture is PrivateFixture => fixture !== undefined);
+}
 
 const PRIVATE_TOKEN_TYPES = [
   {
     label: "classic",
     token: process.env.GH_TEST_PAT_CLASSIC_PRIVATE,
-    fixtures: [MEARMAN_FIXTURE, EXADEV_FIXTURE],
+    fixtures: present([USER_FIXTURE, ORG_FIXTURE]),
   },
   {
     label: "fine-grained",
     token: process.env.GH_TEST_PAT_FINE_GRAINED_PRIVATE,
-    fixtures: [EXADEV_FIXTURE],
+    fixtures: present([ORG_FIXTURE]),
   },
 ].filter(
   (entry): entry is { label: string; token: string; fixtures: PrivateFixture[] } =>
-    entry.token !== undefined && entry.token !== "",
+    entry.token !== undefined && entry.token !== "" && entry.fixtures.length > 0,
 );
 
 describe.skipIf(PRIVATE_TOKEN_TYPES.length === 0)("GitHub API integration - private repos, issues, PRs", () => {
